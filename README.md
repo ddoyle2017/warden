@@ -1,2 +1,2 @@
 # warden
-A Minecraft mod manager
+A Valheim CLI mod manager

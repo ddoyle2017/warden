@@ -11,5 +11,6 @@ const (
 		\|____________|\|__|\|__|\|__|\|__|\|_______|\|_______|\|__| \|__|
 																		  																	  
 	`
+	runes        = `ᛏᚻᛖ ᛒᛖᛖᛋ ᚪᚱᛖ ᚻᚪᛈᛈᚣ` // The bees are happy
 	startUpBlurb = "A mod mananger console for Valheim"
 )

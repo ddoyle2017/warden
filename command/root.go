@@ -12,6 +12,7 @@ var rootCommand = &cobra.Command{
 	Long:  `A fast and friendly CLI mod manager for Valheim. Built with love and Go for handling mods on headless servers <3`,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println(logo)
+		fmt.Println(runes)
 		fmt.Println(startUpBlurb)
 	},
 }
