@@ -1,27 +1,34 @@
 package command
 
 import (
+	"fmt"
+	"warden/api/thunderstore"
 	"warden/data/repo"
 	"warden/domain/mod"
 
 	"github.com/spf13/cobra"
 )
 
-func NewAddCommand(r repo.Mods) *cobra.Command {
+func NewAddCommand(r repo.Mods, ts thunderstore.Thunderstore) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "add",
 		Short: "Adds the specified mod",
 		Long:  "Searches Thunderstone for the specified mod, downloads it, then adds it to your local mod collection",
 		Run: func(cmd *cobra.Command, args []string) {
+			pkg, err := ts.GetPackage("Azumatt", "Where_You_At")
+			if err != nil {
+				fmt.Println("... something broke ...")
+				return
+			}
+
 			// PLACEHOLDER
 			m := mod.Mod{
-				ID:           1,
-				Name:         "Best Mod NA",
+				Name:         pkg.Name,
 				FilePath:     "/your/file",
-				Version:      "v0.1.0",
-				WebsiteURL:   "something.github.com/probably",
-				Description:  "If Shakespeare could code, this would be his MacBeth",
-				Dependencies: []string{},
+				Version:      pkg.Latest.VersionNumber,
+				WebsiteURL:   pkg.Latest.WebsiteURL,
+				Description:  pkg.Latest.Description,
+				Dependencies: pkg.Latest.Dependencies,
 			}
 			r.InsertMod(m)
 		},

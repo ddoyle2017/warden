@@ -24,6 +24,6 @@ func prettyPrint(mods []mod.Mod) {
 		fmt.Print("... no mods are installed...")
 	}
 	for _, m := range mods {
-		fmt.Printf(" %s | %s | %s ", m.Name, m.Version, m.Description)
+		fmt.Printf(" %s | %s | %s \n", m.Name, m.Version, m.Description)
 	}
 }
