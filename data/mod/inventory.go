@@ -1,6 +1,8 @@
 package mod
 
 type Inventory interface {
+	Add(name string) (bool, error)
+	Remove(name string) (bool, error)
 	List() []Mod
 	Total() int
 }
@@ -13,6 +15,14 @@ func NewInventory() Inventory {
 	return &inventory{
 		mods: []Mod{},
 	}
+}
+
+func (i *inventory) Add(name string) (bool, error) {
+	return true, nil
+}
+
+func (i *inventory) Remove(name string) (bool, error) {
+	return true, nil
 }
 
 func (i *inventory) List() []Mod {
