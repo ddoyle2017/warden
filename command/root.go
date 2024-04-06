@@ -17,6 +17,7 @@ var rootCommand = &cobra.Command{
 	},
 }
 
-func Execute() {
+func Execute(cmds ...*cobra.Command) {
+	rootCommand.AddCommand(cmds...)
 	cobra.CheckErr(rootCommand.Execute())
 }

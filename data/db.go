@@ -9,15 +9,19 @@ import (
 
 var db *sql.DB
 
-func OpenDatabase() error {
+type Database interface {
+	Query(query string, args ...any) (*sql.Rows, error)
+	Prepare(query string) (*sql.Stmt, error)
+}
+
+func OpenDatabase() (Database, error) {
 	var err error
 
 	db, err = sql.Open("sqlite3", "./sqlite-database.db")
 	if err != nil {
-		return err
+		return nil, err
 	}
-	CreateModsTable()
-	return db.Ping()
+	return db, db.Ping()
 }
 
 func CreateModsTable() {
