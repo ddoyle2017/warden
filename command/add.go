@@ -1,12 +1,13 @@
 package command
 
 import (
-	"warden/data/mod"
+	"warden/data/repo"
+	"warden/domain/mod"
 
 	"github.com/spf13/cobra"
 )
 
-func NewAddCommand(repo mod.ModsRepo) *cobra.Command {
+func NewAddCommand(r repo.Mods) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "add",
 		Short: "Adds the specified mod",
@@ -22,7 +23,7 @@ func NewAddCommand(repo mod.ModsRepo) *cobra.Command {
 				Description:  "If Shakespeare could code, this would be his MacBeth",
 				Dependencies: []string{},
 			}
-			repo.InsertMod(m)
+			r.InsertMod(m)
 		},
 	}
 	return cmd

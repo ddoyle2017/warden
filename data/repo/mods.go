@@ -1,43 +1,34 @@
-package mod
+package repo
 
 import (
 	"log"
 	"warden/data"
+	"warden/domain/mod"
 )
 
-type Mod struct {
-	ID           int      `json:"id"`
-	Name         string   `json:"name"`
-	FilePath     string   `json:"file_path"`
-	Version      string   `json:"version"`
-	WebsiteURL   string   `json:"website_url"`
-	Description  string   `json:"description"`
-	Dependencies []string `json:"dependencies"`
-}
-
-type ModsRepo interface {
-	ListMods() []Mod
-	InsertMod(m Mod) error
+type Mods interface {
+	ListMods() []mod.Mod
+	InsertMod(m mod.Mod) error
 }
 
 type repo struct {
 	db data.Database
 }
 
-func NewRepo(db data.Database) ModsRepo {
+func NewModsRepo(db data.Database) Mods {
 	return &repo{
 		db: db,
 	}
 }
 
-func (r *repo) ListMods() []Mod {
+func (r *repo) ListMods() []mod.Mod {
 	rows, err := r.db.Query(`SELECT * FROM mods`)
 	if err != nil {
 		log.Fatal(err.Error())
 	}
 	defer rows.Close()
 
-	mods := []Mod{}
+	mods := []mod.Mod{}
 	for rows.Next() {
 		var id int
 		var name string
@@ -47,7 +38,7 @@ func (r *repo) ListMods() []Mod {
 		var description string
 
 		rows.Scan(&id, &name, &path, &version, &url, &description)
-		m := Mod{
+		m := mod.Mod{
 			ID:          id,
 			Name:        name,
 			FilePath:    path,
@@ -60,7 +51,7 @@ func (r *repo) ListMods() []Mod {
 	return mods
 }
 
-func (r *repo) InsertMod(m Mod) error {
+func (r *repo) InsertMod(m mod.Mod) error {
 	sql := `INSERT INTO mods(name, filePath, version, websiteUrl, description) VALUES (?, ?, ?, ?, ?)`
 
 	statement, err := r.db.Prepare(sql)

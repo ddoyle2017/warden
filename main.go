@@ -4,7 +4,7 @@ import (
 	"log"
 	"warden/command"
 	"warden/data"
-	"warden/data/mod"
+	"warden/data/repo"
 )
 
 func main() {
@@ -19,7 +19,7 @@ func main() {
 	data.CreateModsTable()
 
 	// Initialize and injection dependencies into commands
-	modsRepo := mod.NewRepo(db)
+	modsRepo := repo.NewModsRepo(db)
 	listCmd := command.NewListCommand(modsRepo)
 	addCmd := command.NewAddCommand(modsRepo)
 
