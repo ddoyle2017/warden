@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 )
 
@@ -46,6 +47,7 @@ func (a *api) GetPackage(namespace, name string) (Package, error) {
 	err = json.Unmarshal(data, &pkg)
 	if err != nil {
 		fmt.Println("... ERROR: unable to deserialize Thunderstore API response from JSON...")
+		log.Printf("%v+", pkg)
 	}
 
 	return pkg, nil

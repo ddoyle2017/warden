@@ -2,19 +2,19 @@ package thunderstore
 
 // Package is the top level definition of a mod. It contains data about the mod, its different releases, user ratings, etc..
 type Package struct {
-	Namespace         string
-	Name              string
-	FullName          string
-	Owner             string // also called 'Namespace'
-	PackageURL        string
-	DateCreated       string // change to datetime type later
-	DateUpdated       string // change to datetime type later
-	RatingScore       int
-	IsPinned          bool
-	IsDeprecated      bool
-	TotalDownloads    int64
-	Latest            Release
-	CommunityListings []Listing
+	Namespace         string    `json:"namespace"`
+	Name              string    `json:"name"`
+	FullName          string    `json:"full_name"`
+	Owner             string    `json:"owner"` // also called 'Namespace'
+	PackageURL        string    `json:"package_url"`
+	DateCreated       string    `json:"date_created"`
+	DateUpdated       string    `json:"date_updated"`
+	RatingScore       int       `json:"rating_score"`
+	IsPinned          bool      `json:"is_pinned"`
+	IsDeprecated      bool      `json:"is_deprecated"`
+	TotalDownloads    int64     `json:"total_downloads"`
+	Latest            Release   `json:"latest"`
+	CommunityListings []Listing `json:"community_listings"`
 }
 
 // Release is a specific, released version of a Package.
@@ -28,7 +28,7 @@ type Release struct {
 	Dependencies  []string `json:"dependencies"`
 	DownloadURL   string   `json:"download_url"`
 	Downloads     int64    `json:"downloads"`
-	DateCreated   string   `json:"date_created"` // change to datetime type later
+	DateCreated   string   `json:"date_created"`
 	WebsiteURL    string   `json:"website_url"`
 	IsActive      bool     `json:"is_active"`
 }

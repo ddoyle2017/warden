@@ -55,5 +55,4 @@ func createTable(name, query string) {
 	}
 
 	statement.Exec()
-	log.Printf("...%s table created...", name)
 }
