@@ -2,10 +2,11 @@ package thunderstore
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
+	"warden/api"
 )
 
 const (
@@ -14,41 +15,60 @@ const (
 	packageAPI      = "/package"
 )
 
+var (
+	ErrPackageNotFound = errors.New("mod package was not found")
+	ErrThunderstoreAPI = errors.New("Thunderstore API returned an unexpected error")
+)
+
 // Interface for Thunderstore's API for Valheim mods. See docs: https://thunderstore.io/c/valheim/create/docs/
 type Thunderstore interface {
 	GetPackage(namespace, name string) (Package, error)
 }
 
-type api struct {
+type thunderstore struct {
 	client *http.Client
 }
 
 func New(c *http.Client) Thunderstore {
-	return &api{
+	return &thunderstore{
 		client: c,
 	}
 }
 
-func (a *api) GetPackage(namespace, name string) (Package, error) {
+func (ts *thunderstore) GetPackage(namespace, name string) (Package, error) {
 	url := fmt.Sprintf(thunderstoreAPI+experimental+packageAPI+"/%s/%s", namespace, name)
-	response, err := a.client.Get(url)
+
+	response, err := ts.client.Get(url)
 	if err != nil {
-		fmt.Printf("... ERROR: unable to find %s by %s...", name, namespace)
-		return Package{}, err
+		return Package{}, api.ErrHTTPClient
 	}
 
 	data, err := io.ReadAll(response.Body)
 	if err != nil {
-		fmt.Println("... ERROR: unable to parse Thunderstore API response...")
-		return Package{}, err
+		return Package{}, api.ErrByteIO
 	}
 
-	pkg := Package{}
-	err = json.Unmarshal(data, &pkg)
+	switch response.StatusCode {
+	case http.StatusOK:
+		pkg, err := deserializeJSON(data, Package{})
+		if err != nil {
+			return Package{}, api.ErrJSONParse
+		}
+		return pkg, nil
+	case http.StatusNotFound:
+		// API currently doesn't return any useful data, so we'll ignore the error response body for now
+		return Package{}, ErrPackageNotFound
+	default:
+		// API currently doesn't return any useful data, so we'll ignore the error response body for now
+		return Package{}, ErrThunderstoreAPI
+	}
+}
+
+func deserializeJSON[T any](data []byte, obj T) (T, error) {
+	err := json.Unmarshal(data, &obj)
 	if err != nil {
 		fmt.Println("... ERROR: unable to deserialize Thunderstore API response from JSON...")
-		log.Printf("%v+", pkg)
+		return obj, err
 	}
-
-	return pkg, nil
+	return obj, nil
 }

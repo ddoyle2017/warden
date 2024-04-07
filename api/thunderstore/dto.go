@@ -40,3 +40,7 @@ type Listing struct {
 	Community      string   `json:"community"` // AKA the game
 	ReviewStatus   string   `json:"review_status"`
 }
+
+type ErrorResponse struct {
+	Detail string `json:"detail"`
+}
