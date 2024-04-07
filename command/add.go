@@ -22,8 +22,8 @@ func NewAddCommand(r repo.Mods, ts thunderstore.Thunderstore) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "add",
-		Short: "Adds the specified mod",
-		Long:  "Searches Thunderstone for the specified mod, downloads it, then adds it to your local mod collection",
+		Short: "Adds the specified mod.",
+		Long:  "Searches Thunderstone for the specified mod, downloads it, then adds it to your local mod collection.",
 		Run: func(cmd *cobra.Command, args []string) {
 			pkg, err := ts.GetPackage(namespace, modPkg)
 			if err != nil {
@@ -33,13 +33,18 @@ func NewAddCommand(r repo.Mods, ts thunderstore.Thunderstore) *cobra.Command {
 
 			m := mod.Mod{
 				Name:         pkg.Name,
+				Namespace:    pkg.Namespace,
 				FilePath:     "/your/file",
 				Version:      pkg.Latest.VersionNumber,
 				WebsiteURL:   pkg.Latest.WebsiteURL,
 				Description:  pkg.Latest.Description,
 				Dependencies: pkg.Latest.Dependencies,
 			}
-			r.InsertMod(m)
+			err = r.InsertMod(m)
+			if err != nil {
+				fmt.Println("... failed to install mod ...")
+			}
+			fmt.Println("... successfully installed mod! ...")
 		},
 	}
 	cmd.Flags().StringVarP(&namespace, namespaceFlag, "n", "", "The namespace, AKA author, of the mod package (required).")

@@ -28,12 +28,13 @@ func CreateModsTable() {
 	modTableSQL := `CREATE TABLE IF NOT EXISTS mods (
 		"id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
 		"name" TEXT NOT NULL,
+		"namespace" TEXT NOT NULL,
 		"filePath" TEXT NOT NULL,
 		"version" TEXT NOT NULL,
 		"websiteUrl" TEXT,
 		"description" TEXT
 	  );`
-	createTable("mods", modTableSQL)
+	createTable(modTableSQL)
 }
 
 // func CreateModDependenciesTable() {
@@ -48,7 +49,7 @@ func CreateModsTable() {
 // 	createTable("mod_dependencies", modTableSQL)
 // }
 
-func createTable(name, query string) {
+func createTable(query string) {
 	statement, err := db.Prepare(query)
 	if err != nil {
 		log.Fatal(err.Error())
