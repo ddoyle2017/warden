@@ -27,7 +27,7 @@ func NewRemoveCommand(r repo.Mods) *cobra.Command {
 					if err != nil {
 						fmt.Println("... unable to remove mod ...")
 					}
-					fmt.Println("... mod successfully removed...")
+					fmt.Println("... mod successfully removed! ...")
 					return
 				} else if scanner.Text() == "n" {
 					fmt.Println("... aborting ...")
@@ -43,5 +43,35 @@ func NewRemoveCommand(r repo.Mods) *cobra.Command {
 	cmd.MarkFlagRequired(modPackageFlag)
 	cmd.MarkFlagsRequiredTogether(namespaceFlag, modPackageFlag)
 
+	// Add sub-commands
+	cmd.AddCommand(newRemoveAllCommand(r))
+	return cmd
+}
+
+func newRemoveAllCommand(r repo.Mods) *cobra.Command {
+	scanner := bufio.NewScanner(os.Stdin)
+
+	cmd := &cobra.Command{
+		Use:   "all",
+		Short: "Removes all mods.",
+		Long:  "Deletes all mods from your mod folder, and removes records of them from the local data storage.",
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Println("are you sure you want to remove ALL mods? [YES I AM/no]")
+
+			for scanner.Scan() {
+				if scanner.Text() == "YES I AM" {
+					err := r.DeleteAllMods()
+					if err != nil {
+						fmt.Println("... unable to remove mods ...")
+					}
+					fmt.Println("... all mods were removed successfully! ...")
+					return
+				} else if scanner.Text() == "no" {
+					fmt.Println("... aborting ...")
+					return
+				}
+			}
+		},
+	}
 	return cmd
 }

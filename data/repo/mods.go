@@ -10,6 +10,7 @@ type Mods interface {
 	ListMods() []mod.Mod
 	InsertMod(m mod.Mod) error
 	DeleteMod(modName, namespace string) error
+	DeleteAllMods() error
 }
 
 type repo struct {
@@ -79,6 +80,24 @@ func (r *repo) DeleteMod(modName, namespace string) error {
 	}
 
 	_, err = statement.Exec(modName, namespace)
+	if err != nil {
+		log.Fatalln(err)
+		return err
+	}
+	return nil
+}
+
+func (r *repo) DeleteAllMods() error {
+	// Whole table delete instead of dropping the table because its not guaranteed the user will recreate the table
+	// on their next command
+	sql := `DELETE FROM mods WHERE id IS NOT NULL`
+
+	statement, err := r.db.Prepare(sql)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	_, err = statement.Exec()
 	if err != nil {
 		log.Fatalln(err)
 		return err
