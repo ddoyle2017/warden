@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"warden/api"
 	"warden/api/thunderstore"
+	"warden/data/file"
 	"warden/data/repo"
 	"warden/domain/mod"
 
@@ -16,7 +17,7 @@ const (
 	modPackageFlag = "mod"
 )
 
-func NewAddCommand(r repo.Mods, ts thunderstore.Thunderstore) *cobra.Command {
+func NewAddCommand(r repo.Mods, ts thunderstore.Thunderstore, manager file.Manager) *cobra.Command {
 	var namespace string
 	var modPkg string
 
@@ -42,7 +43,14 @@ func NewAddCommand(r repo.Mods, ts thunderstore.Thunderstore) *cobra.Command {
 			}
 			err = r.InsertMod(m)
 			if err != nil {
+				fmt.Println("... failed to save mod ...")
+			}
+			err = manager.InstallMod(pkg.Latest.DownloadURL, pkg.Latest.FullName)
+			if err != nil {
 				fmt.Println("... failed to install mod ...")
+				r.DeleteMod(m.Name, m.Namespace)
+				fmt.Printf("%v+", err)
+				return
 			}
 			fmt.Println("... successfully installed mod! ...")
 		},

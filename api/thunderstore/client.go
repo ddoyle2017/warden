@@ -42,6 +42,7 @@ func (ts *thunderstore) GetPackage(namespace, name string) (Package, error) {
 	if err != nil {
 		return Package{}, api.ErrHTTPClient
 	}
+	defer response.Body.Close()
 
 	data, err := io.ReadAll(response.Body)
 	if err != nil {

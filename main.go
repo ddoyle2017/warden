@@ -6,6 +6,7 @@ import (
 	"warden/api/thunderstore"
 	"warden/command"
 	"warden/data"
+	"warden/data/file"
 	"warden/data/repo"
 )
 
@@ -23,10 +24,11 @@ func main() {
 	// Initialize and injection dependencies into commands
 	modsRepo := repo.NewModsRepo(db)
 	ts := thunderstore.New(&http.Client{})
+	manager := file.NewManager("/Users/danieldoyle/Desktop/Dev/warden/test/file", &http.Client{})
 
 	listCmd := command.NewListCommand(modsRepo)
-	addCmd := command.NewAddCommand(modsRepo, ts)
-	removeCmd := command.NewRemoveCommand(modsRepo)
+	addCmd := command.NewAddCommand(modsRepo, ts, manager)
+	removeCmd := command.NewRemoveCommand(modsRepo, manager)
 
 	command.Execute(listCmd, addCmd, removeCmd)
 }

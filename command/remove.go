@@ -4,12 +4,13 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"warden/data/file"
 	"warden/data/repo"
 
 	"github.com/spf13/cobra"
 )
 
-func NewRemoveCommand(r repo.Mods) *cobra.Command {
+func NewRemoveCommand(r repo.Mods, fm file.Manager) *cobra.Command {
 	var namespace string
 	var modPkg string
 	scanner := bufio.NewScanner(os.Stdin)
@@ -44,11 +45,11 @@ func NewRemoveCommand(r repo.Mods) *cobra.Command {
 	cmd.MarkFlagsRequiredTogether(namespaceFlag, modPackageFlag)
 
 	// Add sub-commands
-	cmd.AddCommand(newRemoveAllCommand(r))
+	cmd.AddCommand(newRemoveAllCommand(r, fm))
 	return cmd
 }
 
-func newRemoveAllCommand(r repo.Mods) *cobra.Command {
+func newRemoveAllCommand(r repo.Mods, fm file.Manager) *cobra.Command {
 	scanner := bufio.NewScanner(os.Stdin)
 
 	cmd := &cobra.Command{
@@ -60,8 +61,10 @@ func newRemoveAllCommand(r repo.Mods) *cobra.Command {
 
 			for scanner.Scan() {
 				if scanner.Text() == "YES I AM" {
-					err := r.DeleteAllMods()
-					if err != nil {
+					errRepo := r.DeleteAllMods()
+					errFile := fm.RemoveAllMods()
+
+					if errRepo != nil || errFile != nil {
 						fmt.Println("... unable to remove mods ...")
 					}
 					fmt.Println("... all mods were removed successfully! ...")
