@@ -11,19 +11,33 @@ import (
 )
 
 var (
-	ErrCreateFileFailed      = errors.New("unable to create file")
-	ErrFileWriteFailed       = errors.New("unable to write data to file")
-	ErrZipReadFailed         = errors.New("unable to read zip archive")
-	ErrZipDeleteFailed       = errors.New("unable to delete zip archive")
-	ErrFileOpenFailed        = errors.New("unable to open file")
+	ErrFileOpenFailed   = errors.New("unable to open file")
+	ErrFileCreateFailed = errors.New("unable to create file")
+	ErrFileWriteFailed  = errors.New("unable to write data to file")
+
+	ErrZipReadFailed   = errors.New("unable to read zip archive")
+	ErrZipDeleteFailed = errors.New("unable to delete zip archive")
+
 	ErrModDeleteFailed       = errors.New("unable to delete mod directory")
 	ErrDeleteAllModsFailed   = errors.New("unable to delete all mods")
 	ErrCreateDirectoryFailed = errors.New("unable to create new directory")
 )
 
+// Manager provides an interface for all file-related mod operations, e.g. installing and deleting mods.
 type Manager interface {
+	// InstallMod() downloads the targetted mod, unzips it, and adds it to the mod
+	// folder.
+	//
+	// URL is the download link for a specific release.
+	// FullName is the namespace + mod name + version string that Thunderstore provides.
 	InstallMod(url, fullName string) error
+
+	// RemoveMod() deletes the folder and contents for a mod. `FullName` is a
+	// value provided by Thunderstore that contains the name, namespace, and version of a
+	// specific mod release.
 	RemoveMod(fullName string) error
+
+	// RemoveAllMods deletes the parent mod folder and all of its contents, then recreates an empty one.
 	RemoveAllMods() error
 }
 
@@ -39,11 +53,6 @@ func NewManager(mf string, c *http.Client) Manager {
 	}
 }
 
-// InstallMod downloads the targetted mod, unzips it, and adds it to the mod
-// folder.
-//
-// URL is the download link for a specific release.
-// FullName is the namespace + mod name + version string that Thunderstore provides.
 func (m *manager) InstallMod(url, fullName string) error {
 	// Get the data
 	resp, err := m.client.Get(url)
@@ -89,6 +98,8 @@ func (m *manager) RemoveAllMods() error {
 	return nil
 }
 
+// unzip() is a helper function that takes a path to a zip folder (source) and extracts all of its
+// contents into a destination folder.
 func unzip(source, destination string) error {
 	// Create the destination directory for all mod files
 	err := os.MkdirAll(destination, os.ModePerm)
@@ -136,7 +147,7 @@ func createFile(filePath string, fileSource io.Reader) error {
 	// Create the empty file
 	out, err := os.Create(filePath)
 	if err != nil {
-		return ErrCreateFileFailed
+		return ErrFileCreateFailed
 	}
 	defer out.Close()
 
