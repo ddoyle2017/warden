@@ -16,8 +16,8 @@ func (hc *HTTPClient) Get(url string) (*http.Response, error) {
 }
 
 // ResponseBodyToReader() is a helper function for serializing a struct into JSON, then into
-// an io.ReadCloser. This is helpful for mocking HTTP responses with the HTTPClient mock. io.ReadCloser
-// is how Go's HTTP library represents response body data from HTTP responses.
+// an io.ReadCloser. This is helpful for mocking HTTP responses with the HTTPClient mock because
+// io.ReadCloser is how Go's HTTP library represents response body data from HTTP responses.
 func ResponseBodyToReader(body any) (io.ReadCloser, error) {
 	json, err := json.Marshal(body)
 	if err != nil {
