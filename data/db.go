@@ -9,6 +9,8 @@ import (
 
 var db *sql.DB
 
+// Database is an interface for basic SQL driver functions that Warden needs. Its fulfilled by both the
+// SQLite database driver and mock.Database
 type Database interface {
 	Query(query string, args ...any) (*sql.Rows, error)
 	Prepare(query string) (*sql.Stmt, error)
@@ -17,6 +19,7 @@ type Database interface {
 func OpenDatabase() (Database, error) {
 	var err error
 
+	// probably need to inject this
 	db, err = sql.Open("sqlite3", "./sqlite-database.db")
 	if err != nil {
 		return nil, err

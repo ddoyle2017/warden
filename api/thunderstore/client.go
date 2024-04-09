@@ -26,10 +26,10 @@ type Thunderstore interface {
 }
 
 type thunderstore struct {
-	client *http.Client
+	client api.HTTPClient
 }
 
-func New(c *http.Client) Thunderstore {
+func New(c api.HTTPClient) Thunderstore {
 	return &thunderstore{
 		client: c,
 	}

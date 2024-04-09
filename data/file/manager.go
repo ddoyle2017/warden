@@ -4,7 +4,6 @@ import (
 	"archive/zip"
 	"errors"
 	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 	"warden/api"
@@ -42,11 +41,11 @@ type Manager interface {
 }
 
 type manager struct {
-	client    *http.Client
+	client    api.HTTPClient
 	modFolder string
 }
 
-func NewManager(mf string, c *http.Client) Manager {
+func NewManager(mf string, c api.HTTPClient) Manager {
 	return &manager{
 		modFolder: mf,
 		client:    c,
