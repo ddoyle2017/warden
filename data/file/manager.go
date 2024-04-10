@@ -1,25 +1,16 @@
 package file
 
 import (
-	"archive/zip"
 	"errors"
-	"io"
 	"os"
 	"path/filepath"
 	"warden/api"
 )
 
 var (
-	ErrFileOpenFailed   = errors.New("unable to open file")
-	ErrFileCreateFailed = errors.New("unable to create file")
-	ErrFileWriteFailed  = errors.New("unable to write data to file")
-
-	ErrZipReadFailed   = errors.New("unable to read zip archive")
-	ErrZipDeleteFailed = errors.New("unable to delete zip archive")
-
-	ErrModDeleteFailed       = errors.New("unable to delete mod directory")
-	ErrDeleteAllModsFailed   = errors.New("unable to delete all mods")
-	ErrCreateDirectoryFailed = errors.New("unable to create new directory")
+	ErrZipDeleteFailed     = errors.New("unable to delete zip archive")
+	ErrModDeleteFailed     = errors.New("unable to delete mod directory")
+	ErrDeleteAllModsFailed = errors.New("unable to delete all mods")
 )
 
 // Manager provides an interface for all file-related mod operations, e.g. installing and deleting mods.
@@ -104,62 +95,6 @@ func (m *manager) RemoveAllMods() error {
 	err = os.MkdirAll(m.modFolder, os.ModePerm)
 	if err != nil {
 		return ErrCreateDirectoryFailed
-	}
-	return nil
-}
-
-// Unzip() is a helper function that takes a path to a zip folder (source) and extracts all of its
-// contents into a destination folder.
-func Unzip(source, destination string) error {
-	// Create the destination directory for all mod files
-	err := os.MkdirAll(destination, os.ModePerm)
-	if err != nil {
-		return ErrCreateDirectoryFailed
-	}
-
-	// Open zip archive for reading
-	archive, err := zip.OpenReader(source)
-	if err != nil {
-		return ErrZipReadFailed
-	}
-	defer archive.Close()
-
-	// Loop through each file inside of the zip
-	for _, f := range archive.File {
-		filePath := filepath.Join(destination, f.Name)
-
-		// Check if the file is a directory and create one if it is
-		if f.FileInfo().IsDir() {
-			if err := os.MkdirAll(filePath, os.ModePerm); err != nil {
-				return ErrCreateDirectoryFailed
-			}
-			continue
-		}
-
-		// Open the file in the zip and copy its contents to the destination file
-		srcFile, err := f.Open()
-		if err != nil {
-			return ErrFileOpenFailed
-		}
-		defer srcFile.Close()
-
-		createFile(filePath, srcFile)
-	}
-	return nil
-}
-
-func createFile(filePath string, fileSource io.Reader) error {
-	// Create the empty file
-	out, err := os.Create(filePath)
-	if err != nil {
-		return ErrFileCreateFailed
-	}
-	defer out.Close()
-
-	// Write the body to file
-	_, err = io.Copy(out, fileSource)
-	if err != nil {
-		return ErrFileWriteFailed
 	}
 	return nil
 }
