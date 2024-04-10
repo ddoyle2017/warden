@@ -68,8 +68,19 @@ func (m *manager) InstallMod(url, fullName string) error {
 		return err
 	}
 
+	// Extract zip files into a new folder for the mod
 	destination := filepath.Join(m.modFolder, fullName)
-	return unzip(zipPath, destination)
+	err = Unzip(zipPath, destination)
+	if err != nil {
+		return err
+	}
+
+	// Remove zip file after finishing extraction
+	err = os.Remove(zipPath)
+	if err != nil {
+		return ErrZipDeleteFailed
+	}
+	return nil
 }
 
 func (m *manager) RemoveMod(fullName string) error {
@@ -97,9 +108,9 @@ func (m *manager) RemoveAllMods() error {
 	return nil
 }
 
-// unzip() is a helper function that takes a path to a zip folder (source) and extracts all of its
+// Unzip() is a helper function that takes a path to a zip folder (source) and extracts all of its
 // contents into a destination folder.
-func unzip(source, destination string) error {
+func Unzip(source, destination string) error {
 	// Create the destination directory for all mod files
 	err := os.MkdirAll(destination, os.ModePerm)
 	if err != nil {
@@ -120,7 +131,7 @@ func unzip(source, destination string) error {
 		// Check if the file is a directory and create one if it is
 		if f.FileInfo().IsDir() {
 			if err := os.MkdirAll(filePath, os.ModePerm); err != nil {
-				panic(err)
+				return ErrCreateDirectoryFailed
 			}
 			continue
 		}
@@ -133,11 +144,6 @@ func unzip(source, destination string) error {
 		defer srcFile.Close()
 
 		createFile(filePath, srcFile)
-	}
-	// Remove zip file after finishing extraction
-	err = os.Remove(source)
-	if err != nil {
-		return ErrZipDeleteFailed
 	}
 	return nil
 }
