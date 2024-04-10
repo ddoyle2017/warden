@@ -24,7 +24,7 @@ func main() {
 	// Initialize and injection dependencies into commands
 	modsRepo := repo.NewModsRepo(db)
 	ts := thunderstore.New(&http.Client{})
-	manager := file.NewManager("/Users/danieldoyle/Desktop/Dev/warden/test/file", &http.Client{})
+	manager := file.NewManager("./test/file", &http.Client{})
 
 	listCmd := command.NewListCommand(modsRepo)
 	addCmd := command.NewAddCommand(modsRepo, ts, manager)
