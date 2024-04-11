@@ -13,7 +13,11 @@ func NewListCommand(r repo.Mods) *cobra.Command {
 		Use:   "list",
 		Short: "List all currently installed mods and their versions",
 		Run: func(cmd *cobra.Command, args []string) {
-			prettyPrint(r.ListMods())
+			mods, err := r.ListMods()
+			if err != nil {
+				fmt.Println("... unable to retrieve list of mods ...")
+			}
+			prettyPrint(mods)
 		},
 	}
 	return cmd

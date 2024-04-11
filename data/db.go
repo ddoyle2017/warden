@@ -7,8 +7,6 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-var db *sql.DB
-
 // Database is an interface for basic SQL driver functions that Warden needs. Its fulfilled by both the
 // SQLite database driver and mock.Database
 type Database interface {
@@ -16,18 +14,17 @@ type Database interface {
 	Prepare(query string) (*sql.Stmt, error)
 }
 
-func OpenDatabase() (Database, error) {
+func OpenDatabase(dbFile string) (Database, error) {
 	var err error
 
-	// probably need to inject this
-	db, err = sql.Open("sqlite3", "./sqlite-database.db")
+	db, err := sql.Open("sqlite3", dbFile)
 	if err != nil {
 		return nil, err
 	}
 	return db, db.Ping()
 }
 
-func CreateModsTable() {
+func CreateModsTable(db Database) {
 	modTableSQL := `CREATE TABLE IF NOT EXISTS mods (
 		"id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
 		"name" TEXT NOT NULL,
@@ -37,22 +34,10 @@ func CreateModsTable() {
 		"websiteUrl" TEXT,
 		"description" TEXT
 	  );`
-	createTable(modTableSQL)
+	createTable(db, modTableSQL)
 }
 
-// func CreateModDependenciesTable() {
-// 	modTableSQL := `CREATE TABLE IF NOT EXISTS mod_dependencies (
-// 		"id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-// 		"name" TEXT NOT NULL,
-// 		"filePath" TEXT NOT NULL,
-// 		"version" TEXT NOT NULL,
-// 		"websiteUrl" TEXT,
-// 		"description" TEXT,
-// 	  );`
-// 	createTable("mod_dependencies", modTableSQL)
-// }
-
-func createTable(query string) {
+func createTable(db Database, query string) {
 	statement, err := db.Prepare(query)
 	if err != nil {
 		log.Fatal(err.Error())

@@ -15,11 +15,11 @@ func main() {
 	// Set up API clients
 
 	// Open database and initialize tables if they don't already exist
-	db, err := data.OpenDatabase()
+	db, err := data.OpenDatabase("./sqlite-database.db")
 	if err != nil {
 		log.Fatal(err.Error())
 	}
-	data.CreateModsTable()
+	data.CreateModsTable(db)
 
 	// Initialize and injection dependencies into commands
 	modsRepo := repo.NewModsRepo(db)

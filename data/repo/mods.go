@@ -1,13 +1,21 @@
 package repo
 
 import (
+	"errors"
 	"log"
 	"warden/data"
 	"warden/domain/mod"
 )
 
+var (
+	ErrModInsertFailed    = errors.New("unable to insert new record into mods table")
+	ErrModDeleteFailed    = errors.New("unable to delete record from mods table")
+	ErrModDeleteAllFailed = errors.New("unable to remove all records from mods table")
+	ErrModListFailed      = errors.New("unable to return list of records from mods table")
+)
+
 type Mods interface {
-	ListMods() []mod.Mod
+	ListMods() ([]mod.Mod, error)
 	InsertMod(m mod.Mod) error
 	DeleteMod(modName, namespace string) error
 	DeleteAllMods() error
@@ -23,10 +31,10 @@ func NewModsRepo(db data.Database) Mods {
 	}
 }
 
-func (r *repo) ListMods() []mod.Mod {
+func (r *repo) ListMods() ([]mod.Mod, error) {
 	rows, err := r.db.Query(`SELECT * FROM mods`)
 	if err != nil {
-		log.Fatal(err.Error())
+		return []mod.Mod{}, err
 	}
 	defer rows.Close()
 
@@ -52,7 +60,7 @@ func (r *repo) ListMods() []mod.Mod {
 		}
 		mods = append(mods, m)
 	}
-	return mods
+	return mods, nil
 }
 
 func (r *repo) InsertMod(m mod.Mod) error {
