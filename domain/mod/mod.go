@@ -23,3 +23,7 @@ func (m1 *Mod) Equals(m2 *Mod) bool {
 		m1.Description == m2.Description &&
 		slices.Equal(m1.Dependencies, m2.Dependencies)
 }
+
+func (m *Mod) FullName() string {
+	return m.Namespace + "-" + m.Name + "-" + m.Version
+}

@@ -14,6 +14,7 @@ import (
 
 func NewUpdateCommand(r repo.Mods, ts thunderstore.Thunderstore, fm file.Manager) *cobra.Command {
 	var modPkg string
+	scanner := bufio.NewScanner(os.Stdin)
 
 	cmd := &cobra.Command{
 		Use:   "update",
@@ -33,7 +34,17 @@ func NewUpdateCommand(r repo.Mods, ts thunderstore.Thunderstore, fm file.Manager
 			}
 
 			if current.Version < pkg.Latest.VersionNumber {
-				updateMod(fm, current, pkg.Latest)
+				fmt.Printf("... found a new version (%s) of %s %s ...\n", pkg.Latest.VersionNumber, current.Namespace, current.Name)
+				fmt.Println("did you want to update this mod? [Y/n]")
+
+				for scanner.Scan() {
+					if scanner.Text() == "Y" {
+						updateMod(fm, current, pkg.Latest)
+					} else if scanner.Text() == "n" {
+						fmt.Println("... aborting ...")
+						return
+					}
+				}
 			} else {
 				fmt.Printf("... latest version of %s %s already installed (%s) ...\n", current.Namespace, current.Name, current.Version)
 			}
@@ -42,31 +53,64 @@ func NewUpdateCommand(r repo.Mods, ts thunderstore.Thunderstore, fm file.Manager
 
 	cmd.Flags().StringVarP(&modPkg, modPackageFlagLong, modPackageFlagShort, "", modPackageFlagDesc)
 	cmd.MarkFlagRequired(modPackageFlagLong)
+
+	// Add sub-commands
+	cmd.AddCommand(newUpdateAllCommand(r, ts, fm))
+	return cmd
+}
+
+func newUpdateAllCommand(r repo.Mods, ts thunderstore.Thunderstore, fm file.Manager) *cobra.Command {
+	scanner := bufio.NewScanner(os.Stdin)
+
+	cmd := &cobra.Command{
+		Use:   "all",
+		Short: "Updates all mods",
+		Long:  "Installs the latest version of every mod that is currently installed",
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Println("are you sure you wanted to update ALL mods? [Y/n]")
+
+			for scanner.Scan() {
+				if scanner.Text() == "Y" {
+					mods, err := r.ListMods()
+					if err != nil {
+						parseRepoError(err)
+						return
+					}
+					for _, m := range mods {
+						pkg, err := ts.GetPackage(m.Namespace, m.Name)
+						if err != nil {
+							parseThunderstoreAPIError(err)
+							return
+						}
+
+						if m.Version < pkg.Latest.VersionNumber {
+							updateMod(fm, m, pkg.Latest)
+						} else {
+							fmt.Printf("... latest version of %s %s already installed (%s) ...\n", m.Namespace, m.Name, m.Version)
+						}
+					}
+					fmt.Println("... all mods successfully updated! ...")
+					return
+				} else if scanner.Text() == "no" {
+					fmt.Println("... aborting ...")
+					return
+				}
+			}
+		},
+	}
 	return cmd
 }
 
 func updateMod(fm file.Manager, current mod.Mod, latest thunderstore.Release) {
-	scanner := bufio.NewScanner(os.Stdin)
-
-	fmt.Printf("... found a new version (%s) of %s %s ...\n", latest.VersionNumber, current.Namespace, current.Name)
-	fmt.Println("did you want to update this mod? [Y/n]")
-
-	for scanner.Scan() {
-		if scanner.Text() == "Y" {
-			fullname := current.Namespace + "-" + current.Name + "-" + current.Version
-			err := fm.RemoveMod(fullname)
-			if err != nil {
-				fmt.Println("... unable to remove current version ...")
-				return
-			}
-			err = fm.InstallMod(latest.DownloadURL, latest.FullName)
-			if err != nil {
-				fmt.Println("... unable to install new version...")
-			}
-			fmt.Println("... mod successfully updated! ...")
-		} else if scanner.Text() == "n" {
-			fmt.Println("... aborting ...")
-			return
-		}
+	err := fm.RemoveMod(current.FullName())
+	if err != nil {
+		fmt.Println("... unable to remove current version ...")
+		return
 	}
+
+	err = fm.InstallMod(latest.DownloadURL, latest.FullName)
+	if err != nil {
+		fmt.Println("... unable to install new version...")
+	}
+	fmt.Println("... mod successfully updated! ...")
 }

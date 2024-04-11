@@ -23,5 +23,7 @@ func parseRepoError(err error) {
 		fmt.Println("... that mod is currently not installed ...")
 	} else if errors.Is(err, repo.ErrModFetchFailed) {
 		fmt.Println("... unable to find mod ...")
+	} else if errors.Is(err, repo.ErrModListFailed) {
+		fmt.Println("... unable to get list of mods ...")
 	}
 }
