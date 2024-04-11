@@ -29,7 +29,7 @@ func main() {
 	listCmd := command.NewListCommand(modsRepo)
 	addCmd := command.NewAddCommand(modsRepo, ts, manager)
 	removeCmd := command.NewRemoveCommand(modsRepo, manager)
-	updateCmd := command.NewUpdateCommand()
+	updateCmd := command.NewUpdateCommand(modsRepo, ts, manager)
 
 	command.Execute(listCmd, addCmd, removeCmd, updateCmd)
 }

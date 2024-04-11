@@ -1,0 +1,9 @@
+{
+  "name": "Sleepover",
+  "version_number": "1.1.2",
+  "website_url": "https://discord.gg/pdHgy6Bsng",
+  "description": "Customize all bed/sleep rules including ignoring restrictions, ownership, and allowing multiple sleepers at once. Fixed up by request, by Azumatt",
+  "dependencies": [
+    "denikson-BepInExPack_Valheim-5.4.2202"
+  ]
+}

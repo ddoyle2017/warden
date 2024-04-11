@@ -1,9 +1,7 @@
 package command
 
 import (
-	"errors"
 	"fmt"
-	"warden/api"
 	"warden/api/thunderstore"
 	"warden/data/file"
 	"warden/data/repo"
@@ -23,7 +21,7 @@ func NewAddCommand(r repo.Mods, ts thunderstore.Thunderstore, manager file.Manag
 		Run: func(cmd *cobra.Command, args []string) {
 			pkg, err := ts.GetPackage(namespace, modPkg)
 			if err != nil {
-				parseError(err)
+				parseThunderstoreAPIError(err)
 				return
 			}
 
@@ -57,14 +55,4 @@ func NewAddCommand(r repo.Mods, ts thunderstore.Thunderstore, manager file.Manag
 	cmd.MarkFlagRequired(modPackageFlagLong)
 	cmd.MarkFlagsRequiredTogether(namespaceFlagLong, modPackageFlagLong)
 	return cmd
-}
-
-func parseError(err error) {
-	if errors.Is(err, thunderstore.ErrPackageNotFound) {
-		fmt.Println("... unable to find mod package...")
-	} else if errors.Is(err, thunderstore.ErrThunderstoreAPI) {
-		fmt.Println("... Thunderstore.io is experiencing issues. Please try again later ...")
-	} else if errors.Is(err, api.ErrByteIO) || errors.Is(err, api.ErrHTTPClient) || errors.Is(err, api.ErrJSONParse) {
-		fmt.Println("... unexpected error processing Thunderstore.io request ...")
-	}
 }
