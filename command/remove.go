@@ -37,12 +37,12 @@ func NewRemoveCommand(r repo.Mods, fm file.Manager) *cobra.Command {
 			}
 		},
 	}
-	cmd.Flags().StringVarP(&namespace, namespaceFlag, "n", "", "The namespace, AKA author, of the mod package (required).")
-	cmd.Flags().StringVarP(&modPkg, modPackageFlag, "m", "", "The name of the mod, AKA package, to add (required).")
+	cmd.Flags().StringVarP(&namespace, namespaceFlagLong, namespaceFlagShort, "", namespaceFlagDesc)
+	cmd.Flags().StringVarP(&modPkg, modPackageFlagLong, modPackageFlagShort, "", modPackageFlagDesc)
 
-	cmd.MarkFlagRequired(namespaceFlag)
-	cmd.MarkFlagRequired(modPackageFlag)
-	cmd.MarkFlagsRequiredTogether(namespaceFlag, modPackageFlag)
+	cmd.MarkFlagRequired(namespaceFlagLong)
+	cmd.MarkFlagRequired(modPackageFlagLong)
+	cmd.MarkFlagsRequiredTogether(namespaceFlagLong, modPackageFlagLong)
 
 	// Add sub-commands
 	cmd.AddCommand(newRemoveAllCommand(r, fm))

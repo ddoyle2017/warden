@@ -12,11 +12,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const (
-	namespaceFlag  = "namespace"
-	modPackageFlag = "mod"
-)
-
 func NewAddCommand(r repo.Mods, ts thunderstore.Thunderstore, manager file.Manager) *cobra.Command {
 	var namespace string
 	var modPkg string
@@ -55,12 +50,12 @@ func NewAddCommand(r repo.Mods, ts thunderstore.Thunderstore, manager file.Manag
 			fmt.Println("... successfully installed mod! ...")
 		},
 	}
-	cmd.Flags().StringVarP(&namespace, namespaceFlag, "n", "", "The namespace, AKA author, of the mod package (required).")
-	cmd.Flags().StringVarP(&modPkg, modPackageFlag, "m", "", "The name of the mod, AKA package, to add (required).")
+	cmd.Flags().StringVarP(&namespace, namespaceFlagLong, namespaceFlagShort, "", namespaceFlagDesc)
+	cmd.Flags().StringVarP(&modPkg, modPackageFlagLong, modPackageFlagShort, "", modPackageFlagDesc)
 
-	cmd.MarkFlagRequired(namespaceFlag)
-	cmd.MarkFlagRequired(modPackageFlag)
-	cmd.MarkFlagsRequiredTogether(namespaceFlag, modPackageFlag)
+	cmd.MarkFlagRequired(namespaceFlagLong)
+	cmd.MarkFlagRequired(modPackageFlagLong)
+	cmd.MarkFlagsRequiredTogether(namespaceFlagLong, modPackageFlagLong)
 	return cmd
 }
 
