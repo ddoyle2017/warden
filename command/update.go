@@ -39,7 +39,7 @@ func NewUpdateCommand(r repo.Mods, ts thunderstore.Thunderstore, fm file.Manager
 
 				for scanner.Scan() {
 					if scanner.Text() == "Y" {
-						updateMod(fm, current, pkg.Latest)
+						updateMod(r, fm, current, pkg.Latest)
 					} else if scanner.Text() == "n" {
 						fmt.Println("... aborting ...")
 						return
@@ -86,7 +86,7 @@ func newUpdateAllCommand(r repo.Mods, ts thunderstore.Thunderstore, fm file.Mana
 						}
 
 						if m.Version < pkg.Latest.VersionNumber {
-							updateMod(fm, m, pkg.Latest)
+							updateMod(r, fm, m, pkg.Latest)
 						} else {
 							fmt.Printf("... latest version of %s %s already installed (%s) ...\n", m.Namespace, m.Name, m.Version)
 						}
@@ -103,17 +103,31 @@ func newUpdateAllCommand(r repo.Mods, ts thunderstore.Thunderstore, fm file.Mana
 	return cmd
 }
 
-func updateMod(fm file.Manager, current mod.Mod, latest thunderstore.Release) {
+func updateMod(r repo.Mods, fm file.Manager, current mod.Mod, latest thunderstore.Release) {
 	err := fm.RemoveMod(current.FullName())
 	if err != nil {
 		fmt.Println("... unable to remove current version ...")
 		return
 	}
 
-	_, err = fm.InstallMod(latest.DownloadURL, latest.FullName)
+	path, err := fm.InstallMod(latest.DownloadURL, latest.FullName)
 	if err != nil {
 		fmt.Println("... unable to install new version...")
 	}
-	// Update matching db record with new data
+
+	updated := mod.Mod{
+		ID:           current.ID,
+		Name:         latest.Name,
+		Namespace:    latest.Namespace,
+		FilePath:     path,
+		WebsiteURL:   latest.WebsiteURL,
+		Description:  latest.Description,
+		Dependencies: latest.Dependencies,
+	}
+
+	err = r.UpdateMod(updated)
+	if err != nil {
+		fmt.Println("... failed to save updated mod ...")
+	}
 	fmt.Println("... mod successfully updated! ...")
 }
