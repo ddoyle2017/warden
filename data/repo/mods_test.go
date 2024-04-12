@@ -1,6 +1,8 @@
 package repo_test
 
 import (
+	"database/sql"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -8,6 +10,7 @@ import (
 	"warden/data"
 	"warden/data/repo"
 	"warden/domain/mod"
+	"warden/test/mock"
 )
 
 const (
@@ -77,6 +80,195 @@ func TestListMods_Sad(t *testing.T) {
 	})
 }
 
+func TestInsertMod_Happy(t *testing.T) {
+	db := setUpTestDB(t)
+	data.CreateModsTable(db)
+
+	mr := repo.NewModsRepo(db)
+	expectedMods := setUpTestData(t, mr)
+	newMod := mod.Mod{
+		Name:      "X-ray hack",
+		Namespace: "Bob",
+		Version:   "1.0.0",
+	}
+	newMod.FilePath = "some/folder/" + newMod.FullName()
+
+	expectedModCount := len(expectedMods) + 1
+
+	err := mr.InsertMod(newMod)
+	if err != nil {
+		t.Errorf("expected a nil error, received: %+v", err)
+	}
+	modList, err := mr.ListMods()
+	if err != nil {
+		t.Errorf("expected a nil error, received: %+v", err)
+	}
+	if len(modList) != expectedModCount {
+		t.Errorf("expected %d mods, but found %d mods", expectedModCount, len(modList))
+	}
+	t.Cleanup(func() {
+		removeDBFile(t)
+	})
+}
+
+func TestInsertMod_Sad(t *testing.T) {
+	tests := map[string]struct {
+		db          data.Database
+		expectedErr error
+	}{
+		"returns error when unable to prepare an INSERT SQL statement": {
+			db: &mock.Database{
+				PrepareFunc: func(_ string) (*sql.Stmt, error) {
+					return nil, errors.New("invalid SQL")
+				},
+			},
+			expectedErr: repo.ErrInvalidStatement,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			mr := repo.NewModsRepo(test.db)
+
+			err := mr.InsertMod(mod.Mod{})
+			if !errors.Is(err, test.expectedErr) {
+				t.Errorf("expected error: %+v, received: %+v", test.expectedErr, err)
+			}
+		})
+	}
+
+	t.Cleanup(func() {
+		removeDBFile(t)
+	})
+}
+
+func TestUpdateMod_Happy(t *testing.T) {
+	db := setUpTestDB(t)
+	data.CreateModsTable(db)
+
+	mr := repo.NewModsRepo(db)
+	currentMods := setUpTestData(t, mr)
+	newVersion := "102.23.78"
+
+	tests := map[string]struct {
+		m        mod.Mod
+		expected []mod.Mod
+	}{
+		"if mod isn't found, update nothing and return successful": {
+			m: mod.Mod{
+				ID:      12738923789127,
+				Version: "0.0.2",
+			},
+			expected: currentMods,
+		},
+		"if mod is found, apply updates and return successful": {
+			m: mod.Mod{
+				ID:        1,
+				Namespace: "Azumatt",
+				Name:      "Sleepover",
+				Version:   newVersion,
+			},
+			expected: []mod.Mod{
+				{
+					ID:        1,
+					Namespace: "Azumatt",
+					Name:      "Sleepover",
+					Version:   newVersion,
+				},
+				{
+					ID:        2,
+					Namespace: "Azumatt",
+					Name:      "Where_You_At"},
+				{
+					ID:        3,
+					Namespace: "Azumatt",
+					Name:      "AzuClock",
+				},
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			err := mr.UpdateMod(test.m)
+			if err != nil {
+				t.Errorf("expected a nil error, received: %+v", err)
+			}
+
+			mods, err := mr.ListMods()
+			if err != nil {
+				t.Errorf("expected a nil error, received: %+v", err)
+			}
+
+			areModsEqual := slices.EqualFunc(mods, test.expected, func(m1, m2 mod.Mod) bool {
+				return m1.Equals(&m2)
+			})
+			if !areModsEqual {
+				t.Errorf("expected an updated mods list of: %+v, received: %+v", test.expected, mods)
+			}
+		})
+	}
+
+	t.Cleanup(func() {
+		removeDBFile(t)
+	})
+}
+
+func TestUpdateMod_Sad(t *testing.T) {
+	tests := map[string]struct {
+		db          data.Database
+		expectedErr error
+	}{
+		"returns error when unable to prepare an INSERT SQL statement": {
+			db: &mock.Database{
+				PrepareFunc: func(_ string) (*sql.Stmt, error) {
+					return nil, errors.New("invalid SQL")
+				},
+			},
+			expectedErr: repo.ErrInvalidStatement,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			mr := repo.NewModsRepo(test.db)
+
+			err := mr.UpdateMod(mod.Mod{})
+			if !errors.Is(err, test.expectedErr) {
+				t.Errorf("expected error: %+v, received: %+v", test.expectedErr, err)
+			}
+		})
+	}
+
+	t.Cleanup(func() {
+		removeDBFile(t)
+	})
+}
+
+func TestDeleteMod_Happy(t *testing.T) {
+	t.Cleanup(func() {
+		removeDBFile(t)
+	})
+}
+
+func TestDeleteMod_Sad(t *testing.T) {
+	t.Cleanup(func() {
+		removeDBFile(t)
+	})
+}
+
+func TestDeleteAllMods_Happy(t *testing.T) {
+	t.Cleanup(func() {
+		removeDBFile(t)
+	})
+}
+
+func TestDeleteAllMods_Sad(t *testing.T) {
+	t.Cleanup(func() {
+		removeDBFile(t)
+	})
+}
+
 func setUpTestDB(t *testing.T) data.Database {
 	path := filepath.Join(testDataFolder, testDBFile)
 
@@ -116,6 +308,10 @@ func setUpTestData(t *testing.T, mr repo.Mods) []mod.Mod {
 
 func removeDBFile(t *testing.T) {
 	err := os.Remove(filepath.Join(testDataFolder, testDBFile))
+	if errors.Is(err, os.ErrNotExist) {
+		// Test database was already removed. This is fine, so we ignore the error and continue.
+		return
+	}
 	if err != nil {
 		t.Errorf("unexpected error when cleaning up test database, received error: %+v", err)
 	}
