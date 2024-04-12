@@ -9,8 +9,11 @@ import (
 )
 
 var (
+	ErrInvalidStatement = errors.New("SQL statement is invalid or incorrectly formatted")
+
 	ErrModListFailed      = errors.New("unable to return list of records from mods table")
 	ErrModInsertFailed    = errors.New("unable to insert new record into mods table")
+	ErrModUpdateFailed    = errors.New("unable to update record in mods table")
 	ErrModDeleteFailed    = errors.New("unable to delete record from mods table")
 	ErrModDeleteAllFailed = errors.New("unable to remove all records from mods table")
 
@@ -18,13 +21,14 @@ var (
 	ErrModFetchNoResults       = errors.New("fetch query returned no results for specified mod")
 	ErrModFetchMultipleResults = errors.New("fetch query reurned multiple results for specified mod")
 
-	ErrModMappingFailed = errors.New("unable to map mods records to mod struct slice")
+	ErrModMappingFailed = errors.New("unable to map mod record to mod struct")
 )
 
 type Mods interface {
 	ListMods() ([]mod.Mod, error)
 	GetMod(name string) (mod.Mod, error)
 	InsertMod(m mod.Mod) error
+	UpdateMod(m mod.Mod) error
 	DeleteMod(modName, namespace string) error
 	DeleteAllMods() error
 }
@@ -79,13 +83,29 @@ func (r *repo) InsertMod(m mod.Mod) error {
 
 	statement, err := r.db.Prepare(sql)
 	if err != nil {
-		log.Fatalln(err)
+		return ErrInvalidStatement
 	}
 
 	_, err = statement.Exec(m.Name, m.Namespace, m.FilePath, m.Version, m.WebsiteURL, m.Description)
 	if err != nil {
-		log.Fatalln(err)
-		return err
+		return ErrModInsertFailed
+	}
+	return nil
+}
+
+func (r *repo) UpdateMod(m mod.Mod) error {
+	sql := `UPDATE mods 
+			SET name = ?, namespace = ?, filePath = ?, version = ?, websiteUrl = ?, description = ?
+			WHERE id = ?`
+
+	statement, err := r.db.Prepare(sql)
+	if err != nil {
+		return ErrInvalidStatement
+	}
+
+	_, err = statement.Exec(m.Name, m.Namespace, m.FilePath, m.Version, m.WebsiteURL, m.Description, m.ID)
+	if err != nil {
+		return ErrModUpdateFailed
 	}
 	return nil
 }
