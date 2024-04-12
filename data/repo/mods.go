@@ -3,7 +3,6 @@ package repo
 import (
 	"database/sql"
 	"errors"
-	"log"
 	"warden/data"
 	"warden/domain/mod"
 )
@@ -115,13 +114,12 @@ func (r *repo) DeleteMod(modName, namespace string) error {
 
 	statement, err := r.db.Prepare(sql)
 	if err != nil {
-		log.Fatalln(err)
+		return ErrInvalidStatement
 	}
 
 	_, err = statement.Exec(modName, namespace)
 	if err != nil {
-		log.Fatalln(err)
-		return err
+		return ErrModDeleteFailed
 	}
 	return nil
 }
@@ -133,13 +131,12 @@ func (r *repo) DeleteAllMods() error {
 
 	statement, err := r.db.Prepare(sql)
 	if err != nil {
-		log.Fatalln(err)
+		return ErrInvalidStatement
 	}
 
 	_, err = statement.Exec()
 	if err != nil {
-		log.Fatalln(err)
-		return err
+		return ErrModDeleteAllFailed
 	}
 	return nil
 }
