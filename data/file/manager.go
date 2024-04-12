@@ -20,7 +20,7 @@ type Manager interface {
 	//
 	// URL is the download link for a specific release.
 	// FullName is the namespace + mod name + version string that Thunderstore provides.
-	InstallMod(url, fullName string) error
+	InstallMod(url, fullName string) (string, error)
 
 	// RemoveMod() deletes the folder and contents for a mod. `FullName` is a
 	// value provided by Thunderstore that contains the name, namespace, and version of a
@@ -43,11 +43,11 @@ func NewManager(mf string, c api.HTTPClient) Manager {
 	}
 }
 
-func (m *manager) InstallMod(url, fullName string) error {
+func (m *manager) InstallMod(url, fullName string) (string, error) {
 	// Get the data
 	resp, err := m.client.Get(url)
 	if err != nil {
-		return api.ErrHTTPClient
+		return "", api.ErrHTTPClient
 	}
 	defer resp.Body.Close()
 
@@ -56,22 +56,22 @@ func (m *manager) InstallMod(url, fullName string) error {
 
 	err = createFile(zipPath, resp.Body)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	// Extract zip files into a new folder for the mod
 	destination := filepath.Join(m.modFolder, fullName)
 	err = Unzip(zipPath, destination)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	// Remove zip file after finishing extraction
 	err = os.Remove(zipPath)
 	if err != nil {
-		return ErrZipDeleteFailed
+		return "", ErrZipDeleteFailed
 	}
-	return nil
+	return destination, nil
 }
 
 func (m *manager) RemoveMod(fullName string) error {

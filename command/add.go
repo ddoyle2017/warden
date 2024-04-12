@@ -25,10 +25,18 @@ func NewAddCommand(r repo.Mods, ts thunderstore.Thunderstore, manager file.Manag
 				return
 			}
 
+			path, err := manager.InstallMod(pkg.Latest.DownloadURL, pkg.Latest.FullName)
+			if err != nil {
+				fmt.Println("... failed to install mod ...")
+				r.DeleteMod(pkg.Name, pkg.Namespace)
+				fmt.Printf("%v+", err)
+				return
+			}
+
 			m := mod.Mod{
 				Name:         pkg.Name,
 				Namespace:    pkg.Namespace,
-				FilePath:     "/your/file",
+				FilePath:     path,
 				Version:      pkg.Latest.VersionNumber,
 				WebsiteURL:   pkg.Latest.WebsiteURL,
 				Description:  pkg.Latest.Description,
@@ -38,13 +46,7 @@ func NewAddCommand(r repo.Mods, ts thunderstore.Thunderstore, manager file.Manag
 			if err != nil {
 				fmt.Println("... failed to save mod ...")
 			}
-			err = manager.InstallMod(pkg.Latest.DownloadURL, pkg.Latest.FullName)
-			if err != nil {
-				fmt.Println("... failed to install mod ...")
-				r.DeleteMod(m.Name, m.Namespace)
-				fmt.Printf("%v+", err)
-				return
-			}
+
 			fmt.Println("... successfully installed mod! ...")
 		},
 	}

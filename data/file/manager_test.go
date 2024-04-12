@@ -21,6 +21,7 @@ const (
 )
 
 func TestInstallMod_Happy(t *testing.T) {
+	installLocation := filepath.Join(testFolder, testMod)
 	archive, err := os.Open(filepath.Join(dataFolder, testMod+".zip"))
 	if err != nil {
 		t.Errorf("unexpected error reading test zip file, received err: %+v", err)
@@ -36,9 +37,12 @@ func TestInstallMod_Happy(t *testing.T) {
 	}
 	manager := file.NewManager(testFolder, &client)
 
-	err = manager.InstallMod(testURL, testMod)
+	path, err := manager.InstallMod(testURL, testMod)
 	if err != nil {
 		t.Errorf("expected a nil error, received: %+v", err)
+	}
+	if path != installLocation {
+		t.Errorf("expected mod to be installed at %s, but it was found at: %s", installLocation, path)
 	}
 
 	t.Cleanup(func() {
@@ -79,9 +83,12 @@ func TestInstallMod_Sad(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			manager := file.NewManager(testFolder, test.client)
 
-			err := manager.InstallMod(testURL, test.fullName)
+			path, err := manager.InstallMod(testURL, test.fullName)
 			if !errors.Is(err, test.expectedErr) {
 				t.Errorf("expected error: %+v, received error: %+v", test.expectedErr, err)
+			}
+			if path != "" {
+				t.Errorf("expected an empty mod folder path, received: %s", path)
 			}
 
 			t.Cleanup(func() {

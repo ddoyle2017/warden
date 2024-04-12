@@ -71,11 +71,13 @@ func newUpdateAllCommand(r repo.Mods, ts thunderstore.Thunderstore, fm file.Mana
 
 			for scanner.Scan() {
 				if scanner.Text() == "Y" {
+					// Get all installed mods
 					mods, err := r.ListMods()
 					if err != nil {
 						parseRepoError(err)
 						return
 					}
+					// For each one, check if there's an update and install it if there is
 					for _, m := range mods {
 						pkg, err := ts.GetPackage(m.Namespace, m.Name)
 						if err != nil {
@@ -108,9 +110,10 @@ func updateMod(fm file.Manager, current mod.Mod, latest thunderstore.Release) {
 		return
 	}
 
-	err = fm.InstallMod(latest.DownloadURL, latest.FullName)
+	_, err = fm.InstallMod(latest.DownloadURL, latest.FullName)
 	if err != nil {
 		fmt.Println("... unable to install new version...")
 	}
+	// Update matching db record with new data
 	fmt.Println("... mod successfully updated! ...")
 }
