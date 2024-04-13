@@ -4,11 +4,9 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"strings"
 	"warden/api/thunderstore"
 	"warden/data/file"
 	"warden/data/repo"
-	"warden/domain/mod"
 
 	"github.com/spf13/cobra"
 )
@@ -40,7 +38,7 @@ func NewUpdateCommand(r repo.Mods, ts thunderstore.Thunderstore, fm file.Manager
 
 				for scanner.Scan() {
 					if scanner.Text() == "Y" {
-						updateMod(r, fm, current, pkg.Latest)
+						updateMod(r, fm, current.FullName(), pkg.Latest)
 					} else if scanner.Text() == "n" {
 						fmt.Println("... aborting ...")
 						return
@@ -88,7 +86,7 @@ func newUpdateAllCommand(r repo.Mods, ts thunderstore.Thunderstore, fm file.Mana
 
 						if m.Version < pkg.Latest.VersionNumber {
 							addDependencies(r, fm, ts, pkg.Latest.Dependencies)
-							updateMod(r, fm, m, pkg.Latest)
+							updateMod(r, fm, m.FullName(), pkg.Latest)
 						} else {
 							fmt.Printf("... latest version of %s %s already installed (%s) ...\n", m.Namespace, m.Name, m.Version)
 						}
@@ -103,57 +101,4 @@ func newUpdateAllCommand(r repo.Mods, ts thunderstore.Thunderstore, fm file.Mana
 		},
 	}
 	return cmd
-}
-
-func addDependencies(r repo.Mods, fm file.Manager, ts thunderstore.Thunderstore, dependencies []string) {
-	// If mod has dependencies, install them
-	if len(dependencies) != 0 {
-		fmt.Println("... installing mod dependencies ...")
-
-		for _, depName := range dependencies {
-			depDetails := strings.Split(depName, "-")
-
-			depPkg, err := ts.GetPackage(depDetails[0], depDetails[1])
-			if err != nil {
-				fmt.Println("... error fetching mod dependencies ...")
-				return
-			}
-
-			dep := mod.Mod{
-				Namespace: depDetails[0],
-				Name:      depDetails[1],
-				Version:   depDetails[2],
-			}
-			updateMod(r, fm, dep, depPkg.Latest)
-		}
-	}
-}
-
-func updateMod(r repo.Mods, fm file.Manager, current mod.Mod, latest thunderstore.Release) {
-	err := fm.RemoveMod(current.FullName())
-	if err != nil {
-		fmt.Println("... unable to remove current version ...")
-		return
-	}
-
-	path, err := fm.InstallMod(latest.DownloadURL, latest.FullName)
-	if err != nil {
-		fmt.Println("... unable to install new version...")
-	}
-
-	updated := mod.Mod{
-		ID:           current.ID,
-		Name:         latest.Name,
-		Namespace:    latest.Namespace,
-		FilePath:     path,
-		WebsiteURL:   latest.WebsiteURL,
-		Description:  latest.Description,
-		Dependencies: latest.Dependencies,
-	}
-
-	err = r.UpsertMod(updated)
-	if err != nil {
-		fmt.Println("... failed to save updated mod ...")
-	}
-	fmt.Println("... mod successfully updated! ...")
 }

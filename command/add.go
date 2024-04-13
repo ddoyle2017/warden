@@ -10,7 +10,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewAddCommand(r repo.Mods, ts thunderstore.Thunderstore, manager file.Manager) *cobra.Command {
+func NewAddCommand(r repo.Mods, ts thunderstore.Thunderstore, fm file.Manager) *cobra.Command {
 	var namespace string
 	var modPkg string
 
@@ -25,13 +25,14 @@ func NewAddCommand(r repo.Mods, ts thunderstore.Thunderstore, manager file.Manag
 				return
 			}
 
-			path, err := manager.InstallMod(pkg.Latest.DownloadURL, pkg.Latest.FullName)
+			path, err := fm.InstallMod(pkg.Latest.DownloadURL, pkg.Latest.FullName)
 			if err != nil {
 				fmt.Println("... failed to install mod ...")
 				r.DeleteMod(pkg.Name, pkg.Namespace)
 				fmt.Printf("%v+", err)
 				return
 			}
+			addDependencies(r, fm, ts, pkg.Latest.Dependencies)
 
 			m := mod.Mod{
 				Name:         pkg.Name,

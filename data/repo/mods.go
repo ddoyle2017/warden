@@ -116,6 +116,7 @@ func (r *repo) UpsertMod(m mod.Mod) error {
 	if errors.Is(err, sql.ErrNoRows) || current.Equals(&mod.Mod{}) {
 		return r.InsertMod(m)
 	} else if err == nil {
+		m.ID = current.ID
 		return r.UpdateMod(m)
 	} else {
 		return err
