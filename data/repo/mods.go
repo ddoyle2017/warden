@@ -28,6 +28,7 @@ type Mods interface {
 	GetMod(name string) (mod.Mod, error)
 	InsertMod(m mod.Mod) error
 	UpdateMod(m mod.Mod) error
+	UpsertMod(m mod.Mod) error
 	DeleteMod(modName, namespace string) error
 	DeleteAllMods() error
 }
@@ -107,6 +108,18 @@ func (r *repo) UpdateMod(m mod.Mod) error {
 		return ErrModUpdateFailed
 	}
 	return nil
+}
+
+func (r *repo) UpsertMod(m mod.Mod) error {
+	current, err := r.GetMod(m.Name)
+	// If mod doesn't exist, insert new. If it does exist, update it
+	if errors.Is(err, sql.ErrNoRows) || current.Equals(&mod.Mod{}) {
+		return r.InsertMod(m)
+	} else if err == nil {
+		return r.UpdateMod(m)
+	} else {
+		return err
+	}
 }
 
 func (r *repo) DeleteMod(modName, namespace string) error {

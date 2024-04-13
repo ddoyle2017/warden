@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"strings"
 	"warden/api/thunderstore"
 	"warden/data/file"
 	"warden/data/repo"
@@ -86,6 +87,7 @@ func newUpdateAllCommand(r repo.Mods, ts thunderstore.Thunderstore, fm file.Mana
 						}
 
 						if m.Version < pkg.Latest.VersionNumber {
+							addDependencies(r, fm, ts, pkg.Latest.Dependencies)
 							updateMod(r, fm, m, pkg.Latest)
 						} else {
 							fmt.Printf("... latest version of %s %s already installed (%s) ...\n", m.Namespace, m.Name, m.Version)
@@ -101,6 +103,30 @@ func newUpdateAllCommand(r repo.Mods, ts thunderstore.Thunderstore, fm file.Mana
 		},
 	}
 	return cmd
+}
+
+func addDependencies(r repo.Mods, fm file.Manager, ts thunderstore.Thunderstore, dependencies []string) {
+	// If mod has dependencies, install them
+	if len(dependencies) != 0 {
+		fmt.Println("... installing mod dependencies ...")
+
+		for _, depName := range dependencies {
+			depDetails := strings.Split(depName, "-")
+
+			depPkg, err := ts.GetPackage(depDetails[0], depDetails[1])
+			if err != nil {
+				fmt.Println("... error fetching mod dependencies ...")
+				return
+			}
+
+			dep := mod.Mod{
+				Namespace: depDetails[0],
+				Name:      depDetails[1],
+				Version:   depDetails[2],
+			}
+			updateMod(r, fm, dep, depPkg.Latest)
+		}
+	}
 }
 
 func updateMod(r repo.Mods, fm file.Manager, current mod.Mod, latest thunderstore.Release) {
@@ -125,7 +151,7 @@ func updateMod(r repo.Mods, fm file.Manager, current mod.Mod, latest thunderstor
 		Dependencies: latest.Dependencies,
 	}
 
-	err = r.UpdateMod(updated)
+	err = r.UpsertMod(updated)
 	if err != nil {
 		fmt.Println("... failed to save updated mod ...")
 	}

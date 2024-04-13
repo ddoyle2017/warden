@@ -78,7 +78,10 @@ func (m *manager) RemoveMod(fullName string) error {
 	modPath := filepath.Join(m.modFolder, fullName)
 
 	err := os.RemoveAll(modPath)
-	if err != nil {
+
+	// If error is thrown because the file does not exist, we ignore. For
+	// any other error, return that the delete failed.
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return ErrModDeleteFailed
 	}
 	return nil
