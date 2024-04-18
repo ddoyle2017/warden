@@ -1,15 +1,14 @@
 package command
 
 import (
+	"errors"
 	"fmt"
-	"warden/api/thunderstore"
-	"warden/data/file"
-	"warden/data/repo"
+	"warden/service"
 
 	"github.com/spf13/cobra"
 )
 
-func NewAddCommand(r repo.Mods, ts thunderstore.Thunderstore, fm file.Manager) *cobra.Command {
+func NewAddCommand(ms service.ModService) *cobra.Command {
 	var namespace string
 	var modPkg string
 
@@ -18,26 +17,12 @@ func NewAddCommand(r repo.Mods, ts thunderstore.Thunderstore, fm file.Manager) *
 		Short: "Adds the specified mod.",
 		Long:  "Searches Thunderstone for the specified mod, downloads it, then adds it to your local mod collection.",
 		Run: func(cmd *cobra.Command, args []string) {
-			pkg, err := ts.GetPackage(namespace, modPkg)
+			err := ms.AddMod(namespace, modPkg)
 			if err != nil {
-				parseThunderstoreAPIError(err)
-				return
+				parseAddError(err)
+			} else {
+				fmt.Println("... successfully installed mod! ...")
 			}
-			err = addMod(r, fm, pkg.Latest)
-			if err != nil {
-				fmt.Println("... failed to install mod ...")
-			}
-
-			dependencies := pkg.Latest.Dependencies
-			if len(dependencies) > 0 {
-				fmt.Printf("... mod has %d dependencies, installing them ...\n", len(dependencies))
-
-				err = addDependencies(r, fm, ts, pkg.Latest.Dependencies)
-				if err != nil {
-					fmt.Println("... failed to install dependencies...")
-				}
-			}
-			fmt.Println("... successfully installed mod! ...")
 		},
 	}
 	cmd.Flags().StringVarP(&namespace, namespaceFlagLong, namespaceFlagShort, "", namespaceFlagDesc)
@@ -47,4 +32,16 @@ func NewAddCommand(r repo.Mods, ts thunderstore.Thunderstore, fm file.Manager) *
 	cmd.MarkFlagRequired(modPackageFlagLong)
 	cmd.MarkFlagsRequiredTogether(namespaceFlagLong, modPackageFlagLong)
 	return cmd
+}
+
+func parseAddError(err error) {
+	if errors.Is(err, service.ErrModAlreadyInstalled) {
+		fmt.Println("... mod already installed ...")
+	} else if errors.Is(err, service.ErrModInstallFailed) {
+		fmt.Println("... unable to install mod ...")
+	} else if errors.Is(err, service.ErrModNotFound) {
+		fmt.Println("... unable to find mod on Thunderstore")
+	} else if errors.Is(err, service.ErrAddDependenciesFailed) {
+		fmt.Println("... unable to install mod's dependencies...")
+	}
 }

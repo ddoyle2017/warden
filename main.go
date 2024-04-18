@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"net/http"
+	"os"
 	"warden/api/thunderstore"
 	"warden/command"
 	"warden/data"
@@ -27,12 +28,12 @@ func main() {
 	ts := thunderstore.New(&http.Client{})
 	fm := file.NewManager("./test/file", &http.Client{})
 
-	modService := service.NewModService(r, fm, ts)
+	modService := service.NewModService(r, fm, ts, os.Stdin)
 
 	listCmd := command.NewListCommand(modService)
-	addCmd := command.NewAddCommand(r, ts, fm)
+	addCmd := command.NewAddCommand(modService)
 	removeCmd := command.NewRemoveCommand(r, fm)
-	updateCmd := command.NewUpdateCommand(r, ts, fm)
+	updateCmd := command.NewUpdateCommand(modService)
 
 	command.Execute(listCmd, addCmd, removeCmd, updateCmd)
 }
