@@ -59,5 +59,7 @@ func parseUpdateError(err error) {
 		fmt.Println("... could not find mod on Thunderstore, stopping update ...")
 	} else if errors.Is(err, service.ErrAddDependenciesFailed) {
 		fmt.Println("... unable to update mod's depedencies, stopping update ...")
+	} else if errors.Is(err, service.ErrMaxAttempts) {
+		fmt.Println("... unable to confim update, aborting ...")
 	}
 }

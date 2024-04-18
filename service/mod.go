@@ -29,6 +29,7 @@ var (
 	ErrModNotFound         = errors.New("mod not found")
 
 	ErrAddDependenciesFailed = errors.New("unable to install mod's dependencies")
+	ErrMaxAttempts           = errors.New("reached max confirmation attempts")
 )
 
 // ModService encapsulates all the business logic for managing mods. It coordinates both the mods
@@ -117,7 +118,8 @@ func (ms *modService) UpdateMod(name string) error {
 		fmt.Printf("... found a new version (%s) of %s %s ...\n", pkg.Latest.VersionNumber, current.Namespace, current.Name)
 		fmt.Printf("did you want to update this mod? %s\n", yesOrNo)
 
-		for ms.in.Scan() {
+		tries := 0
+		for ms.in.Scan() && tries < 2 {
 			if ms.in.Text() == yes {
 				err = ms.updateMod(current.FullName(), pkg.Latest)
 				if err != nil {
@@ -131,7 +133,12 @@ func (ms *modService) UpdateMod(name string) error {
 			} else if ms.in.Text() == no {
 				fmt.Println("... aborting ...")
 				return nil
+			} else {
+				tries++
 			}
+		}
+		if tries >= 2 {
+			return ErrMaxAttempts
 		}
 	} else {
 		fmt.Printf("... latest version of %s %s already installed (%s) ...\n", current.Namespace, current.Name, current.Version)
@@ -142,7 +149,8 @@ func (ms *modService) UpdateMod(name string) error {
 func (ms *modService) UpdateAllMods() error {
 	fmt.Printf("are you sure you wanted to update ALL mods? %s\n", yesOrNo)
 
-	for ms.in.Scan() {
+	tries := 0
+	for ms.in.Scan() && tries < 2 {
 		if ms.in.Text() == yes {
 			// Get all installed mods
 			mods, err := ms.r.ListMods()
@@ -174,7 +182,12 @@ func (ms *modService) UpdateAllMods() error {
 		} else if ms.in.Text() == no {
 			fmt.Println("... aborting ...")
 			return nil
+		} else {
+			tries++
 		}
+	}
+	if tries >= 2 {
+		return ErrMaxAttempts
 	}
 	return nil
 }
