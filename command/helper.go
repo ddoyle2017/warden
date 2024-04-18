@@ -1,7 +1,7 @@
 package command
 
 import (
-	"fmt"
+	"errors"
 	"strings"
 	"warden/api/thunderstore"
 	"warden/data/file"
@@ -9,48 +9,48 @@ import (
 	"warden/domain/mod"
 )
 
-func addDependencies(r repo.Mods, fm file.Manager, ts thunderstore.Thunderstore, dependencies []string) {
-	// If mod has dependencies, install them
-	if len(dependencies) != 0 {
-		fmt.Println("... installing mod dependencies ...")
+var (
+	ErrAddModFailed          = errors.New("unable to add and install mod")
+	ErrUpdateModFailed       = errors.New("unable to update existing mod")
+	ErrAddDependenciesFailed = errors.New("unable to install mod's dependencies")
+)
 
-		for _, dep := range dependencies {
-			details := strings.Split(dep, "-")
+func addDependencies(r repo.Mods, fm file.Manager, ts thunderstore.Thunderstore, dependencies []string) error {
+	for _, dep := range dependencies {
+		details := strings.Split(dep, "-")
 
-			namespace, name := details[0], details[1]
+		namespace, name := details[0], details[1]
 
-			_, err := ts.GetPackage(namespace, name)
-			if err != nil {
-				fmt.Println("... error fetching dependencies ...")
-				return
-			}
-			err = r.DeleteMod(name, namespace)
-			if err != nil {
-				fmt.Println("... error removing previous installation of dependency ...")
-				return
-			}
+		pkg, err := ts.GetPackage(namespace, name)
+		if err != nil {
+			return ErrAddDependenciesFailed
 		}
+
+		err = r.DeleteMod(name, namespace)
+		if err != nil {
+			return ErrAddDependenciesFailed
+		}
+
+		addMod(r, fm, pkg.Latest)
 	}
+	return nil
 }
 
-func updateMod(r repo.Mods, fm file.Manager, currentFullName string, latest thunderstore.Release) {
+func updateMod(r repo.Mods, fm file.Manager, currentFullName string, latest thunderstore.Release) error {
 	// Delete the previous installation before installing new version
 	err := fm.RemoveMod(currentFullName)
 	if err != nil {
-		fmt.Println("... unable to remove current version ...")
-		return
+		return ErrUpdateModFailed
 	}
-	addMod(r, fm, latest)
-	fmt.Println("... mod successfully updated! ...")
+	return addMod(r, fm, latest)
 }
 
-func addMod(r repo.Mods, fm file.Manager, release thunderstore.Release) {
+func addMod(r repo.Mods, fm file.Manager, release thunderstore.Release) error {
 	// Download and install the mod files
 	path, err := fm.InstallMod(release.DownloadURL, release.FullName)
 	if err != nil {
-		fmt.Println("... failed to install mod ...")
 		r.DeleteMod(release.Name, release.Namespace)
-		return
+		return ErrAddModFailed
 	}
 
 	m := mod.Mod{
@@ -64,6 +64,7 @@ func addMod(r repo.Mods, fm file.Manager, release thunderstore.Release) {
 	}
 	err = r.UpsertMod(m)
 	if err != nil {
-		fmt.Println("... failed to save mod ...")
+		return ErrAddModFailed
 	}
+	return nil
 }

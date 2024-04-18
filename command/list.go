@@ -2,18 +2,18 @@ package command
 
 import (
 	"fmt"
-	"warden/data/repo"
 	"warden/domain/mod"
+	"warden/service"
 
 	"github.com/spf13/cobra"
 )
 
-func NewListCommand(r repo.Mods) *cobra.Command {
+func NewListCommand(ms service.ModService) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List all currently installed mods and their versions",
 		Run: func(cmd *cobra.Command, args []string) {
-			mods, err := r.ListMods()
+			mods, err := ms.ListMods()
 			if err != nil {
 				fmt.Println("... unable to retrieve list of mods ...")
 			}

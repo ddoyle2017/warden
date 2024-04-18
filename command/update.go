@@ -38,7 +38,13 @@ func NewUpdateCommand(r repo.Mods, ts thunderstore.Thunderstore, fm file.Manager
 
 				for scanner.Scan() {
 					if scanner.Text() == "Y" {
-						updateMod(r, fm, current.FullName(), pkg.Latest)
+						err = updateMod(r, fm, current.FullName(), pkg.Latest)
+						if err != nil {
+							fmt.Printf("... unable to update mod to version %s...", pkg.Latest.VersionNumber)
+						} else {
+							fmt.Println("... mod successfully updated! ...")
+						}
+						return
 					} else if scanner.Text() == "n" {
 						fmt.Println("... aborting ...")
 						return

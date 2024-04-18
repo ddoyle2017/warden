@@ -2,6 +2,8 @@ package mod
 
 import "slices"
 
+// A Mod is a single plugin or library that modifies the behavior of a game. This
+// can be anything from gameplay changes, to new settings, to new content, and etc.
 type Mod struct {
 	ID           int
 	Name         string

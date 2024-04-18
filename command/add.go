@@ -5,7 +5,6 @@ import (
 	"warden/api/thunderstore"
 	"warden/data/file"
 	"warden/data/repo"
-	"warden/domain/mod"
 
 	"github.com/spf13/cobra"
 )
@@ -24,30 +23,20 @@ func NewAddCommand(r repo.Mods, ts thunderstore.Thunderstore, fm file.Manager) *
 				parseThunderstoreAPIError(err)
 				return
 			}
-
-			path, err := fm.InstallMod(pkg.Latest.DownloadURL, pkg.Latest.FullName)
+			err = addMod(r, fm, pkg.Latest)
 			if err != nil {
 				fmt.Println("... failed to install mod ...")
-				r.DeleteMod(pkg.Name, pkg.Namespace)
-				fmt.Printf("%v+", err)
-				return
-			}
-			addDependencies(r, fm, ts, pkg.Latest.Dependencies)
-
-			m := mod.Mod{
-				Name:         pkg.Name,
-				Namespace:    pkg.Namespace,
-				FilePath:     path,
-				Version:      pkg.Latest.VersionNumber,
-				WebsiteURL:   pkg.Latest.WebsiteURL,
-				Description:  pkg.Latest.Description,
-				Dependencies: pkg.Latest.Dependencies,
-			}
-			err = r.InsertMod(m)
-			if err != nil {
-				fmt.Println("... failed to save mod ...")
 			}
 
+			dependencies := pkg.Latest.Dependencies
+			if len(dependencies) > 0 {
+				fmt.Printf("... mod has %d dependencies, installing them ...\n", len(dependencies))
+
+				err = addDependencies(r, fm, ts, pkg.Latest.Dependencies)
+				if err != nil {
+					fmt.Println("... failed to install dependencies...")
+				}
+			}
 			fmt.Println("... successfully installed mod! ...")
 		},
 	}

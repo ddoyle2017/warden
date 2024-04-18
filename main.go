@@ -8,6 +8,7 @@ import (
 	"warden/data"
 	"warden/data/file"
 	"warden/data/repo"
+	"warden/service"
 )
 
 func main() {
@@ -22,14 +23,16 @@ func main() {
 	data.CreateModsTable(db)
 
 	// Initialize and injection dependencies into commands
-	modsRepo := repo.NewModsRepo(db)
+	r := repo.NewModsRepo(db)
 	ts := thunderstore.New(&http.Client{})
-	manager := file.NewManager("./test/file", &http.Client{})
+	fm := file.NewManager("./test/file", &http.Client{})
 
-	listCmd := command.NewListCommand(modsRepo)
-	addCmd := command.NewAddCommand(modsRepo, ts, manager)
-	removeCmd := command.NewRemoveCommand(modsRepo, manager)
-	updateCmd := command.NewUpdateCommand(modsRepo, ts, manager)
+	modService := service.NewModService(r, fm, ts)
+
+	listCmd := command.NewListCommand(modService)
+	addCmd := command.NewAddCommand(r, ts, fm)
+	removeCmd := command.NewRemoveCommand(r, fm)
+	updateCmd := command.NewUpdateCommand(r, ts, fm)
 
 	command.Execute(listCmd, addCmd, removeCmd, updateCmd)
 }
