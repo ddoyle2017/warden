@@ -32,7 +32,7 @@ func main() {
 
 	listCmd := command.NewListCommand(modService)
 	addCmd := command.NewAddCommand(modService)
-	removeCmd := command.NewRemoveCommand(r, fm)
+	removeCmd := command.NewRemoveCommand(modService)
 	updateCmd := command.NewUpdateCommand(modService)
 
 	command.Execute(listCmd, addCmd, removeCmd, updateCmd)

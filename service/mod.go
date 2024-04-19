@@ -16,6 +16,10 @@ const (
 	yes     = "Y"
 	no      = "n"
 	yesOrNo = "[" + yes + "/" + no + "]"
+
+	yesLong     = "YES I AM"
+	noLong      = "no"
+	yesOrNoLong = "[" + yesLong + "/" + noLong + "]"
 )
 
 var (
@@ -39,6 +43,8 @@ type ModService interface {
 	AddMod(namespace, name string) error
 	UpdateMod(name string) error
 	UpdateAllMods() error
+	RemoveMod(namespace, name string) error
+	RemoveAllMods() error
 }
 
 type modService struct {
@@ -180,6 +186,72 @@ func (ms *modService) UpdateAllMods() error {
 			}
 			return nil
 		} else if ms.in.Text() == no {
+			fmt.Println("... aborting ...")
+			return nil
+		} else {
+			tries++
+		}
+	}
+	if tries >= 2 {
+		return ErrMaxAttempts
+	}
+	return nil
+}
+
+func (ms *modService) RemoveMod(namespace, name string) error {
+	fmt.Printf("are you sure you want to remove this mod? %s\n", yesOrNo)
+
+	tries := 0
+	for ms.in.Scan() && tries < 2 {
+		if ms.in.Text() == yes {
+			// Find the current installation of the mod
+			current, err := ms.r.GetMod(name)
+			if err != nil && errors.Is(err, repo.ErrModFetchNoResults) {
+				return ErrModNotInstalled
+			}
+			if err != nil {
+				return ErrUnableToRemoveMod
+			}
+
+			// Remove mod record
+			err = ms.r.DeleteMod(name, namespace)
+			if err != nil {
+				return ErrUnableToRemoveMod
+			}
+
+			// Remove mod files
+			err = ms.fm.RemoveMod(current.FullName())
+			if err != nil {
+				return ErrUnableToRemoveMod
+			}
+			return nil
+		} else if ms.in.Text() == no {
+			fmt.Println("... aborting ...")
+			return nil
+		} else {
+			tries++
+		}
+	}
+	if tries >= 2 {
+		return ErrMaxAttempts
+	}
+	return nil
+}
+
+func (ms *modService) RemoveAllMods() error {
+	fmt.Printf("are you sure you want to remove ALL mods? %s\n", yesOrNoLong)
+
+	tries := 0
+	for ms.in.Scan() && tries < 2 {
+		if ms.in.Text() == yesLong {
+			errRepo := ms.r.DeleteAllMods()
+			errFile := ms.fm.RemoveAllMods()
+
+			if errRepo != nil || errFile != nil {
+				return ErrUnableToRemoveMod
+			}
+			return nil
+		} else if ms.in.Text() == noLong {
 			fmt.Println("... aborting ...")
 			return nil
 		} else {
