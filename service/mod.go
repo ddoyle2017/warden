@@ -271,9 +271,12 @@ func (ms *modService) addDependencies(dependencies []string) error {
 
 		pkg, err := ms.ts.GetPackage(namespace, name)
 		if err != nil {
-			return ErrAddDependenciesFailed
+			return err
 		}
-		ms.installMod(pkg.Latest)
+		err = ms.installMod(pkg.Latest)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -293,7 +296,7 @@ func (ms *modService) installMod(release thunderstore.Release) error {
 	path, err := ms.fm.InstallMod(release.DownloadURL, release.FullName)
 	if err != nil {
 		ms.r.DeleteMod(release.Name, release.Namespace)
-		return ErrModInstallFailed
+		return err
 	}
 
 	// Record mod in DB
@@ -306,9 +309,5 @@ func (ms *modService) installMod(release thunderstore.Release) error {
 		Description:  release.Description,
 		Dependencies: release.Dependencies,
 	}
-	err = ms.r.UpsertMod(m)
-	if err != nil {
-		return ErrModInstallFailed
-	}
-	return nil
+	return ms.r.UpsertMod(m)
 }
