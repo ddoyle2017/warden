@@ -3,12 +3,12 @@ package mock
 // Manager implements the file.Manager interface and exposes anonymous member functions for mocking
 // file.Manager behavior
 type Manager struct {
-	InstallModFunc    func(url, fullName string) error
+	InstallModFunc    func(url, fullName string) (string, error)
 	RemoveModFunc     func(fullName string) error
 	RemoveAllModsFunc func() error
 }
 
-func (m *Manager) InstallMod(url, fullName string) error {
+func (m *Manager) InstallMod(url, fullName string) (string, error) {
 	return m.InstallModFunc(url, fullName)
 }
 

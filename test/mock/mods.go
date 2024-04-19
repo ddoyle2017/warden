@@ -2,27 +2,42 @@ package mock
 
 import "warden/domain/mod"
 
-// Mods implements the repo.Mods interface and exposes anonymous member functions for mocking
+// Repo implements the repo.Repo interface and exposes anonymous member functions for mocking
 // repo.Mods behavior
-type Mods struct {
-	ListModsFunc      func() []mod.Mod
+type Repo struct {
+	ListModsFunc      func() ([]mod.Mod, error)
+	GetModFunc        func(name string) (mod.Mod, error)
 	InsertModFunc     func(m mod.Mod) error
+	UpdateModFunc     func(m mod.Mod) error
+	UpsertModFunc     func(m mod.Mod) error
 	DeleteModFunc     func(modName, namespace string) error
 	DeleteAllModsFunc func() error
 }
 
-func (mr *Mods) ListMods() []mod.Mod {
-	return mr.ListModsFunc()
+func (r *Repo) ListMods() ([]mod.Mod, error) {
+	return r.ListModsFunc()
 }
 
-func (mr *Mods) InsertMod(m mod.Mod) error {
-	return mr.InsertModFunc(m)
+func (r *Repo) GetMod(name string) (mod.Mod, error) {
+	return r.GetModFunc(name)
 }
 
-func (mr *Mods) DeleteMod(modName, namespace string) error {
-	return mr.DeleteModFunc(modName, namespace)
+func (r *Repo) InsertMod(m mod.Mod) error {
+	return r.InsertModFunc(m)
 }
 
-func (mr *Mods) DeleteAllMods() error {
-	return mr.DeleteAllModsFunc()
+func (r *Repo) UpdateMod(m mod.Mod) error {
+	return r.UpdateModFunc(m)
+}
+
+func (r *Repo) UpsertMod(m mod.Mod) error {
+	return r.UpsertModFunc(m)
+}
+
+func (r *Repo) DeleteMod(modName, namespace string) error {
+	return r.DeleteModFunc(modName, namespace)
+}
+
+func (r *Repo) DeleteAllMods() error {
+	return r.DeleteAllModsFunc()
 }
