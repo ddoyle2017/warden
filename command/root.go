@@ -4,7 +4,10 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
+
+var Directory string
 
 var rootCommand = &cobra.Command{
 	Use:   "warden",
@@ -15,6 +18,11 @@ var rootCommand = &cobra.Command{
 		fmt.Println(runes)
 		fmt.Println(startUpBlurb)
 	},
+}
+
+func init() {
+	rootCommand.PersistentFlags().StringVarP(&Directory, directoryFlagLong, directoryFlagShort, "", directoryFlagDescription)
+	viper.BindPFlag(directoryFlagLong, rootCommand.Flags().Lookup(directoryFlagLong))
 }
 
 func Execute(cmds ...*cobra.Command) {
