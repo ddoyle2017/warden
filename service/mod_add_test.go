@@ -3,8 +3,6 @@ package service_test
 import (
 	"errors"
 	"io"
-	"slices"
-	"strings"
 	"testing"
 	"warden/api/thunderstore"
 	"warden/data/file"
@@ -13,73 +11,6 @@ import (
 	"warden/service"
 	"warden/test/mock"
 )
-
-func TestListMods_Happy(t *testing.T) {
-	expected := []mod.Mod{
-		{
-			ID:           1,
-			Name:         "Where_You_At",
-			Namespace:    "Azumatt",
-			FilePath:     "/file/path/test",
-			Version:      "1.0.16",
-			WebsiteURL:   "www.google.com/some-other-file",
-			Description:  "A mod forcing player location on map",
-			Dependencies: []string{"denikson-BepInExPack_Valheim-5.4.2202"},
-		},
-		{
-			ID:           2,
-			Name:         "Sleepover",
-			Namespace:    "Azumatt",
-			FilePath:     "/file/path/test",
-			Version:      "1.0.1",
-			WebsiteURL:   "www.google.com/some-file",
-			Description:  "A mod for sleepovers",
-			Dependencies: []string{"denikson-BepInExPack_Valheim-5.4.2202"},
-		},
-	}
-	r := mock.Repo{
-		ListModsFunc: func() ([]mod.Mod, error) {
-			return expected, nil
-		},
-	}
-	ms := service.NewModService(&r, &mock.Manager{}, &mock.Thunderstore{}, &io.LimitedReader{})
-
-	results, err := ms.ListMods()
-	if err != nil {
-		t.Errorf("expected a nil error, received: %+v", err)
-	}
-
-	areEqual := slices.EqualFunc(expected, results, func(m1, m2 mod.Mod) bool {
-		return m1.Equals(&m2)
-	})
-	if !areEqual {
-		t.Errorf("expected mods list: %+v, received: %+v", expected, results)
-	}
-}
-
-func TestListMods_Sad(t *testing.T) {
-	r := mock.Repo{
-		ListModsFunc: func() ([]mod.Mod, error) {
-			return []mod.Mod{}, repo.ErrModListFailed
-		},
-	}
-	ms := service.NewModService(&r, &mock.Manager{}, &mock.Thunderstore{}, &io.LimitedReader{})
-
-	results, err := ms.ListMods()
-	if err == nil {
-		t.Errorf("expected a nil error, received: %+v", err)
-	}
-	if !errors.Is(err, repo.ErrModListFailed) {
-		t.Errorf("expected error: %+v, received: %+v", repo.ErrModListFailed, err)
-	}
-
-	areEqual := slices.EqualFunc([]mod.Mod{}, results, func(m1, m2 mod.Mod) bool {
-		return m1.Equals(&m2)
-	})
-	if !areEqual {
-		t.Errorf("expected empty mods list, received: %+v", results)
-	}
-}
 
 func TestAddMod_Happy(t *testing.T) {
 	r := mock.Repo{
@@ -283,91 +214,6 @@ func TestAddMod_Sad(t *testing.T) {
 			}
 			if !errors.Is(err, test.expected) {
 				t.Errorf("expected error: %+v, received: %+v", test.expected, err)
-			}
-		})
-	}
-}
-
-func TestUpdateMod_Happy(t *testing.T) {
-	namespace := "Azumatt"
-	name := "Sleepover"
-	website := "github.com/author/mod"
-	description := "a mod for adding sleepovers"
-	dependencies := []string{"denikson-BepInExPack_Valheim-5.4.2202"}
-
-	tests := map[string]struct {
-		current mod.Mod
-		latest  thunderstore.Release
-	}{
-		"return successful when mod is updated": {
-			current: mod.Mod{
-				Name:         name,
-				Namespace:    namespace,
-				WebsiteURL:   website,
-				Description:  description,
-				Dependencies: dependencies,
-				Version:      "0.0.1",
-			},
-			latest: thunderstore.Release{
-				Name:          name,
-				Namespace:     namespace,
-				WebsiteURL:    website,
-				Description:   description,
-				Dependencies:  dependencies,
-				VersionNumber: "0.0.2",
-			},
-		},
-		"return successful when mod is up-to-date": {
-			current: mod.Mod{
-				Name:         name,
-				Namespace:    namespace,
-				WebsiteURL:   website,
-				Description:  description,
-				Dependencies: dependencies,
-				Version:      "0.0.1",
-			},
-			latest: thunderstore.Release{
-				Name:          name,
-				Namespace:     namespace,
-				WebsiteURL:    website,
-				Description:   description,
-				Dependencies:  dependencies,
-				VersionNumber: "0.0.1",
-			},
-		},
-	}
-
-	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			r := mock.Repo{
-				GetModFunc: func(name string) (mod.Mod, error) {
-					return test.current, nil
-				},
-				UpsertModFunc: func(m mod.Mod) error {
-					return nil
-				},
-			}
-			fm := mock.Manager{
-				RemoveModFunc: func(fullName string) error {
-					return nil
-				},
-				InstallModFunc: func(url, fullName string) (string, error) {
-					return "/some/file/path", nil
-				},
-			}
-			ts := mock.Thunderstore{
-				GetPackageFunc: func(namespace, name string) (thunderstore.Package, error) {
-					return thunderstore.Package{
-						Latest: test.latest,
-					}, nil
-				},
-			}
-			rd := strings.NewReader("Y")
-			ms := service.NewModService(&r, &fm, &ts, rd)
-
-			err := ms.UpdateMod("Sleepover")
-			if err != nil {
-				t.Errorf("expected a nil error, received: %+v", err)
 			}
 		})
 	}

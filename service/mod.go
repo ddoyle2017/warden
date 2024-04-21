@@ -285,7 +285,7 @@ func (ms *modService) updateMod(fullname string, latest thunderstore.Release) er
 	// Delete the previous mod files
 	err := ms.fm.RemoveMod(fullname)
 	if err != nil {
-		return ErrUnableToRemoveMod
+		return err
 	}
 	// Install the newest version and update DB record
 	return ms.installMod(latest)
