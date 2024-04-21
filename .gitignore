@@ -25,3 +25,6 @@ go.work
 
 # Ignore macOS specific files
 .DS_Store
+
+# Ignore config files
+*.yaml
