@@ -139,3 +139,94 @@ func TestRemoveMod_Sad(t *testing.T) {
 		})
 	}
 }
+
+func TestRemoveAllMods_Happy(t *testing.T) {
+	r := &mock.Repo{
+		DeleteAllModsFunc: func() error {
+			return nil
+		},
+	}
+	fm := &mock.Manager{
+		RemoveAllModsFunc: func() error {
+			return nil
+		},
+	}
+
+	tests := map[string]struct {
+		rd io.Reader
+	}{
+		"if user confirms delete, remove all mods and return success": {
+			rd: strings.NewReader("YES I AM"),
+		},
+		"if user denies delete, cancel mod removal and return success": {
+			rd: strings.NewReader("no"),
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			ms := service.NewModService(r, fm, &mock.Thunderstore{}, test.rd)
+
+			err := ms.RemoveAllMods()
+			if err != nil {
+				t.Errorf("expected a nil error, received: %+v", err)
+			}
+		})
+	}
+}
+
+func TestRemoveAllMods_Sad(t *testing.T) {
+	tests := map[string]struct {
+		r        repo.Mods
+		fm       file.Manager
+		rd       io.Reader
+		expected error
+	}{
+		"return error if user fails to confirm delete": {
+			rd:       strings.NewReader("I'M\nTESTING\nRANDOM\nINPUTS\n"),
+			expected: service.ErrMaxAttempts,
+		},
+		"return error if unable to remove mod records": {
+			r: &mock.Repo{
+				DeleteAllModsFunc: func() error {
+					return repo.ErrModDeleteAllFailed
+				},
+			},
+			fm: &mock.Manager{
+				RemoveAllModsFunc: func() error {
+					return nil
+				},
+			},
+			rd:       strings.NewReader("YES I AM"),
+			expected: service.ErrUnableToRemoveMod,
+		},
+		"return error if unable to remove mod files": {
+			r: &mock.Repo{
+				DeleteAllModsFunc: func() error {
+					return nil
+				},
+			},
+			fm: &mock.Manager{
+				RemoveAllModsFunc: func() error {
+					return file.ErrDeleteAllModsFailed
+				},
+			},
+			rd:       strings.NewReader("YES I AM"),
+			expected: service.ErrUnableToRemoveMod,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			ms := service.NewModService(test.r, test.fm, &mock.Thunderstore{}, test.rd)
+
+			err := ms.RemoveAllMods()
+			if err == nil {
+				t.Error("expected a non-nil error, received nil")
+			}
+			if !errors.Is(err, test.expected) {
+				t.Errorf("expected error: %+v, received: %+v", test.expected, err)
+			}
+		})
+	}
+}
