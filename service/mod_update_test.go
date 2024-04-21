@@ -21,10 +21,12 @@ func TestUpdateMod_Happy(t *testing.T) {
 	dependencies := []string{"denikson-BepInExPack_Valheim-5.4.2202"}
 
 	tests := map[string]struct {
+		rd      io.Reader
 		current mod.Mod
 		latest  thunderstore.Release
 	}{
 		"return successful when mod is updated": {
+			rd: strings.NewReader("Y"),
 			current: mod.Mod{
 				Name:         name,
 				Namespace:    namespace,
@@ -43,6 +45,7 @@ func TestUpdateMod_Happy(t *testing.T) {
 			},
 		},
 		"return successful when mod is up-to-date": {
+			rd: strings.NewReader("Y"),
 			current: mod.Mod{
 				Name:         name,
 				Namespace:    namespace,
@@ -59,6 +62,9 @@ func TestUpdateMod_Happy(t *testing.T) {
 				Dependencies:  dependencies,
 				VersionNumber: "0.0.1",
 			},
+		},
+		"return successful if user aborts update": {
+			rd: strings.NewReader("n"),
 		},
 	}
 
@@ -263,17 +269,19 @@ func TestUpdateAllMods_Happy(t *testing.T) {
 			return "/SOME/PATH/FILE", nil
 		},
 	}
-	rd := strings.NewReader("Y")
 
 	tests := map[string]struct {
+		rd         io.Reader
 		current    []mod.Mod
 		latest     thunderstore.Release
 		dependency thunderstore.Release
 	}{
 		"return successful when there are no mods to update": {
+			rd:      strings.NewReader("Y"),
 			current: []mod.Mod{},
 		},
 		"return successful when all mods are updated": {
+			rd: strings.NewReader("Y"),
 			current: []mod.Mod{
 				{
 					ID:           1,
@@ -296,6 +304,7 @@ func TestUpdateAllMods_Happy(t *testing.T) {
 			},
 		},
 		"return successful when all mods are up-to-date": {
+			rd: strings.NewReader("Y"),
 			current: []mod.Mod{
 				{
 					ID:           1,
@@ -316,6 +325,9 @@ func TestUpdateAllMods_Happy(t *testing.T) {
 				Name:          depName,
 				VersionNumber: depVersion,
 			},
+		},
+		"return successful if user aborts update all": {
+			rd: strings.NewReader("n"),
 		},
 	}
 
@@ -345,7 +357,7 @@ func TestUpdateAllMods_Happy(t *testing.T) {
 					}, nil
 				},
 			}
-			ms := service.NewModService(r, fm, ts, rd)
+			ms := service.NewModService(r, fm, ts, test.rd)
 
 			err := ms.UpdateAllMods()
 			if err != nil {
