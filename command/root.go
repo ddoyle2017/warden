@@ -7,7 +7,7 @@ import (
 	"github.com/spf13/viper"
 )
 
-var Directory string
+var cfgFile string
 
 var rootCommand = &cobra.Command{
 	Use:   "warden",
@@ -21,8 +21,17 @@ var rootCommand = &cobra.Command{
 }
 
 func init() {
-	rootCommand.PersistentFlags().StringVarP(&Directory, directoryFlagLong, directoryFlagShort, "", directoryFlagDescription)
-	viper.BindPFlag(directoryFlagLong, rootCommand.Flags().Lookup(directoryFlagLong))
+	cobra.OnInitialize(initConfig)
+
+	rootCommand.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.warden.yaml)")
+	viper.BindPFlag("config", rootCommand.Flags().Lookup("config"))
+}
+
+func initConfig() {
+	// If a config file is found, read it in.
+	if err := viper.ReadInConfig(); err == nil {
+		fmt.Println("Using config file:", viper.ConfigFileUsed())
+	}
 }
 
 func Execute(cmds ...*cobra.Command) {

@@ -6,6 +6,7 @@ import (
 	"os"
 	"warden/api/thunderstore"
 	"warden/command"
+	"warden/config"
 	"warden/data"
 	"warden/data/file"
 	"warden/data/repo"
@@ -13,8 +14,13 @@ import (
 )
 
 func main() {
-	// Boot strap the app and initialize dependencies
-	// Set up API clients
+	// Load in the config
+	cfg := config.New(
+		config.WithModDirectory("./test/files"),
+	)
+	if err := cfg.LoadConfig("."); err != nil {
+		log.Fatal(err.Error())
+	}
 
 	// Open database and initialize tables if they don't already exist
 	db, err := data.OpenDatabase("./sqlite-database.db")
@@ -26,7 +32,7 @@ func main() {
 	// Initialize and injection dependencies into commands
 	r := repo.NewModsRepo(db)
 	ts := thunderstore.New(&http.Client{})
-	fm := file.NewManager("./test/file", &http.Client{})
+	fm := file.NewManager(cfg.ModDirectory, &http.Client{})
 
 	modService := service.NewModService(r, fm, ts, os.Stdin)
 
