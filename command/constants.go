@@ -13,4 +13,11 @@ const (
 	`
 	runes        = `ᛏᚻᛖ ᛒᛖᛖᛋ ᚪᚱᛖ ᚻᚪᛈᛈᚣ` // The bees are happy
 	startUpBlurb = "A mod mananger console for Valheim"
+
+	configTitle = `
+	 ___  __   __ _  ____  __  ___ 
+	/ __)/  \ (  ( \(  __)(  )/ __)
+       ( (__(  O )/    / ) _)  )(( (_ \
+	\___)\__/ \_)__)(__)  (__)\___/
+	`
 )

@@ -48,6 +48,7 @@ func main() {
 	addCmd := command.NewAddCommand(modService)
 	removeCmd := command.NewRemoveCommand(modService)
 	updateCmd := command.NewUpdateCommand(modService)
+	configCmd := command.NewConfigCommand(*cfg)
 
-	command.Execute(listCmd, addCmd, removeCmd, updateCmd)
+	command.Execute(listCmd, addCmd, removeCmd, updateCmd, configCmd)
 }
