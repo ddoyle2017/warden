@@ -2,21 +2,19 @@ package config
 
 import (
 	"errors"
-	"log"
 	"path/filepath"
 
-	"github.com/mitchellh/go-homedir"
 	"github.com/spf13/viper"
 )
 
 const (
-	wardenConfigFile = ".warden.yaml"
+	WardenConfigFile = ".warden.yaml"
 
-	defaultSteamInstallPath = ".steam/SteamApps/common/Valheim dedicated server"
+	DefaultSteamInstallPath = ".steam/SteamApps/common/Valheim dedicated server"
 
 	// BepInEx is required by practically every mod for Valheim, so we use it
 	// for the default path
-	defaultModInstallPath = "/BepInEx/plugins"
+	DefaultModInstallPath = "/BepInEx/plugins"
 )
 
 var (
@@ -40,8 +38,8 @@ func Load(path string) (*Config, error) {
 
 	err := viper.ReadInConfig()
 	cfg := &Config{
-		ValheimDirectory: getDefaultValheimDirectory(),
-		ModDirectory:     defaultModInstallPath,
+		ValheimDirectory: filepath.Join(path, DefaultSteamInstallPath),
+		ModDirectory:     DefaultModInstallPath,
 	}
 
 	// If config doesn't exist, create the file and add default values
@@ -52,19 +50,10 @@ func Load(path string) (*Config, error) {
 	}
 
 	// Load in settings from YAML file into Config struct
-	if err := viper.Unmarshal(&cfg); err != nil {
+	if err := viper.Unmarshal(cfg); err != nil {
 		return nil, ErrFailedToReadConfig
 	}
 	return cfg, nil
-}
-
-// Returns the default installation path used by SteamCMD for Linux
-func getDefaultValheimDirectory() string {
-	home, err := homedir.Dir()
-	if err != nil {
-		log.Fatal(err)
-	}
-	return filepath.Join(home, defaultSteamInstallPath)
 }
 
 // Creates a new configuration file called .warden.yaml, with the given settings
@@ -72,7 +61,7 @@ func createConfigFile(cfg *Config, path string) error {
 	viper.Set("valheim-directory", cfg.ValheimDirectory)
 	viper.Set("mod-directory", cfg.ModDirectory)
 
-	file := filepath.Join(path, wardenConfigFile)
+	file := filepath.Join(path, WardenConfigFile)
 	if err := viper.WriteConfigAs(file); err != nil {
 		return ErrUnableToWriteConfig
 	}
