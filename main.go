@@ -29,7 +29,7 @@ func main() {
 	}
 
 	// Open database and initialize tables if they don't already exist
-	db, err := data.OpenDatabase("./sqlite-database.db")
+	db, err := data.OpenDatabase(filepath.Join(home, ".warden.db"))
 	if err != nil {
 		log.Fatal(err.Error())
 	}
