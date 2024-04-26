@@ -5,7 +5,7 @@
 </div>
 
 <h3 align="center">
-	A CLI mod mod manager for Valheim
+	A simple, CLI mod manager for Valheim
 </h3>
 
 ## Overview
