@@ -18,7 +18,7 @@ var (
 )
 
 type Frameworks interface {
-	GetFramework(id int) (framework.Framework, error)
+	GetFramework(name string) (framework.Framework, error)
 	InsertFramework(f framework.Framework) error
 	UpdateFramework(f framework.Framework) error
 }
@@ -33,8 +33,8 @@ func NewFrameworksRepo(db data.Database) Frameworks {
 	}
 }
 
-func (fr *frameworks) GetFramework(id int) (framework.Framework, error) {
-	rows, err := fr.db.Query(`SELECT * FROM frameworks WHERE id = ?`, id)
+func (fr *frameworks) GetFramework(name string) (framework.Framework, error) {
+	rows, err := fr.db.Query(`SELECT * FROM frameworks WHERE name = ?`, name)
 	if err != nil {
 		return framework.Framework{}, ErrFrameworkFetchFailed
 	}

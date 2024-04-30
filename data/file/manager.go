@@ -7,6 +7,12 @@ import (
 	"warden/api"
 )
 
+const (
+	// BepInEx is required by practically every mod for Valheim, so we use it
+	// for the default path
+	DefaultModInstallPath = "/BepInEx/plugins"
+)
+
 var (
 	ErrZipDeleteFailed     = errors.New("unable to delete zip archive")
 	ErrModDeleteFailed     = errors.New("unable to delete mod directory")
@@ -22,9 +28,9 @@ type Manager interface {
 	// FullName is the namespace + mod name + version string that Thunderstore provides.
 	InstallMod(url, fullName string) (string, error)
 
-	// Downloads the specified framework and migrates any existing mods to the new framework's
+	// Downloads BepInEx, installs it, and migrates any existing mods to the new
 	// plugin folder
-	InstallFramework(url, fullName string) (string, error)
+	InstallBepInEx(url, fullName string) (string, error)
 
 	// Deletes the folder and contents for a mod. `FullName` is a
 	// value provided by Thunderstore that contains the name, namespace, and version of a
@@ -79,7 +85,7 @@ func (m *manager) InstallMod(url, fullName string) (string, error) {
 	return destination, nil
 }
 
-func (m *manager) InstallFramework(url, fullName string) (string, error) {
+func (m *manager) InstallBepInEx(url, fullName string) (string, error) {
 	// Get the data
 	resp, err := m.client.Get(url)
 	if err != nil {

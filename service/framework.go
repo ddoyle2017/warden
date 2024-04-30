@@ -9,7 +9,6 @@ import (
 	"warden/data/file"
 	"warden/data/repo"
 	"warden/domain/framework"
-	"warden/domain/mod"
 )
 
 var (
@@ -22,13 +21,13 @@ type FrameworkService interface {
 
 type frameworkService struct {
 	c  config.Config
-	r  repo.Mods
+	r  repo.Frameworks
 	fm file.Manager
 	ts thunderstore.Thunderstore
 	in *bufio.Scanner
 }
 
-func NewFrameworkService(c config.Config, r repo.Mods, fm file.Manager, ts thunderstore.Thunderstore, reader io.Reader) FrameworkService {
+func NewFrameworkService(c config.Config, r repo.Frameworks, fm file.Manager, ts thunderstore.Thunderstore, reader io.Reader) FrameworkService {
 	return &frameworkService{
 		c:  c,
 		r:  r,
@@ -40,7 +39,7 @@ func NewFrameworkService(c config.Config, r repo.Mods, fm file.Manager, ts thund
 
 func (fs *frameworkService) InstallBepInEx() error {
 	// Check if BepInEx already installed
-	if _, err := fs.r.GetMod(framework.BepInEx); err == nil {
+	if _, err := fs.r.GetFramework(framework.BepInEx); err == nil {
 		return nil
 	}
 
@@ -50,21 +49,19 @@ func (fs *frameworkService) InstallBepInEx() error {
 		return ErrUnableToInstallFramework
 	}
 
-	path, err := fs.fm.InstallFramework(pkg.Latest.DownloadURL, pkg.Latest.FullName)
+	_, err = fs.fm.InstallBepInEx(pkg.Latest.DownloadURL, pkg.Latest.FullName)
 	if err != nil {
 		return ErrUnableToInstallFramework
 	}
 
-	m := mod.Mod{
-		Name:         pkg.Latest.Name,
-		Namespace:    pkg.Latest.Namespace,
-		FilePath:     path,
-		Version:      pkg.Latest.VersionNumber,
-		WebsiteURL:   pkg.Latest.WebsiteURL,
-		Description:  pkg.Latest.Description,
-		Dependencies: pkg.Latest.Dependencies,
+	f := framework.Framework{
+		Name:        pkg.Latest.Name,
+		Namespace:   pkg.Latest.Namespace,
+		Version:     pkg.Latest.VersionNumber,
+		WebsiteURL:  pkg.Latest.WebsiteURL,
+		Description: pkg.Latest.Description,
 	}
-	err = fs.r.UpsertMod(m)
+	err = fs.r.InsertFramework(f)
 	if err != nil {
 		return ErrUnableToInstallFramework
 	}

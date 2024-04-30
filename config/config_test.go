@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"warden/config"
+
+	"github.com/spf13/viper"
 )
 
 const testConfigPath = "../test/config"
@@ -22,17 +24,15 @@ func TestLoad_Happy(t *testing.T) {
 				return nil
 			},
 			expected: config.Config{
-				ValheimDirectory: filepath.Join(testConfigPath, config.DefaultSteamInstallPath),
-				ModDirectory:     config.DefaultModInstallPath,
+				ValheimDirectory: config.DefaultSteamInstallPath,
 			},
 		},
 		"if config file does exist, load existing values and return success": {
 			setUp: func() error {
-				return createTestConfigFile("mod-directory: /test/file\nvalheim-directory: .\n")
+				return createTestConfigFile(t, "valheim-directory: ./test/file\n")
 			},
 			expected: config.Config{
-				ValheimDirectory: ".",
-				ModDirectory:     "/test/file",
+				ValheimDirectory: "./test/file",
 			},
 		},
 	}
@@ -52,19 +52,12 @@ func TestLoad_Happy(t *testing.T) {
 			if cfg.ValheimDirectory != test.expected.ValheimDirectory {
 				t.Errorf("expected config: %s, received: %s", test.expected.ValheimDirectory, cfg.ValheimDirectory)
 			}
-			if cfg.ModDirectory != test.expected.ModDirectory {
-				t.Errorf("expected config: %s, received: %s", test.expected.ModDirectory, cfg.ModDirectory)
-			}
-
-			t.Cleanup(func() {
-				path := filepath.Join(testConfigPath, config.WardenConfigFile)
-
-				if err := os.RemoveAll(path); err != nil {
-					t.Errorf("unable to clean-up test config file, error: %+v", err)
-				}
-			})
+			resetTestConfig(t)
 		})
 	}
+	t.Cleanup(func() {
+		resetTestConfig(t)
+	})
 }
 
 func TestLoad_Sad(t *testing.T) {
@@ -74,7 +67,7 @@ func TestLoad_Sad(t *testing.T) {
 	}{
 		"if config file is malformed, return an error": {
 			setUp: func() error {
-				return createTestConfigFile("mod-directorydwqd /test/file\nvalh       eim-directory{} .\n")
+				return createTestConfigFile(t, "valh       eim-directory{} .12341234\n")
 			},
 			expected: config.ErrFailedToReadConfig,
 		},
@@ -94,11 +87,17 @@ func TestLoad_Sad(t *testing.T) {
 			if !errors.Is(err, test.expected) {
 				t.Errorf("expected error: %+v, received: %+v", test.expected, err)
 			}
+
+			t.Cleanup(func() {
+				resetTestConfig(t)
+			})
 		})
 	}
 }
 
-func createTestConfigFile(content string) error {
+func createTestConfigFile(t *testing.T, content string) error {
+	resetTestConfig(t)
+
 	path := filepath.Join(testConfigPath, config.WardenConfigFile)
 
 	// Create the empty file
@@ -116,4 +115,13 @@ func createTestConfigFile(content string) error {
 		return err
 	}
 	return nil
+}
+
+func resetTestConfig(t *testing.T) {
+	viper.Reset()
+	path := filepath.Join(testConfigPath, config.WardenConfigFile)
+
+	if err := os.RemoveAll(path); err != nil {
+		t.Errorf("unable to clean-up test config file, error: %+v", err)
+	}
 }

@@ -8,13 +8,8 @@ import (
 )
 
 const (
-	WardenConfigFile = ".warden.yaml"
-
+	WardenConfigFile        = ".warden.yaml"
 	DefaultSteamInstallPath = ".steam/SteamApps/common/Valheim dedicated server"
-
-	// BepInEx is required by practically every mod for Valheim, so we use it
-	// for the default path
-	DefaultModInstallPath = "/BepInEx/plugins"
 )
 
 var (
@@ -26,7 +21,6 @@ var (
 // to install mods to
 type Config struct {
 	ValheimDirectory string `mapstructure:"valheim-directory"`
-	ModDirectory     string `mapstructure:"mod-directory"`
 }
 
 // Load creates a new instance of Config, based on a configuration YAML file at the given
@@ -38,8 +32,7 @@ func Load(path string) (*Config, error) {
 
 	err := viper.ReadInConfig()
 	cfg := &Config{
-		ValheimDirectory: filepath.Join(path, DefaultSteamInstallPath),
-		ModDirectory:     DefaultModInstallPath,
+		ValheimDirectory: DefaultSteamInstallPath,
 	}
 
 	// If config doesn't exist, create the file and add default values
@@ -59,7 +52,6 @@ func Load(path string) (*Config, error) {
 // Creates a new configuration file called .warden.yaml, with the given settings
 func createConfigFile(cfg *Config, path string) error {
 	viper.Set("valheim-directory", cfg.ValheimDirectory)
-	viper.Set("mod-directory", cfg.ModDirectory)
 
 	file := filepath.Join(path, WardenConfigFile)
 	if err := viper.WriteConfigAs(file); err != nil {

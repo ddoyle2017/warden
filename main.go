@@ -37,7 +37,7 @@ func main() {
 	data.CreateFrameworksTable(db)
 
 	// Initialize and injection dependencies into commands
-	md := filepath.Join(cfg.ValheimDirectory, cfg.ModDirectory)
+	md := filepath.Join(cfg.ValheimDirectory, "")
 
 	r := repo.NewModsRepo(db)
 	ts := thunderstore.New(&http.Client{})
