@@ -6,6 +6,7 @@ import "slices"
 // can be anything from gameplay changes, to new settings, to new content, and etc.
 type Mod struct {
 	ID           int
+	FrameworkID  int
 	Name         string
 	Namespace    string
 	FilePath     string
@@ -17,6 +18,7 @@ type Mod struct {
 
 func (m1 *Mod) Equals(m2 *Mod) bool {
 	return m1.ID == m2.ID &&
+		m1.FrameworkID == m2.FrameworkID &&
 		m1.Name == m2.Name &&
 		m1.Namespace == m2.Namespace &&
 		m1.FilePath == m2.FilePath &&

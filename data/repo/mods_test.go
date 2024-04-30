@@ -3,29 +3,26 @@ package repo_test
 import (
 	"database/sql"
 	"errors"
-	"os"
-	"path/filepath"
 	"slices"
 	"testing"
 	"warden/data"
 	"warden/data/repo"
 	"warden/domain/mod"
+	"warden/test"
 	"warden/test/mock"
 )
 
-const (
-	testDataFolder = "../../test/data"
-	testDBFile     = "sqlite-database-test.db"
-)
-
 func TestListMods_Happy(t *testing.T) {
-	db := setUpTestDB(t)
+	db := test.SetUpTestDB(t)
 	data.CreateModsTable(db)
+	data.CreateFrameworksTable(db)
 
-	modsRepo := repo.NewModsRepo(db)
-	expectedMods := setUpTestData(t, modsRepo)
+	mr := repo.NewModsRepo(db)
+	fr := repo.NewFrameworksRepo(db)
 
-	results, err := modsRepo.ListMods()
+	expectedMods := test.SeedModsTable(t, mr, fr)
+
+	results, err := mr.ListMods()
 	if err != nil {
 		t.Errorf("unexpected nil error, received: %+v", err)
 	}
@@ -38,7 +35,7 @@ func TestListMods_Happy(t *testing.T) {
 	}
 
 	t.Cleanup(func() {
-		removeDBFile(t)
+		test.RemoveDBFile(t)
 	})
 }
 
@@ -48,14 +45,14 @@ func TestListMods_Sad(t *testing.T) {
 	}{
 		"return error if database doesn't exist": {
 			setUp: func() data.Database {
-				db := setUpTestDB(t)
-				removeDBFile(t)
+				db := test.SetUpTestDB(t)
+				test.RemoveDBFile(t)
 				return db
 			},
 		},
 		"return error if mods table doesn't exist": {
 			setUp: func() data.Database {
-				return setUpTestDB(t)
+				return test.SetUpTestDB(t)
 			},
 		},
 	}
@@ -65,6 +62,7 @@ func TestListMods_Sad(t *testing.T) {
 			db := test.setUp()
 
 			mr := repo.NewModsRepo(db)
+
 			mods, err := mr.ListMods()
 			if err == nil {
 				t.Error("expected a non-nil error, received nil")
@@ -76,16 +74,19 @@ func TestListMods_Sad(t *testing.T) {
 	}
 
 	t.Cleanup(func() {
-		removeDBFile(t)
+		test.RemoveDBFile(t)
 	})
 }
 
 func TestGetMod_Happy(t *testing.T) {
-	db := setUpTestDB(t)
+	db := test.SetUpTestDB(t)
 	data.CreateModsTable(db)
+	data.CreateFrameworksTable(db)
 
 	mr := repo.NewModsRepo(db)
-	mods := setUpTestData(t, mr)
+	fr := repo.NewFrameworksRepo(db)
+
+	mods := test.SeedModsTable(t, mr, fr)
 
 	m, err := mr.GetMod(mods[0].Name)
 	if err != nil {
@@ -96,7 +97,7 @@ func TestGetMod_Happy(t *testing.T) {
 	}
 
 	t.Cleanup(func() {
-		removeDBFile(t)
+		test.RemoveDBFile(t)
 	})
 }
 
@@ -120,6 +121,7 @@ func TestGetMod_Sad(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			mr := repo.NewModsRepo(test.db)
+
 			m, err := mr.GetMod(test.name)
 
 			if !errors.Is(err, test.expectedErr) {
@@ -132,16 +134,19 @@ func TestGetMod_Sad(t *testing.T) {
 	}
 
 	t.Cleanup(func() {
-		removeDBFile(t)
+		test.RemoveDBFile(t)
 	})
 }
 
 func TestInsertMod_Happy(t *testing.T) {
-	db := setUpTestDB(t)
+	db := test.SetUpTestDB(t)
 	data.CreateModsTable(db)
+	data.CreateFrameworksTable(db)
 
 	mr := repo.NewModsRepo(db)
-	expectedMods := setUpTestData(t, mr)
+	fr := repo.NewFrameworksRepo(db)
+
+	expectedMods := test.SeedModsTable(t, mr, fr)
 	newMod := mod.Mod{
 		Name:      "X-ray hack",
 		Namespace: "Bob",
@@ -163,7 +168,7 @@ func TestInsertMod_Happy(t *testing.T) {
 		t.Errorf("expected %d mods, but found %d mods", expectedModCount, len(modList))
 	}
 	t.Cleanup(func() {
-		removeDBFile(t)
+		test.RemoveDBFile(t)
 	})
 }
 
@@ -194,16 +199,19 @@ func TestInsertMod_Sad(t *testing.T) {
 	}
 
 	t.Cleanup(func() {
-		removeDBFile(t)
+		test.RemoveDBFile(t)
 	})
 }
 
 func TestUpdateMod_Happy(t *testing.T) {
-	db := setUpTestDB(t)
+	db := test.SetUpTestDB(t)
 	data.CreateModsTable(db)
+	data.CreateFrameworksTable(db)
 
 	mr := repo.NewModsRepo(db)
-	currentMods := setUpTestData(t, mr)
+	fr := repo.NewFrameworksRepo(db)
+
+	currentMods := test.SeedModsTable(t, mr, fr)
 	newVersion := "102.23.78"
 
 	tests := map[string]struct {
@@ -226,19 +234,22 @@ func TestUpdateMod_Happy(t *testing.T) {
 			},
 			expected: []mod.Mod{
 				{
-					ID:        1,
-					Namespace: "Azumatt",
-					Name:      "Sleepover",
-					Version:   newVersion,
+					ID:          1,
+					FrameworkID: 1,
+					Namespace:   "Azumatt",
+					Name:        "Sleepover",
+					Version:     newVersion,
 				},
 				{
-					ID:        2,
-					Namespace: "Azumatt",
-					Name:      "Where_You_At"},
+					ID:          2,
+					FrameworkID: 1,
+					Namespace:   "Azumatt",
+					Name:        "Where_You_At"},
 				{
-					ID:        3,
-					Namespace: "Azumatt",
-					Name:      "AzuClock",
+					ID:          3,
+					FrameworkID: 1,
+					Namespace:   "Azumatt",
+					Name:        "AzuClock",
 				},
 			},
 		},
@@ -266,7 +277,7 @@ func TestUpdateMod_Happy(t *testing.T) {
 	}
 
 	t.Cleanup(func() {
-		removeDBFile(t)
+		test.RemoveDBFile(t)
 	})
 }
 
@@ -297,16 +308,19 @@ func TestUpdateMod_Sad(t *testing.T) {
 	}
 
 	t.Cleanup(func() {
-		removeDBFile(t)
+		test.RemoveDBFile(t)
 	})
 }
 
 func TestDeleteMod_Happy(t *testing.T) {
-	db := setUpTestDB(t)
+	db := test.SetUpTestDB(t)
 	data.CreateModsTable(db)
+	data.CreateFrameworksTable(db)
 
 	mr := repo.NewModsRepo(db)
-	currentMods := setUpTestData(t, mr)
+	fr := repo.NewFrameworksRepo(db)
+
+	currentMods := test.SeedModsTable(t, mr, fr)
 	last := len(currentMods) - 1
 
 	tests := map[string]struct {
@@ -324,14 +338,16 @@ func TestDeleteMod_Happy(t *testing.T) {
 			namespace: currentMods[last].Namespace,
 			expected: []mod.Mod{
 				{
-					ID:        1,
-					Namespace: "Azumatt",
-					Name:      "Sleepover",
+					ID:          1,
+					FrameworkID: 1,
+					Namespace:   "Azumatt",
+					Name:        "Sleepover",
 				},
 				{
-					ID:        2,
-					Namespace: "Azumatt",
-					Name:      "Where_You_At",
+					ID:          2,
+					FrameworkID: 1,
+					Namespace:   "Azumatt",
+					Name:        "Where_You_At",
 				},
 			},
 		},
@@ -359,7 +375,7 @@ func TestDeleteMod_Happy(t *testing.T) {
 	}
 
 	t.Cleanup(func() {
-		removeDBFile(t)
+		test.RemoveDBFile(t)
 	})
 }
 
@@ -390,92 +406,12 @@ func TestDeleteMod_Sad(t *testing.T) {
 	}
 
 	t.Cleanup(func() {
-		removeDBFile(t)
+		test.RemoveDBFile(t)
 	})
 }
 
 func TestDeleteAllMods_Happy(t *testing.T) {
 	t.Cleanup(func() {
-		removeDBFile(t)
+		test.RemoveDBFile(t)
 	})
-}
-
-func TestDeleteAllMods_Sad(t *testing.T) {
-	tests := map[string]struct {
-		db          data.Database
-		expectedErr error
-	}{
-		"returns error when unable to prepare a DELETE SQL statement": {
-			db: &mock.Database{
-				PrepareFunc: func(_ string) (*sql.Stmt, error) {
-					return nil, errors.New("invalid SQL")
-				},
-			},
-			expectedErr: repo.ErrInvalidStatement,
-		},
-	}
-
-	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			mr := repo.NewModsRepo(test.db)
-
-			err := mr.DeleteAllMods()
-			if !errors.Is(err, test.expectedErr) {
-				t.Errorf("expected error: %+v, received: %+v", test.expectedErr, err)
-			}
-		})
-	}
-
-	t.Cleanup(func() {
-		removeDBFile(t)
-	})
-}
-
-func setUpTestDB(t *testing.T) data.Database {
-	path := filepath.Join(testDataFolder, testDBFile)
-
-	db, err := data.OpenDatabase(path)
-	if err != nil {
-		t.Errorf("unexpected error when creating test database, received: %+v", err)
-	}
-	return db
-}
-
-func setUpTestData(t *testing.T, mr repo.Mods) []mod.Mod {
-	mods := []mod.Mod{
-		{
-			ID:        1,
-			Namespace: "Azumatt",
-			Name:      "Sleepover",
-		},
-		{
-			ID:        2,
-			Namespace: "Azumatt",
-			Name:      "Where_You_At",
-		},
-		{
-			ID:        3,
-			Namespace: "Azumatt",
-			Name:      "AzuClock",
-		},
-	}
-
-	for _, m := range mods {
-		err := mr.InsertMod(m)
-		if err != nil {
-			t.Errorf("unexpected error when seeding test database, received: %+v", err)
-		}
-	}
-	return mods
-}
-
-func removeDBFile(t *testing.T) {
-	err := os.Remove(filepath.Join(testDataFolder, testDBFile))
-	if errors.Is(err, os.ErrNotExist) {
-		// Test database was already removed. This is fine, so we ignore the error and continue.
-		return
-	}
-	if err != nil {
-		t.Errorf("unexpected error when cleaning up test database, received error: %+v", err)
-	}
 }

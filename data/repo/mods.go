@@ -33,17 +33,17 @@ type Mods interface {
 	DeleteAllMods() error
 }
 
-type repo struct {
+type mods struct {
 	db data.Database
 }
 
 func NewModsRepo(db data.Database) Mods {
-	return &repo{
+	return &mods{
 		db: db,
 	}
 }
 
-func (r *repo) ListMods() ([]mod.Mod, error) {
+func (r *mods) ListMods() ([]mod.Mod, error) {
 	rows, err := r.db.Query(`SELECT * FROM mods`)
 	if err != nil {
 		return []mod.Mod{}, ErrModListFailed
@@ -57,7 +57,7 @@ func (r *repo) ListMods() ([]mod.Mod, error) {
 	return mods, nil
 }
 
-func (r *repo) GetMod(name string) (mod.Mod, error) {
+func (r *mods) GetMod(name string) (mod.Mod, error) {
 	rows, err := r.db.Query(`SELECT * FROM mods WHERE name = ?`, name)
 	if err != nil {
 		return mod.Mod{}, ErrModFetchFailed
@@ -78,22 +78,22 @@ func (r *repo) GetMod(name string) (mod.Mod, error) {
 	return mods[0], nil
 }
 
-func (r *repo) InsertMod(m mod.Mod) error {
-	sql := `INSERT INTO mods(name, namespace, filePath, version, websiteUrl, description) VALUES (?, ?, ?, ?, ?, ?)`
+func (r *mods) InsertMod(m mod.Mod) error {
+	sql := `INSERT INTO mods(name, namespace, filePath, version, websiteUrl, description, frameworkId) VALUES (?, ?, ?, ?, ?, ?, ?)`
 
 	statement, err := r.db.Prepare(sql)
 	if err != nil {
 		return ErrInvalidStatement
 	}
 
-	_, err = statement.Exec(m.Name, m.Namespace, m.FilePath, m.Version, m.WebsiteURL, m.Description)
+	_, err = statement.Exec(m.Name, m.Namespace, m.FilePath, m.Version, m.WebsiteURL, m.Description, m.FrameworkID)
 	if err != nil {
 		return ErrModInsertFailed
 	}
 	return nil
 }
 
-func (r *repo) UpdateMod(m mod.Mod) error {
+func (r *mods) UpdateMod(m mod.Mod) error {
 	sql := `UPDATE mods 
 			SET name = ?, namespace = ?, filePath = ?, version = ?, websiteUrl = ?, description = ?
 			WHERE id = ?`
@@ -110,7 +110,7 @@ func (r *repo) UpdateMod(m mod.Mod) error {
 	return nil
 }
 
-func (r *repo) UpsertMod(m mod.Mod) error {
+func (r *mods) UpsertMod(m mod.Mod) error {
 	current, err := r.GetMod(m.Name)
 	// If mod doesn't exist, insert new. If it does exist, update it
 	if errors.Is(err, sql.ErrNoRows) || current.Equals(&mod.Mod{}) {
@@ -123,7 +123,7 @@ func (r *repo) UpsertMod(m mod.Mod) error {
 	}
 }
 
-func (r *repo) DeleteMod(modName, namespace string) error {
+func (r *mods) DeleteMod(modName, namespace string) error {
 	sql := `DELETE FROM mods WHERE name = ? AND namespace = ?`
 
 	statement, err := r.db.Prepare(sql)
@@ -138,7 +138,7 @@ func (r *repo) DeleteMod(modName, namespace string) error {
 	return nil
 }
 
-func (r *repo) DeleteAllMods() error {
+func (r *mods) DeleteAllMods() error {
 	// Whole table delete instead of dropping the table because its not guaranteed the user will recreate the table
 	// on their next command
 	sql := `DELETE FROM mods WHERE id IS NOT NULL`
@@ -165,14 +165,16 @@ func mapRowsToMod(rows *sql.Rows) ([]mod.Mod, error) {
 		var version string
 		var url string
 		var description string
+		var frameworkId int
 
-		err := rows.Scan(&id, &name, &namespace, &path, &version, &url, &description)
+		err := rows.Scan(&id, &name, &namespace, &path, &version, &url, &description, &frameworkId)
 		if err != nil {
 			return []mod.Mod{}, err
 		}
 
 		m := mod.Mod{
 			ID:          id,
+			FrameworkID: frameworkId,
 			Name:        name,
 			Namespace:   namespace,
 			FilePath:    path,

@@ -25,16 +25,30 @@ func OpenDatabase(dbFile string) (Database, error) {
 }
 
 func CreateModsTable(db Database) {
-	modTableSQL := `CREATE TABLE IF NOT EXISTS mods (
+	modsTableSQL := `CREATE TABLE IF NOT EXISTS mods (
 		"id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
 		"name" TEXT NOT NULL,
 		"namespace" TEXT NOT NULL,
 		"filePath" TEXT NOT NULL,
 		"version" TEXT NOT NULL,
 		"websiteUrl" TEXT,
+		"description" TEXT,
+		"frameworkId" INTEGER NOT NULL, 
+		FOREIGN KEY (frameworkId) REFERENCES frameworks(id)
+	  );`
+	createTable(db, modsTableSQL)
+}
+
+func CreateFrameworksTable(db Database) {
+	frameworksTableSQL := `CREATE TABLE IF NOT EXISTS frameworks (
+		"id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+		"name" TEXT NOT NULL,
+		"namespace" TEXT NOT NULL,
+		"version" TEXT NOT NULL,
+		"websiteUrl" TEXT,
 		"description" TEXT
 	  );`
-	createTable(db, modTableSQL)
+	createTable(db, frameworksTableSQL)
 }
 
 func createTable(db Database, query string) {
@@ -42,6 +56,5 @@ func createTable(db Database, query string) {
 	if err != nil {
 		log.Fatal(err.Error())
 	}
-
 	statement.Exec()
 }

@@ -15,25 +15,30 @@ var (
 
 // Manager provides an interface for all file-related mod operations, e.g. installing and deleting mods.
 type Manager interface {
-	// InstallMod() downloads the targetted mod, unzips it, and adds it to the mod
+	// Downloads the targetted mod, unzips it, and adds it to the mod
 	// folder.
 	//
 	// URL is the download link for a specific release.
 	// FullName is the namespace + mod name + version string that Thunderstore provides.
 	InstallMod(url, fullName string) (string, error)
 
-	// RemoveMod() deletes the folder and contents for a mod. `FullName` is a
+	// Downloads the specified framework and migrates any existing mods to the new framework's
+	// plugin folder
+	InstallFramework(url, fullName string) (string, error)
+
+	// Deletes the folder and contents for a mod. `FullName` is a
 	// value provided by Thunderstore that contains the name, namespace, and version of a
 	// specific mod release.
 	RemoveMod(fullName string) error
 
-	// RemoveAllMods deletes the parent mod folder and all of its contents, then recreates an empty one.
+	// Deletes the parent mod folder and all of its contents, then recreates an empty one.
 	RemoveAllMods() error
 }
 
 type manager struct {
-	client    api.HTTPClient
-	modFolder string
+	client       api.HTTPClient
+	modFolder    string
+	serverFolder string
 }
 
 func NewManager(mf string, c api.HTTPClient) Manager {
@@ -72,6 +77,36 @@ func (m *manager) InstallMod(url, fullName string) (string, error) {
 		return "", ErrZipDeleteFailed
 	}
 	return destination, nil
+}
+
+func (m *manager) InstallFramework(url, fullName string) (string, error) {
+	// Get the data
+	resp, err := m.client.Get(url)
+	if err != nil {
+		return "", api.ErrHTTPClient
+	}
+	defer resp.Body.Close()
+
+	// Create the zip archive
+	zipPath := filepath.Join(m.modFolder, fullName+".zip")
+
+	err = createFile(zipPath, resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	// Extract zip files into Valheim server folder
+	err = Unzip(zipPath, m.serverFolder)
+	if err != nil {
+		return "", err
+	}
+
+	// Remove zip file after finishing extraction
+	err = os.Remove(zipPath)
+	if err != nil {
+		return "", ErrZipDeleteFailed
+	}
+	return m.serverFolder, nil
 }
 
 func (m *manager) RemoveMod(fullName string) error {

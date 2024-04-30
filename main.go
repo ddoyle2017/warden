@@ -34,6 +34,7 @@ func main() {
 		log.Fatal(err.Error())
 	}
 	data.CreateModsTable(db)
+	data.CreateFrameworksTable(db)
 
 	// Initialize and injection dependencies into commands
 	md := filepath.Join(cfg.ValheimDirectory, cfg.ModDirectory)
