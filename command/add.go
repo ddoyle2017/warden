@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewAddCommand(ms service.ModService) *cobra.Command {
+func NewAddCommand(fs service.FrameworkService, ms service.ModService) *cobra.Command {
 	var namespace string
 	var modPkg string
 
@@ -17,8 +17,11 @@ func NewAddCommand(ms service.ModService) *cobra.Command {
 		Short: "Adds the specified mod.",
 		Long:  "Searches Thunderstone for the specified mod, downloads it, then adds it to your local mod collection.",
 		Run: func(cmd *cobra.Command, args []string) {
-			err := ms.AddMod(namespace, modPkg)
-			if err != nil {
+			if err := fs.InstallBepInEx(); err != nil {
+				parseAddError(err)
+				return
+			}
+			if err := ms.AddMod(namespace, modPkg); err != nil {
 				parseAddError(err)
 			} else {
 				fmt.Println("... successfully installed mod! ...")
@@ -43,5 +46,7 @@ func parseAddError(err error) {
 		fmt.Println("... unable to find mod on Thunderstore")
 	} else if errors.Is(err, service.ErrAddDependenciesFailed) {
 		fmt.Println("... unable to install mod's dependencies...")
+	} else if errors.Is(err, service.ErrUnableToInstallFramework) {
+		fmt.Println("... unable to install BepInEx ...")
 	}
 }

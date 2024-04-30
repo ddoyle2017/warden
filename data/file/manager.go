@@ -10,7 +10,7 @@ import (
 const (
 	// BepInEx is required by practically every mod for Valheim, so we use it
 	// for the default path
-	DefaultModInstallPath = "/BepInEx/plugins"
+	BepInExPluginDirectory = "/BepInEx/plugins"
 )
 
 var (
@@ -42,15 +42,16 @@ type Manager interface {
 }
 
 type manager struct {
-	client       api.HTTPClient
-	modFolder    string
-	serverFolder string
+	client           api.HTTPClient
+	valheimDirectory string
+	modDirectory     string
 }
 
-func NewManager(mf string, c api.HTTPClient) Manager {
+func NewManager(c api.HTTPClient, sf string) Manager {
 	return &manager{
-		modFolder: mf,
-		client:    c,
+		client:           c,
+		valheimDirectory: sf,
+		modDirectory:     filepath.Join(sf, BepInExPluginDirectory),
 	}
 }
 
@@ -63,7 +64,7 @@ func (m *manager) InstallMod(url, fullName string) (string, error) {
 	defer resp.Body.Close()
 
 	// Create the zip archive
-	zipPath := filepath.Join(m.modFolder, fullName+".zip")
+	zipPath := filepath.Join(m.modDirectory, fullName+".zip")
 
 	err = createFile(zipPath, resp.Body)
 	if err != nil {
@@ -71,7 +72,7 @@ func (m *manager) InstallMod(url, fullName string) (string, error) {
 	}
 
 	// Extract zip files into a new folder for the mod
-	destination := filepath.Join(m.modFolder, fullName)
+	destination := filepath.Join(m.modDirectory, fullName)
 	err = Unzip(zipPath, destination)
 	if err != nil {
 		return "", err
@@ -94,7 +95,7 @@ func (m *manager) InstallBepInEx(url, fullName string) (string, error) {
 	defer resp.Body.Close()
 
 	// Create the zip archive
-	zipPath := filepath.Join(m.modFolder, fullName+".zip")
+	zipPath := filepath.Join(m.valheimDirectory, fullName+".zip")
 
 	err = createFile(zipPath, resp.Body)
 	if err != nil {
@@ -102,7 +103,7 @@ func (m *manager) InstallBepInEx(url, fullName string) (string, error) {
 	}
 
 	// Extract zip files into Valheim server folder
-	err = Unzip(zipPath, m.serverFolder)
+	err = Unzip(zipPath, m.valheimDirectory)
 	if err != nil {
 		return "", err
 	}
@@ -112,11 +113,11 @@ func (m *manager) InstallBepInEx(url, fullName string) (string, error) {
 	if err != nil {
 		return "", ErrZipDeleteFailed
 	}
-	return m.serverFolder, nil
+	return m.valheimDirectory, nil
 }
 
 func (m *manager) RemoveMod(fullName string) error {
-	modPath := filepath.Join(m.modFolder, fullName)
+	modPath := filepath.Join(m.modDirectory, fullName)
 
 	err := os.RemoveAll(modPath)
 
@@ -130,13 +131,13 @@ func (m *manager) RemoveMod(fullName string) error {
 
 func (m *manager) RemoveAllMods() error {
 	// Delete the parent folder for all mods and everything inside
-	err := os.RemoveAll(m.modFolder)
+	err := os.RemoveAll(m.modDirectory)
 	if err != nil {
 		return ErrDeleteAllModsFailed
 	}
 
 	// Recreate parent folder for all mods
-	err = os.MkdirAll(m.modFolder, os.ModePerm)
+	err = os.MkdirAll(m.modDirectory, os.ModePerm)
 	if err != nil {
 		return ErrCreateDirectoryFailed
 	}

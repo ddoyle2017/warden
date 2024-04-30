@@ -35,7 +35,7 @@ func TestInstallMod_Happy(t *testing.T) {
 			}, nil
 		},
 	}
-	manager := file.NewManager(testFolder, &client)
+	manager := file.NewManager(&client, testFolder)
 
 	path, err := manager.InstallMod(testURL, testMod)
 	if err != nil {
@@ -81,7 +81,7 @@ func TestInstallMod_Sad(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			manager := file.NewManager(testFolder, test.client)
+			manager := file.NewManager(test.client, testFolder)
 
 			path, err := manager.InstallMod(testURL, test.fullName)
 			if !errors.Is(err, test.expectedErr) {
@@ -114,7 +114,7 @@ func TestRemoveMod_Happy(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			manager := file.NewManager(testFolder, &mock.HTTPClient{})
+			manager := file.NewManager(&mock.HTTPClient{}, testFolder)
 
 			err := manager.RemoveMod(test.name)
 			if err != nil {
@@ -141,7 +141,7 @@ func TestRemoveAllMods_Happy(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			test.setUp(t)
-			manager := file.NewManager(testFolder, &mock.HTTPClient{})
+			manager := file.NewManager(&mock.HTTPClient{}, testFolder)
 
 			err := manager.RemoveAllMods()
 			if err != nil {

@@ -9,17 +9,8 @@ import (
 	"warden/api/thunderstore"
 	"warden/data/file"
 	"warden/data/repo"
+	"warden/domain/framework"
 	"warden/domain/mod"
-)
-
-const (
-	yes     = "Y"
-	no      = "n"
-	yesOrNo = "[" + yes + "/" + no + "]"
-
-	yesLong     = "YES I AM"
-	noLong      = "no"
-	yesOrNoLong = "[" + yesLong + "/" + noLong + "]"
 )
 
 var (
@@ -33,7 +24,6 @@ var (
 	ErrModNotFound         = errors.New("mod not found")
 
 	ErrAddDependenciesFailed = errors.New("unable to install mod's dependencies")
-	ErrMaxAttempts           = errors.New("reached max confirmation attempts")
 )
 
 // ModService encapsulates all the business logic for managing mods. It coordinates both the mods
@@ -268,6 +258,11 @@ func (ms *modService) addDependencies(dependencies []string) error {
 	for _, dep := range dependencies {
 		details := strings.Split(dep, "-")
 		namespace, name := details[0], details[1]
+
+		// If dep is BepInEx, skip
+		if name == framework.BepInEx {
+			continue
+		}
 
 		pkg, err := ms.ts.GetPackage(namespace, name)
 		if err != nil {

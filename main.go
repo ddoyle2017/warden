@@ -37,18 +37,19 @@ func main() {
 	data.CreateFrameworksTable(db)
 
 	// Initialize and injection dependencies into commands
-	md := filepath.Join(cfg.ValheimDirectory, "")
-
-	r := repo.NewModsRepo(db)
+	mr := repo.NewModsRepo(db)
+	fr := repo.NewFrameworksRepo(db)
 	ts := thunderstore.New(&http.Client{})
-	fm := file.NewManager(md, &http.Client{})
+	fm := file.NewManager(&http.Client{}, cfg.ValheimDirectory)
 
-	modService := service.NewModService(r, fm, ts, os.Stdin)
+	ms := service.NewModService(mr, fm, ts, os.Stdin)
+	fs := service.NewFrameworkService(fr, fm, ts, os.Stdin)
 
-	listCmd := command.NewListCommand(modService)
-	addCmd := command.NewAddCommand(modService)
-	removeCmd := command.NewRemoveCommand(modService)
-	updateCmd := command.NewUpdateCommand(modService)
+	// Register commands
+	listCmd := command.NewListCommand(ms)
+	addCmd := command.NewAddCommand(fs, ms)
+	removeCmd := command.NewRemoveCommand(ms)
+	updateCmd := command.NewUpdateCommand(ms)
 	configCmd := command.NewConfigCommand(*cfg)
 
 	command.Execute(listCmd, addCmd, removeCmd, updateCmd, configCmd)
