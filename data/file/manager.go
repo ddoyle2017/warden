@@ -11,6 +11,9 @@ const (
 	// BepInEx is required by practically every mod for Valheim, so we use it
 	// for the default path
 	BepInExPluginDirectory = "/BepInEx/plugins"
+
+	// A sub-directory containing the files and libraries needed for BepInEx to work
+	BepInExContentsDirectory = "/BepInExPack_Valheim"
 )
 
 var (
@@ -113,6 +116,9 @@ func (m *manager) InstallBepInEx(url, fullName string) (string, error) {
 	if err != nil {
 		return "", ErrZipDeleteFailed
 	}
+
+	// Move BepInEx files to Valheim installation directory and remove top level folder
+	m.moveBepInExFiles()
 	return m.valheimDirectory, nil
 }
 
@@ -142,4 +148,23 @@ func (m *manager) RemoveAllMods() error {
 		return ErrCreateDirectoryFailed
 	}
 	return nil
+}
+
+func (m *manager) moveBepInExFiles() {
+	path := filepath.Join(m.valheimDirectory, BepInExContentsDirectory)
+
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		panic("BING BONG")
+	}
+	for _, e := range entries {
+		source := filepath.Join(path, e.Name())
+		dest := filepath.Join(m.valheimDirectory, e.Name())
+		if err := os.Rename(source, dest); err != nil {
+			panic("BING BONG")
+		}
+	}
+	if err := os.RemoveAll(path); err != nil {
+		panic("BING BONG")
+	}
 }

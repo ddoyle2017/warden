@@ -69,6 +69,9 @@ func (fs *frameworkService) InstallBepInEx() error {
 			if err != nil {
 				return ErrUnableToInstallFramework
 			}
+
+			fmt.Println("... successfully installed BepInEx ...")
+			return nil
 		} else if fs.in.Text() == no {
 			fmt.Println("... aborting ...")
 			return nil
@@ -79,6 +82,5 @@ func (fs *frameworkService) InstallBepInEx() error {
 	if tries >= 2 {
 		return ErrMaxAttempts
 	}
-	fmt.Println("... successfully installed BepInEx ...")
 	return nil
 }
