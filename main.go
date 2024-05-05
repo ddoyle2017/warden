@@ -48,7 +48,7 @@ func main() {
 	// Register commands
 	listCmd := command.NewListCommand(ms)
 	addCmd := command.NewAddCommand(fs, ms)
-	removeCmd := command.NewRemoveCommand(ms)
+	removeCmd := command.NewRemoveCommand(fs, ms)
 	updateCmd := command.NewUpdateCommand(ms)
 	configCmd := command.NewConfigCommand(*cfg)
 

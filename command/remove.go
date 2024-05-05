@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewRemoveCommand(ms service.ModService) *cobra.Command {
+func NewRemoveCommand(fs service.FrameworkService, ms service.ModService) *cobra.Command {
 	var namespace string
 	var modPkg string
 
@@ -34,6 +34,7 @@ func NewRemoveCommand(ms service.ModService) *cobra.Command {
 
 	// Add sub-commands
 	cmd.AddCommand(newRemoveAllCommand(ms))
+	cmd.AddCommand(newRemoveBepInEx(fs))
 	return cmd
 }
 
@@ -54,6 +55,23 @@ func newRemoveAllCommand(ms service.ModService) *cobra.Command {
 	return cmd
 }
 
+func newRemoveBepInEx(fs service.FrameworkService) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "bepinex",
+		Short: "Removes BepInEx installation.",
+		Long:  "Removes BepInEx and all mods installed under it.",
+		Run: func(cmd *cobra.Command, args []string) {
+			err := fs.RemoveBepInEx()
+			if err != nil {
+				parseRemoveError(err)
+			} else {
+				fmt.Println("... BepInEx and mods were removed successfully! ...")
+			}
+		},
+	}
+	return cmd
+}
+
 func parseRemoveError(err error) {
 	if errors.Is(err, service.ErrUnableToRemoveMod) {
 		fmt.Println("... unable to remove mod ...")
@@ -61,6 +79,8 @@ func parseRemoveError(err error) {
 		fmt.Println("... unable to confim mod removal, aborting ...")
 	} else if errors.Is(err, service.ErrModNotInstalled) {
 		fmt.Println("... mod not installed ...")
+	} else if errors.Is(err, service.ErrUnableToRemoveFramework) {
+		fmt.Println("... unable to remove BepInEx ...")
 	}
 }
 

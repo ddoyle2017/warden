@@ -4,9 +4,10 @@ package mock
 // file.Manager behavior
 type Manager struct {
 	InstallModFunc     func(url, fullName string) (string, error)
-	InstallBepInExFunc func(url, fullName string) (string, error)
 	RemoveModFunc      func(fullName string) error
 	RemoveAllModsFunc  func() error
+	InstallBepInExFunc func(url, fullName string) (string, error)
+	RemoveBepInExFunc  func() error
 }
 
 func (m *Manager) InstallMod(url, fullName string) (string, error) {
@@ -23,4 +24,8 @@ func (m *Manager) RemoveMod(fullName string) error {
 
 func (m *Manager) RemoveAllMods() error {
 	return m.RemoveAllModsFunc()
+}
+
+func (m *Manager) RemoveBepInEx() error {
+	return m.RemoveBepInExFunc()
 }

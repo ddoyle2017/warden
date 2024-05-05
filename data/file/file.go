@@ -3,6 +3,7 @@ package file
 import (
 	"archive/zip"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -59,6 +60,7 @@ func Unzip(source, destination string) error {
 
 // createFile() is a helper function that creates a new file and writes data from io.Reader into it
 func createFile(filePath string, fileSource io.Reader) error {
+	fmt.Println(filePath)
 	// Create the empty file
 	out, err := os.Create(filePath)
 	if err != nil {

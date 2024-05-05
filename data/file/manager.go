@@ -17,9 +17,10 @@ const (
 )
 
 var (
-	ErrZipDeleteFailed     = errors.New("unable to delete zip archive")
-	ErrModDeleteFailed     = errors.New("unable to delete mod directory")
-	ErrDeleteAllModsFailed = errors.New("unable to delete all mods")
+	ErrZipDeleteFailed       = errors.New("unable to delete zip archive")
+	ErrModDeleteFailed       = errors.New("unable to delete mod directory")
+	ErrDeleteAllModsFailed   = errors.New("unable to delete all mods")
+	ErrFrameworkDeleteFailed = errors.New("unable to delete framework")
 )
 
 // Manager provides an interface for all file-related mod operations, e.g. installing and deleting mods.
@@ -31,10 +32,6 @@ type Manager interface {
 	// FullName is the namespace + mod name + version string that Thunderstore provides.
 	InstallMod(url, fullName string) (string, error)
 
-	// Downloads BepInEx, installs it, and migrates any existing mods to the new
-	// plugin folder
-	InstallBepInEx(url, fullName string) (string, error)
-
 	// Deletes the folder and contents for a mod. `FullName` is a
 	// value provided by Thunderstore that contains the name, namespace, and version of a
 	// specific mod release.
@@ -42,6 +39,13 @@ type Manager interface {
 
 	// Deletes the parent mod folder and all of its contents, then recreates an empty one.
 	RemoveAllMods() error
+
+	// Downloads BepInEx, installs it, and migrates any existing mods to the new
+	// plugin folder
+	InstallBepInEx(url, fullName string) (string, error)
+
+	// Removes all BepInEx files
+	RemoveBepInEx() error
 }
 
 type manager struct {
@@ -120,6 +124,30 @@ func (m *manager) InstallBepInEx(url, fullName string) (string, error) {
 	// Move BepInEx files to Valheim installation directory and remove top level folder
 	m.moveBepInExFiles()
 	return m.valheimDirectory, nil
+}
+
+func (m *manager) RemoveBepInEx() error {
+	files := []string{
+		filepath.Join(m.valheimDirectory, "BepInEx"),                 // core BepInEx files
+		filepath.Join(m.valheimDirectory, "doorstop_libs"),           // dynamic libraries
+		filepath.Join(m.valheimDirectory, "doorstop_config.ini"),     // dynamic library config
+		filepath.Join(m.valheimDirectory, "icon.png"),                // BepInEx icon
+		filepath.Join(m.valheimDirectory, "manifest.json"),           // BepInEx metadata
+		filepath.Join(m.valheimDirectory, "README.md"),               // BepInEx README
+		filepath.Join(m.valheimDirectory, "winhttp.dll"),             // Windows HTTP service DLL that BepInEx includes
+		filepath.Join(m.valheimDirectory, "start_game_bepinex.sh"),   // BepInEx script for starting game client
+		filepath.Join(m.valheimDirectory, "start_server_bepinex.sh"), // BepInEx script for starting game server
+		filepath.Join(m.valheimDirectory, "CHANGELOG.md"),            // BepInEx markdown change log
+		filepath.Join(m.valheimDirectory, "changelog.txt"),           // BepInEx plain text change log
+	}
+
+	for _, f := range files {
+		err := os.RemoveAll(f)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return ErrFrameworkDeleteFailed
+		}
+	}
+	return nil
 }
 
 func (m *manager) RemoveMod(fullName string) error {

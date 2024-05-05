@@ -13,10 +13,13 @@ import (
 
 var (
 	ErrUnableToInstallFramework = errors.New("unable to install mod framework")
+	ErrUnableToRemoveFramework  = errors.New("unable to remove mod framework")
+	ErrFrameworkNotFound        = errors.New("unable to delete record from frameworks table")
 )
 
 type FrameworkService interface {
 	InstallBepInEx() error
+	RemoveBepInEx() error
 }
 
 type frameworkService struct {
@@ -50,11 +53,12 @@ func (fs *frameworkService) InstallBepInEx() error {
 			// Install BepInEx
 			pkg, err := fs.ts.GetPackage(framework.BepInExNamespace, framework.BepInEx)
 			if err != nil {
-				return ErrUnableToInstallFramework
+				return ErrFrameworkNotFound
 			}
 
 			_, err = fs.fm.InstallBepInEx(pkg.Latest.DownloadURL, pkg.Latest.FullName)
 			if err != nil {
+				fmt.Printf("%+v\n", err)
 				return ErrUnableToInstallFramework
 			}
 
@@ -73,6 +77,32 @@ func (fs *frameworkService) InstallBepInEx() error {
 			fmt.Println("... successfully installed BepInEx ...")
 			return nil
 		} else if fs.in.Text() == no {
+			fmt.Println("... aborting ...")
+			return nil
+		} else {
+			tries++
+		}
+	}
+	if tries >= 2 {
+		return ErrMaxAttempts
+	}
+	return nil
+}
+
+func (fs *frameworkService) RemoveBepInEx() error {
+	fmt.Printf("are you sure you want to remove BepInEx? %s\n", yesOrNoLong)
+
+	tries := 0
+	for fs.in.Scan() && tries < 2 {
+		if fs.in.Text() == yesLong {
+			if err := fs.fm.RemoveBepInEx(); err != nil {
+				return ErrUnableToRemoveFramework
+			}
+			if err := fs.r.DeleteFramework(framework.BepInEx); err != nil {
+				return ErrUnableToRemoveFramework
+			}
+			return nil
+		} else if fs.in.Text() == noLong {
 			fmt.Println("... aborting ...")
 			return nil
 		} else {

@@ -10,6 +10,7 @@ import (
 var (
 	ErrFrameworkInsertFailed = errors.New("unable to insert new record into frameworks table")
 	ErrFrameworkUpdateFailed = errors.New("unable to update record in frameworks table")
+	ErrFrameworkDeleteFailed = errors.New("unable to delete frame")
 
 	ErrFrameworkFetchFailed          = errors.New("unable to fetch specified framework from frameworks table")
 	ErrFrameworkMappingFailed        = errors.New("unable to map framework record to struct")
@@ -21,6 +22,7 @@ type Frameworks interface {
 	GetFramework(name string) (framework.Framework, error)
 	InsertFramework(f framework.Framework) error
 	UpdateFramework(f framework.Framework) error
+	DeleteFramework(name string) error
 }
 
 type frameworks struct {
@@ -82,6 +84,21 @@ func (fr *frameworks) UpdateFramework(f framework.Framework) error {
 	_, err = statement.Exec(f.Name, f.Namespace, f.Version, f.WebsiteURL, f.Description, f.ID)
 	if err != nil {
 		return ErrFrameworkUpdateFailed
+	}
+	return nil
+}
+
+func (fr *frameworks) DeleteFramework(name string) error {
+	sql := `DELETE FROM frameworks WHERE name = ?`
+
+	statement, err := fr.db.Prepare(sql)
+	if err != nil {
+		return ErrInvalidStatement
+	}
+
+	_, err = statement.Exec(name)
+	if err != nil {
+		return ErrFrameworkDeleteFailed
 	}
 	return nil
 }

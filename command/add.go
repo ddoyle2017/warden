@@ -48,5 +48,7 @@ func parseAddError(err error) {
 		fmt.Println("... unable to install mod's dependencies...")
 	} else if errors.Is(err, service.ErrUnableToInstallFramework) {
 		fmt.Println("... unable to install BepInEx ...")
+	} else if errors.Is(err, service.ErrFrameworkNotFound) {
+		fmt.Println("... unable to find BepInEx ...")
 	}
 }
