@@ -28,7 +28,7 @@ func TestEquals_Happy(t *testing.T) {
 	}
 
 	if !modA.Equals(&modB) {
-		t.Errorf("expected true, received false")
+		t.Error("expected true, received false")
 	}
 }
 
@@ -55,7 +55,7 @@ func TestEquals_Sad(t *testing.T) {
 	}
 
 	if modA.Equals(&modB) {
-		t.Errorf("expected false, received true")
+		t.Error("expected false, received true")
 	}
 }
 

@@ -21,7 +21,7 @@ const (
 )
 
 func TestInstallMod_Happy(t *testing.T) {
-	installLocation := filepath.Join(testFolder, testMod)
+	installLocation := filepath.Join(testFolder, file.BepInExPluginDirectory, testMod)
 	archive, err := os.Open(filepath.Join(dataFolder, testMod+".zip"))
 	if err != nil {
 		t.Errorf("unexpected error reading test zip file, received err: %+v", err)
@@ -46,7 +46,7 @@ func TestInstallMod_Happy(t *testing.T) {
 	}
 
 	t.Cleanup(func() {
-		manager.RemoveAllMods()
+		cleanUpTestFiles(t)
 	})
 }
 
@@ -92,7 +92,7 @@ func TestInstallMod_Sad(t *testing.T) {
 			}
 
 			t.Cleanup(func() {
-				manager.RemoveAllMods()
+				cleanUpTestFiles(t)
 			})
 		})
 	}
@@ -122,6 +122,9 @@ func TestRemoveMod_Happy(t *testing.T) {
 			}
 		})
 	}
+	t.Cleanup(func() {
+		cleanUpTestFiles(t)
+	})
 }
 
 func TestRemoveAllMods_Happy(t *testing.T) {
@@ -149,6 +152,9 @@ func TestRemoveAllMods_Happy(t *testing.T) {
 			}
 		})
 	}
+	t.Cleanup(func() {
+		cleanUpTestFiles(t)
+	})
 }
 
 func setUpTestFiles(t *testing.T) {
@@ -158,5 +164,15 @@ func setUpTestFiles(t *testing.T) {
 	err := file.Unzip(source, destination)
 	if err != nil {
 		t.Errorf("unexpected error creating test files, received error: %+v", err)
+	}
+}
+
+func cleanUpTestFiles(t *testing.T) {
+	err := os.RemoveAll(testFolder)
+	if errors.Is(err, os.ErrNotExist) {
+		return
+	}
+	if err != nil {
+		t.Errorf("unexpected error when cleaning-up test file, received: %+v", err)
 	}
 }

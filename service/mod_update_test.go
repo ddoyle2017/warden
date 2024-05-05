@@ -107,20 +107,20 @@ func TestUpdateMod_Happy(t *testing.T) {
 func TestUpdateMod_Sad(t *testing.T) {
 	namespace := "Azumatt"
 	modName := "Sleepover"
-	depNamespace := "denikson"
-	depName := "BepInExPack_Valheim"
+	depNamespace := "modauthor"
+	depName := "mod"
 
 	current := mod.Mod{
 		ID:           1,
 		Namespace:    namespace,
 		Name:         modName,
-		Dependencies: []string{"denikson-BepInExPack_Valheim-5.4.2202"},
+		Dependencies: []string{"modauthor-mod-5.4.2202"},
 		Version:      "0.0.1",
 	}
 	latest := thunderstore.Release{
 		Namespace:     namespace,
 		Name:          modName,
-		Dependencies:  []string{"denikson-BepInExPack_Valheim-5.4.2202"},
+		Dependencies:  []string{"modauthor-mod-5.4.2202"},
 		VersionNumber: "0.0.2",
 	}
 
@@ -452,7 +452,7 @@ func TestUpdateAllMods_Sad(t *testing.T) {
 							Namespace:    "Azumatt",
 							Name:         "Sleepover",
 							Version:      "0.0.1",
-							Dependencies: []string{"denikson-BepInExPack_Valheim-5.4.2202"},
+							Dependencies: []string{"modauthor-fakemodname-5.4.2202"},
 						},
 					}, nil
 				},
@@ -462,7 +462,7 @@ func TestUpdateAllMods_Sad(t *testing.T) {
 			},
 			ts: &mock.Thunderstore{
 				GetPackageFunc: func(namespace, name string) (thunderstore.Package, error) {
-					if namespace == "denikson" {
+					if namespace == "modauthor" {
 						return thunderstore.Package{}, thunderstore.ErrPackageNotFound
 					}
 					return thunderstore.Package{
@@ -472,7 +472,7 @@ func TestUpdateAllMods_Sad(t *testing.T) {
 							Namespace:     "Azumatt",
 							Name:          "Sleepover",
 							VersionNumber: "0.0.2",
-							Dependencies:  []string{"denikson-BepInExPack_Valheim-5.4.2202"},
+							Dependencies:  []string{"modauthor-fakemodname-5.4.2202"},
 						},
 					}, nil
 				},

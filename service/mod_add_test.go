@@ -187,7 +187,7 @@ func TestAddMod_Sad(t *testing.T) {
 								VersionNumber: "1.0.1",
 								WebsiteURL:    "github.com/author/mod",
 								Description:   "a mod for sleepovers",
-								Dependencies:  []string{"denikson-BepInExPack_Valheim-5.4.2202"},
+								Dependencies:  []string{"modauthor-mod-5.4.2202"},
 							},
 						}, nil
 					} else {
