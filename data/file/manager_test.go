@@ -14,15 +14,16 @@ import (
 )
 
 const (
-	testFolder = "../../test/file"
-	testMod    = "Azumatt-Where_You_At-1.0.9"
-	testURL    = "testurl.com/file"
-	dataFolder = "../../test/data"
+	valheimDirectory = "../../test/file"
+	testMod          = "Azumatt-Where_You_At-1.0.9"
+	testFramework    = "denikson-BepInExPack_Valheim-5.4.2202"
+	testURL          = "testurl.com/file"
+	dataFolder       = "../../test/data"
 )
 
 func TestInstallMod_Happy(t *testing.T) {
 	// Set-up
-	modDir := filepath.Join(testFolder, file.BepInExPluginDirectory)
+	modDir := filepath.Join(valheimDirectory, file.BepInExPluginDirectory)
 	if err := os.MkdirAll(modDir, os.ModePerm); err != nil {
 		t.Errorf("unexpected error setting up mods folder, received: %+v", err)
 	}
@@ -41,7 +42,7 @@ func TestInstallMod_Happy(t *testing.T) {
 			}, nil
 		},
 	}
-	manager := file.NewManager(&client, testFolder)
+	manager := file.NewManager(&client, valheimDirectory)
 
 	path, err := manager.InstallMod(testURL, testMod)
 	if err != nil {
@@ -87,7 +88,7 @@ func TestInstallMod_Sad(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			manager := file.NewManager(test.client, testFolder)
+			manager := file.NewManager(test.client, valheimDirectory)
 
 			path, err := manager.InstallMod(testURL, test.fullName)
 			if !errors.Is(err, test.expectedErr) {
@@ -120,7 +121,7 @@ func TestRemoveMod_Happy(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			manager := file.NewManager(&mock.HTTPClient{}, testFolder)
+			manager := file.NewManager(&mock.HTTPClient{}, valheimDirectory)
 
 			err := manager.RemoveMod(test.name)
 			if err != nil {
@@ -150,7 +151,7 @@ func TestRemoveAllMods_Happy(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			test.setUp(t)
-			manager := file.NewManager(&mock.HTTPClient{}, testFolder)
+			manager := file.NewManager(&mock.HTTPClient{}, valheimDirectory)
 
 			err := manager.RemoveAllMods()
 			if err != nil {
@@ -163,9 +164,135 @@ func TestRemoveAllMods_Happy(t *testing.T) {
 	})
 }
 
+func TestInstallBepInEx_Happy(t *testing.T) {
+	archive, err := os.Open(filepath.Join(dataFolder, testFramework+".zip"))
+	if err != nil {
+		t.Errorf("unexpected error reading BepInEx zip file, received err: %+v", err)
+	}
+	client := mock.HTTPClient{
+		GetFunc: func(_ string) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       archive,
+			}, nil
+		},
+	}
+	m := file.NewManager(&client, valheimDirectory)
+
+	path, err := m.InstallBepInEx(testURL, testFramework)
+	if err != nil {
+		t.Errorf("expected a nil error, received: %+v", err)
+	}
+	if path != valheimDirectory {
+		t.Errorf("expected path: %s, received: %s", valheimDirectory, path)
+	}
+
+	t.Cleanup(func() {
+		cleanUpTestFiles(t)
+	})
+}
+
+func TestInstallBepInEx_Sad(t *testing.T) {
+	tests := map[string]struct {
+		fullName string
+		client   api.HTTPClient
+		expected error
+	}{
+		"returns error when unable to download BepInEx": {
+			fullName: testMod,
+			client: &mock.HTTPClient{
+				GetFunc: func(_ string) (*http.Response, error) {
+					return &http.Response{}, http.ErrContentLength
+				},
+			},
+			expected: api.ErrHTTPClient,
+		},
+		"returns error when unable to create BepInEx zip archive": {
+			fullName: "dba\\.. dwanu^&%* d//]\\",
+			client: &mock.HTTPClient{
+				GetFunc: func(_ string) (*http.Response, error) {
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Body:       io.NopCloser(strings.NewReader("garbagedata")),
+					}, nil
+				},
+			},
+			expected: file.ErrFileCreateFailed,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			manager := file.NewManager(test.client, valheimDirectory)
+
+			path, err := manager.InstallBepInEx(testURL, test.fullName)
+			if !errors.Is(err, test.expected) {
+				t.Errorf("expected error: %+v, received error: %+v", test.expected, err)
+			}
+			if path != "" {
+				t.Errorf("expected an empty path, received: %s", path)
+			}
+
+			t.Cleanup(func() {
+				cleanUpTestFiles(t)
+			})
+		})
+	}
+}
+
+func TestRemoveBepInEx_Happy(t *testing.T) {
+	tests := map[string]struct {
+		setUp func(t *testing.T)
+	}{
+		"if there are no BepInEx files to remove, return successful": {
+			setUp: func(t *testing.T) {},
+		},
+		"if there are BepInEx files, remove everything and return successful": {
+			setUp: func(t *testing.T) {
+				source := filepath.Join(dataFolder, testFramework+".zip")
+				destination := filepath.Join(valheimDirectory)
+
+				if err := file.Unzip(source, destination); err != nil {
+					t.Errorf("unexpected error creating test BepInEx install, received error: %+v", err)
+				}
+
+				path := filepath.Join(valheimDirectory, file.BepInExContentsDirectory)
+
+				entries, err := os.ReadDir(path)
+				if err != nil {
+					t.Errorf("unexpected error reading BepInEx test files, received error: %+v", err)
+				}
+				for _, e := range entries {
+					source := filepath.Join(path, e.Name())
+					dest := filepath.Join(valheimDirectory, e.Name())
+
+					if err := os.Rename(source, dest); err != nil {
+						t.Errorf("unexpected error moving BepInEx files, received error: %+v", err)
+					}
+				}
+				if err := os.RemoveAll(path); err != nil {
+					t.Errorf("unexpected error cleaning up BepInEx files, received error: %+v", err)
+				}
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			test.setUp(t)
+
+			m := file.NewManager(&mock.HTTPClient{}, valheimDirectory)
+
+			if err := m.RemoveBepInEx(); err != nil {
+				t.Errorf("expected a nil error, received: %+v", err)
+			}
+		})
+	}
+}
+
 func setUpTestFiles(t *testing.T) {
 	source := filepath.Join(dataFolder, testMod+".zip")
-	destination := filepath.Join(testFolder, file.BepInExPluginDirectory, testMod)
+	destination := filepath.Join(valheimDirectory, file.BepInExPluginDirectory, testMod)
 
 	err := file.Unzip(source, destination)
 	if err != nil {
@@ -174,11 +301,11 @@ func setUpTestFiles(t *testing.T) {
 }
 
 func cleanUpTestFiles(t *testing.T) {
-	err := os.RemoveAll(testFolder)
+	err := os.RemoveAll(valheimDirectory)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("unexpected error when cleaning-up test files, received: %+v", err)
 	}
-	if err := os.MkdirAll(testFolder, os.ModePerm); err != nil {
+	if err := os.MkdirAll(valheimDirectory, os.ModePerm); err != nil {
 		t.Errorf("unexpected error creating test file folder, received: %+v", err)
 	}
 }

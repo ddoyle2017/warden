@@ -54,11 +54,11 @@ type manager struct {
 	modDirectory     string
 }
 
-func NewManager(c api.HTTPClient, sf string) Manager {
+func NewManager(c api.HTTPClient, vd string) Manager {
 	return &manager{
 		client:           c,
-		valheimDirectory: sf,
-		modDirectory:     filepath.Join(sf, BepInExPluginDirectory),
+		valheimDirectory: vd,
+		modDirectory:     filepath.Join(vd, BepInExPluginDirectory),
 	}
 }
 
@@ -188,11 +188,12 @@ func (m *manager) moveBepInExFiles() {
 	for _, e := range entries {
 		source := filepath.Join(path, e.Name())
 		dest := filepath.Join(m.valheimDirectory, e.Name())
+
 		if err := os.Rename(source, dest); err != nil {
-			panic("BING BONG")
+			panic("KUNG FU KENNY")
 		}
 	}
 	if err := os.RemoveAll(path); err != nil {
-		panic("BING BONG")
+		panic("NOT LIKE US")
 	}
 }
