@@ -70,7 +70,7 @@ func TestUpdateMod_Happy(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			r := mock.Repo{
+			r := mock.ModsRepo{
 				GetModFunc: func(name string) (mod.Mod, error) {
 					return test.current, nil
 				},
@@ -132,7 +132,7 @@ func TestUpdateMod_Sad(t *testing.T) {
 		expected error
 	}{
 		"return an error if mod isn't installed": {
-			r: &mock.Repo{
+			r: &mock.ModsRepo{
 				GetModFunc: func(name string) (mod.Mod, error) {
 					return mod.Mod{}, repo.ErrModFetchNoResults
 				},
@@ -140,7 +140,7 @@ func TestUpdateMod_Sad(t *testing.T) {
 			expected: service.ErrModNotInstalled,
 		},
 		"return an error if mod fetch fails": {
-			r: &mock.Repo{
+			r: &mock.ModsRepo{
 				GetModFunc: func(name string) (mod.Mod, error) {
 					return mod.Mod{}, repo.ErrModFetchFailed
 				},
@@ -148,7 +148,7 @@ func TestUpdateMod_Sad(t *testing.T) {
 			expected: service.ErrUnableToUpdateMod,
 		},
 		"return an error if Thunderstore API returns an error": {
-			r: &mock.Repo{
+			r: &mock.ModsRepo{
 				GetModFunc: func(name string) (mod.Mod, error) {
 					return current, nil
 				},
@@ -161,7 +161,7 @@ func TestUpdateMod_Sad(t *testing.T) {
 			expected: service.ErrModNotFound,
 		},
 		"return an error if user fails to confirm update": {
-			r: &mock.Repo{
+			r: &mock.ModsRepo{
 				GetModFunc: func(name string) (mod.Mod, error) {
 					return current, nil
 				},
@@ -179,7 +179,7 @@ func TestUpdateMod_Sad(t *testing.T) {
 			expected: service.ErrMaxAttempts,
 		},
 		"return an error if mod update fails": {
-			r: &mock.Repo{
+			r: &mock.ModsRepo{
 				GetModFunc: func(name string) (mod.Mod, error) {
 					return current, nil
 				},
@@ -202,7 +202,7 @@ func TestUpdateMod_Sad(t *testing.T) {
 			expected: service.ErrUnableToUpdateMod,
 		},
 		"return an error if unable to install mod update dependencies": {
-			r: &mock.Repo{
+			r: &mock.ModsRepo{
 				GetModFunc: func(name string) (mod.Mod, error) {
 					return current, nil
 				},
@@ -333,7 +333,7 @@ func TestUpdateAllMods_Happy(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			r := &mock.Repo{
+			r := &mock.ModsRepo{
 				ListModsFunc: func() ([]mod.Mod, error) {
 					return test.current, nil
 				},
@@ -380,7 +380,7 @@ func TestUpdateAllMods_Sad(t *testing.T) {
 			expected: service.ErrMaxAttempts,
 		},
 		"return error if unable to fetch list of installed mods": {
-			r: &mock.Repo{
+			r: &mock.ModsRepo{
 				ListModsFunc: func() ([]mod.Mod, error) {
 					return []mod.Mod{}, repo.ErrModListFailed
 				},
@@ -389,7 +389,7 @@ func TestUpdateAllMods_Sad(t *testing.T) {
 			expected: service.ErrUnableToListMods,
 		},
 		"return error if Thunderstore API returns an error": {
-			r: &mock.Repo{
+			r: &mock.ModsRepo{
 				ListModsFunc: func() ([]mod.Mod, error) {
 					return []mod.Mod{
 						{
@@ -410,7 +410,7 @@ func TestUpdateAllMods_Sad(t *testing.T) {
 			expected: service.ErrModNotFound,
 		},
 		"return error if unable to update mod": {
-			r: &mock.Repo{
+			r: &mock.ModsRepo{
 				ListModsFunc: func() ([]mod.Mod, error) {
 					return []mod.Mod{
 						{
@@ -445,7 +445,7 @@ func TestUpdateAllMods_Sad(t *testing.T) {
 			expected: service.ErrUnableToUpdateMod,
 		},
 		"return error if unable to install mod update's dependencies": {
-			r: &mock.Repo{
+			r: &mock.ModsRepo{
 				ListModsFunc: func() ([]mod.Mod, error) {
 					return []mod.Mod{
 						{

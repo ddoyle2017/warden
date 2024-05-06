@@ -34,7 +34,7 @@ func TestListMods_Happy(t *testing.T) {
 			Dependencies: []string{"denikson-BepInExPack_Valheim-5.4.2202"},
 		},
 	}
-	r := mock.Repo{
+	r := mock.ModsRepo{
 		ListModsFunc: func() ([]mod.Mod, error) {
 			return expected, nil
 		},
@@ -55,7 +55,7 @@ func TestListMods_Happy(t *testing.T) {
 }
 
 func TestListMods_Sad(t *testing.T) {
-	r := mock.Repo{
+	r := mock.ModsRepo{
 		ListModsFunc: func() ([]mod.Mod, error) {
 			return []mod.Mod{}, repo.ErrModListFailed
 		},

@@ -14,7 +14,7 @@ import (
 )
 
 func TestRemoveMod_Happy(t *testing.T) {
-	r := &mock.Repo{
+	r := &mock.ModsRepo{
 		GetModFunc: func(name string) (mod.Mod, error) {
 			return mod.Mod{
 				ID:        1,
@@ -69,7 +69,7 @@ func TestRemoveMod_Sad(t *testing.T) {
 			expected: service.ErrMaxAttempts,
 		},
 		"return error if mod isn't installed": {
-			r: &mock.Repo{
+			r: &mock.ModsRepo{
 				GetModFunc: func(name string) (mod.Mod, error) {
 					return mod.Mod{}, repo.ErrModFetchNoResults
 				},
@@ -78,7 +78,7 @@ func TestRemoveMod_Sad(t *testing.T) {
 			expected: service.ErrModNotInstalled,
 		},
 		"return error if mod fetch fails": {
-			r: &mock.Repo{
+			r: &mock.ModsRepo{
 				GetModFunc: func(name string) (mod.Mod, error) {
 					return mod.Mod{}, repo.ErrModFetchFailed
 				},
@@ -87,7 +87,7 @@ func TestRemoveMod_Sad(t *testing.T) {
 			expected: service.ErrUnableToRemoveMod,
 		},
 		"return an error if unable to delete record of mod": {
-			r: &mock.Repo{
+			r: &mock.ModsRepo{
 				GetModFunc: func(name string) (mod.Mod, error) {
 					return mod.Mod{
 						ID:        1,
@@ -103,7 +103,7 @@ func TestRemoveMod_Sad(t *testing.T) {
 			expected: service.ErrUnableToRemoveMod,
 		},
 		"return an error if unable to remove mod files": {
-			r: &mock.Repo{
+			r: &mock.ModsRepo{
 				GetModFunc: func(name string) (mod.Mod, error) {
 					return mod.Mod{
 						ID:        1,
@@ -141,7 +141,7 @@ func TestRemoveMod_Sad(t *testing.T) {
 }
 
 func TestRemoveAllMods_Happy(t *testing.T) {
-	r := &mock.Repo{
+	r := &mock.ModsRepo{
 		DeleteAllModsFunc: func() error {
 			return nil
 		},
@@ -187,7 +187,7 @@ func TestRemoveAllMods_Sad(t *testing.T) {
 			expected: service.ErrMaxAttempts,
 		},
 		"return error if unable to remove mod records": {
-			r: &mock.Repo{
+			r: &mock.ModsRepo{
 				DeleteAllModsFunc: func() error {
 					return repo.ErrModDeleteAllFailed
 				},
@@ -201,7 +201,7 @@ func TestRemoveAllMods_Sad(t *testing.T) {
 			expected: service.ErrUnableToRemoveMod,
 		},
 		"return error if unable to remove mod files": {
-			r: &mock.Repo{
+			r: &mock.ModsRepo{
 				DeleteAllModsFunc: func() error {
 					return nil
 				},

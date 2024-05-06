@@ -13,7 +13,7 @@ import (
 )
 
 func TestAddMod_Happy(t *testing.T) {
-	r := mock.Repo{
+	r := mock.ModsRepo{
 		GetModFunc: func(name string) (mod.Mod, error) {
 			return mod.Mod{}, repo.ErrModFetchNoResults
 		},
@@ -75,7 +75,7 @@ func TestAddMod_Sad(t *testing.T) {
 		expected error
 	}{
 		"return an error if mod is already installed": {
-			r: &mock.Repo{
+			r: &mock.ModsRepo{
 				GetModFunc: func(name string) (mod.Mod, error) {
 					return mod.Mod{
 						ID:        1,
@@ -87,7 +87,7 @@ func TestAddMod_Sad(t *testing.T) {
 			expected: service.ErrModAlreadyInstalled,
 		},
 		"return an error if mod fetch fails": {
-			r: &mock.Repo{
+			r: &mock.ModsRepo{
 				GetModFunc: func(name string) (mod.Mod, error) {
 					return mod.Mod{}, repo.ErrModFetchFailed
 				},
@@ -95,7 +95,7 @@ func TestAddMod_Sad(t *testing.T) {
 			expected: service.ErrModInstallFailed,
 		},
 		"return an error if Thunderstore API returns an error": {
-			r: &mock.Repo{
+			r: &mock.ModsRepo{
 				GetModFunc: func(name string) (mod.Mod, error) {
 					return mod.Mod{}, repo.ErrModFetchNoResults
 				},
@@ -108,7 +108,7 @@ func TestAddMod_Sad(t *testing.T) {
 			expected: service.ErrModNotFound,
 		},
 		"return an error if unable to download and install mod files": {
-			r: &mock.Repo{
+			r: &mock.ModsRepo{
 				GetModFunc: func(name string) (mod.Mod, error) {
 					return mod.Mod{}, repo.ErrModFetchNoResults
 				},
@@ -138,7 +138,7 @@ func TestAddMod_Sad(t *testing.T) {
 			expected: service.ErrModInstallFailed,
 		},
 		"return an error if unable to record mod installation": {
-			r: &mock.Repo{
+			r: &mock.ModsRepo{
 				GetModFunc: func(name string) (mod.Mod, error) {
 					return mod.Mod{}, repo.ErrModFetchNoResults
 				},
@@ -168,7 +168,7 @@ func TestAddMod_Sad(t *testing.T) {
 			expected: service.ErrModInstallFailed,
 		},
 		"return an error if unable to install mod dependencies": {
-			r: &mock.Repo{
+			r: &mock.ModsRepo{
 				GetModFunc: func(name string) (mod.Mod, error) {
 					return mod.Mod{}, repo.ErrModFetchNoResults
 				},
