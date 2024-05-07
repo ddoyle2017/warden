@@ -2,8 +2,8 @@ package command
 
 import (
 	"fmt"
-	"warden/domain/mod"
-	"warden/service"
+	"warden/internal/domain/mod"
+	"warden/internal/service"
 
 	"github.com/spf13/cobra"
 )

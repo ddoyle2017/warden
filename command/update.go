@@ -3,7 +3,7 @@ package command
 import (
 	"errors"
 	"fmt"
-	"warden/service"
+	"warden/internal/service"
 
 	"github.com/spf13/cobra"
 )

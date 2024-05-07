@@ -2,7 +2,7 @@ package command
 
 import (
 	"fmt"
-	"warden/config"
+	"warden/internal/config"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -77,8 +77,6 @@ func newConfigSetCommand() *cobra.Command {
 func isValidConfigKey(key string) bool {
 	switch key {
 	case "valheim-directory":
-		return true
-	case "mod-directory":
 		return true
 	default:
 		return false
