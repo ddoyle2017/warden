@@ -4,12 +4,12 @@ import (
 	"errors"
 	"io"
 	"testing"
-	"warden/api/thunderstore"
-	"warden/data/file"
-	"warden/data/repo"
-	"warden/domain/mod"
-	"warden/service"
-	"warden/test/mock"
+	"warden/internal/api/thunderstore"
+	"warden/internal/data/file"
+	"warden/internal/data/repo"
+	"warden/internal/domain/mod"
+	"warden/internal/service"
+	"warden/internal/test/mock"
 )
 
 func TestAddMod_Happy(t *testing.T) {

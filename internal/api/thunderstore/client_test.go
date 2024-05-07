@@ -6,9 +6,9 @@ import (
 	"io"
 	"net/http"
 	"testing"
-	"warden/api"
-	"warden/api/thunderstore"
-	"warden/test/mock"
+	"warden/internal/api"
+	"warden/internal/api/thunderstore"
+	"warden/internal/test/mock"
 )
 
 func TestGetPackage_Happy(t *testing.T) {

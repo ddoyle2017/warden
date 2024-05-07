@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"warden/api"
-	"warden/data/file"
-	"warden/test/mock"
+	"warden/internal/api"
+	"warden/internal/data/file"
+	"warden/internal/test/mock"
 )
 
 const (

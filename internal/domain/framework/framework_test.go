@@ -2,7 +2,7 @@ package framework_test
 
 import (
 	"testing"
-	"warden/domain/framework"
+	"warden/internal/domain/framework"
 )
 
 func TestEquals_Happy(t *testing.T) {

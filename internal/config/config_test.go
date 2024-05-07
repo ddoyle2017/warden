@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"warden/config"
+	"warden/internal/config"
 
 	"github.com/spf13/viper"
 )

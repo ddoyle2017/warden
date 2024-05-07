@@ -2,7 +2,7 @@ package mod_test
 
 import (
 	"testing"
-	"warden/domain/mod"
+	"warden/internal/domain/mod"
 )
 
 func TestEquals_Happy(t *testing.T) {

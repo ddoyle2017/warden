@@ -5,10 +5,10 @@ import (
 	"io"
 	"slices"
 	"testing"
-	"warden/data/repo"
-	"warden/domain/mod"
-	"warden/service"
-	"warden/test/mock"
+	"warden/internal/data/repo"
+	"warden/internal/domain/mod"
+	"warden/internal/service"
+	"warden/internal/test/mock"
 )
 
 func TestListMods_Happy(t *testing.T) {

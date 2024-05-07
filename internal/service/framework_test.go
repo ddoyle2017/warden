@@ -5,12 +5,12 @@ import (
 	"io"
 	"strings"
 	"testing"
-	"warden/api/thunderstore"
-	"warden/data/file"
-	"warden/data/repo"
-	"warden/domain/framework"
-	"warden/service"
-	"warden/test/mock"
+	"warden/internal/api/thunderstore"
+	"warden/internal/data/file"
+	"warden/internal/data/repo"
+	"warden/internal/domain/framework"
+	"warden/internal/service"
+	"warden/internal/test/mock"
 )
 
 func TestInstallBepInEx_Happy(t *testing.T) {
