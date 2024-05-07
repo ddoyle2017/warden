@@ -238,4 +238,8 @@ func TestDeleteFramework_Sad(t *testing.T) {
 	if err := fr.DeleteFramework(framework.BepInEx); !errors.Is(err, repo.ErrInvalidStatement) {
 		t.Errorf("expected error: %+v, received: %+v", repo.ErrInvalidStatement, err)
 	}
+
+	t.Cleanup(func() {
+		test.RemoveDBFile(t)
+	})
 }
