@@ -13,12 +13,19 @@ import (
 
 var (
 	ErrUnableToInstallFramework = errors.New("unable to install mod framework")
+	ErrUnableToUpdateFramework  = errors.New("unable to update mod framework")
 	ErrUnableToRemoveFramework  = errors.New("unable to remove mod framework")
-	ErrFrameworkNotFound        = errors.New("unable to delete record from frameworks table")
+
+	ErrFrameworkNotInstalled = errors.New("framework is not installed")
+	ErrFrameworkNotFound     = errors.New("unable to delete record from frameworks table")
 )
 
-type FrameworkService interface {
+// Encapsulates all the business logic for managing frameworks, namely BepInEx. It coordinates
+// both the database and file management to make sure they're updated together. Frameworks have
+// separate installation rules than normal mods.
+type Framework interface {
 	InstallBepInEx() error
+	UpdateBepInEx() error
 	RemoveBepInEx() error
 }
 
@@ -29,7 +36,7 @@ type frameworkService struct {
 	in *bufio.Scanner
 }
 
-func NewFrameworkService(r repo.Frameworks, fm file.Manager, ts thunderstore.Thunderstore, reader io.Reader) FrameworkService {
+func NewFrameworkService(r repo.Frameworks, fm file.Manager, ts thunderstore.Thunderstore, reader io.Reader) Framework {
 	return &frameworkService{
 		r:  r,
 		fm: fm,
@@ -86,6 +93,39 @@ func (fs *frameworkService) InstallBepInEx() error {
 	if tries >= 2 {
 		return ErrMaxAttempts
 	}
+	return nil
+}
+
+func (fs *frameworkService) UpdateBepInEx() error {
+	// Check if BepInEx is installed
+	current, err := fs.r.GetFramework(framework.BepInEx)
+	if err != nil && errors.Is(err, repo.ErrFrameworkFetchNoResults) {
+		return ErrFrameworkNotInstalled
+	}
+	if err != nil {
+		return ErrUnableToUpdateFramework
+	}
+	// Check if current version is the latest
+	pkg, err := fs.ts.GetPackage(framework.BepInExNamespace, framework.BepInEx)
+	if err != nil {
+		return ErrUnableToUpdateFramework
+	}
+
+	if pkg.Latest.VersionNumber > current.Version {
+		fmt.Printf("... a new version of BepInEx was found (%s) ...\n", pkg.Latest.VersionNumber)
+		fmt.Printf("did you want to update BepInEx? %s\n", yesOrNo)
+
+		// If new version is found, confirm with the user if they want to update
+		tries := 0
+		for fs.in.Scan() && tries < 2 {
+			// Update version + keep current mods
+		}
+		if tries >= 2 {
+			return ErrMaxAttempts
+		}
+		return nil
+	}
+	fmt.Println("... BepInEx is up-to-date! ...")
 	return nil
 }
 

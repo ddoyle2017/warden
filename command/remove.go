@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewRemoveCommand(fs service.FrameworkService, ms service.ModService) *cobra.Command {
+func NewRemoveCommand(fs service.Framework, ms service.Mod) *cobra.Command {
 	var namespace string
 	var modPkg string
 
@@ -38,7 +38,7 @@ func NewRemoveCommand(fs service.FrameworkService, ms service.ModService) *cobra
 	return cmd
 }
 
-func newRemoveAllCommand(ms service.ModService) *cobra.Command {
+func newRemoveAllCommand(ms service.Mod) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "all",
 		Short: "Removes all mods.",
@@ -55,7 +55,7 @@ func newRemoveAllCommand(ms service.ModService) *cobra.Command {
 	return cmd
 }
 
-func newRemoveBepInEx(fs service.FrameworkService) *cobra.Command {
+func newRemoveBepInEx(fs service.Framework) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "bepinex",
 		Short: "Removes BepInEx installation.",

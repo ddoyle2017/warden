@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewUpdateCommand(ms service.ModService) *cobra.Command {
+func NewUpdateCommand(fs service.Framework, ms service.Mod) *cobra.Command {
 	var modPkg string
 
 	cmd := &cobra.Command{
@@ -30,10 +30,11 @@ func NewUpdateCommand(ms service.ModService) *cobra.Command {
 
 	// Add sub-commands
 	cmd.AddCommand(newUpdateAllCommand(ms))
+	cmd.AddCommand(newUpdateBepInEx(fs))
 	return cmd
 }
 
-func newUpdateAllCommand(ms service.ModService) *cobra.Command {
+func newUpdateAllCommand(ms service.Mod) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "all",
 		Short: "Updates all mods",
@@ -44,6 +45,23 @@ func newUpdateAllCommand(ms service.ModService) *cobra.Command {
 				parseUpdateError(err)
 			} else {
 				fmt.Println("... all mods successfully updated! ...")
+			}
+		},
+	}
+	return cmd
+}
+
+func newUpdateBepInEx(fs service.Framework) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "bepinex",
+		Short: "Updates BepInEx.",
+		Long:  "Updates the current BepInEx installation.",
+		Run: func(cmd *cobra.Command, args []string) {
+			err := fs.UpdateBepInEx()
+			if err != nil {
+				parseUpdateError(err)
+			} else {
+				fmt.Println("...successfully updated BepInEx!...")
 			}
 		},
 	}

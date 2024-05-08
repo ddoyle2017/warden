@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewListCommand(ms service.ModService) *cobra.Command {
+func NewListCommand(ms service.Mod) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List all currently installed mods and their versions",

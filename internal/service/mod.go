@@ -26,9 +26,9 @@ var (
 	ErrAddDependenciesFailed = errors.New("unable to install mod's dependencies")
 )
 
-// ModService encapsulates all the business logic for managing mods. It coordinates both the mods
+// Encapsulates all the business logic for managing mods. It coordinates both the mods
 // database and file management to make sure they're updated together.
-type ModService interface {
+type Mod interface {
 	ListMods() ([]mod.Mod, error)
 	AddMod(namespace, name string) error
 	UpdateMod(name string) error
@@ -44,7 +44,7 @@ type modService struct {
 	in *bufio.Scanner
 }
 
-func NewModService(r repo.Mods, fm file.Manager, ts thunderstore.Thunderstore, reader io.Reader) ModService {
+func NewModService(r repo.Mods, fm file.Manager, ts thunderstore.Thunderstore, reader io.Reader) Mod {
 	return &modService{
 		r:  r,
 		fm: fm,

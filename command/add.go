@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewAddCommand(fs service.FrameworkService, ms service.ModService) *cobra.Command {
+func NewAddCommand(fs service.Framework, ms service.Mod) *cobra.Command {
 	var namespace string
 	var modPkg string
 
