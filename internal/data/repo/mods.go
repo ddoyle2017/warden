@@ -3,7 +3,6 @@ package repo
 import (
 	"database/sql"
 	"errors"
-	"warden/internal/data"
 	"warden/internal/domain/mod"
 )
 
@@ -34,10 +33,10 @@ type Mods interface {
 }
 
 type mods struct {
-	db data.Database
+	db Database
 }
 
-func NewModsRepo(db data.Database) Mods {
+func NewModsRepo(db Database) Mods {
 	return &mods{
 		db: db,
 	}

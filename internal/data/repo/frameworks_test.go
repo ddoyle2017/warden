@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"errors"
 	"testing"
-	"warden/internal/data"
 	"warden/internal/data/repo"
 	"warden/internal/domain/framework"
 	"warden/internal/test"
@@ -13,7 +12,7 @@ import (
 
 func TestGetFramework_Happy(t *testing.T) {
 	db := test.SetUpTestDB(t)
-	data.CreateFrameworksTable(db)
+	repo.CreateFrameworksTable(db)
 
 	fr := repo.NewFrameworksRepo(db)
 	frameworks := test.SeedFrameworksTable(t, fr)
@@ -33,11 +32,11 @@ func TestGetFramework_Happy(t *testing.T) {
 
 func TestGetFramework_Sad(t *testing.T) {
 	tests := map[string]struct {
-		setUp    func() data.Database
+		setUp    func() repo.Database
 		expected error
 	}{
 		"if query fails to run, return an error": {
-			setUp: func() data.Database {
+			setUp: func() repo.Database {
 				return &mock.Database{
 					QueryFunc: func(query string, args ...any) (*sql.Rows, error) {
 						return nil, sql.ErrConnDone
@@ -47,17 +46,17 @@ func TestGetFramework_Sad(t *testing.T) {
 			expected: repo.ErrFrameworkFetchFailed,
 		},
 		"if query returns no results, return an error": {
-			setUp: func() data.Database {
+			setUp: func() repo.Database {
 				db := test.SetUpTestDB(t)
-				data.CreateFrameworksTable(db)
+				repo.CreateFrameworksTable(db)
 				return db
 			},
 			expected: repo.ErrFrameworkFetchNoResults,
 		},
 		"if the query returns multiple results, return an error": {
-			setUp: func() data.Database {
+			setUp: func() repo.Database {
 				db := test.SetUpTestDB(t)
-				data.CreateFrameworksTable(db)
+				repo.CreateFrameworksTable(db)
 
 				fr := repo.NewFrameworksRepo(db)
 				test.SeedFrameworksTable(t, fr)
@@ -93,7 +92,7 @@ func TestGetFramework_Sad(t *testing.T) {
 
 func TestInsertFramework_Happy(t *testing.T) {
 	db := test.SetUpTestDB(t)
-	data.CreateFrameworksTable(db)
+	repo.CreateFrameworksTable(db)
 
 	fr := repo.NewFrameworksRepo(db)
 	f := framework.Framework{
@@ -130,19 +129,19 @@ func TestInsertFramework_Sad(t *testing.T) {
 
 func TestUpdateFramework_Happy(t *testing.T) {
 	tests := map[string]struct {
-		setUp func() data.Database
+		setUp func() repo.Database
 	}{
 		"if framework isn't found, update nothing and return successful": {
-			setUp: func() data.Database {
+			setUp: func() repo.Database {
 				db := test.SetUpTestDB(t)
-				data.CreateFrameworksTable(db)
+				repo.CreateFrameworksTable(db)
 				return db
 			},
 		},
 		"if framework is found, update framework and return successful": {
-			setUp: func() data.Database {
+			setUp: func() repo.Database {
 				db := test.SetUpTestDB(t)
-				data.CreateFrameworksTable(db)
+				repo.CreateFrameworksTable(db)
 
 				test.SeedFrameworksTable(t, repo.NewFrameworksRepo(db))
 				return db
@@ -190,19 +189,19 @@ func TestUpdateFramework_Sad(t *testing.T) {
 
 func TestDeleteFramework_Happy(t *testing.T) {
 	tests := map[string]struct {
-		setUp func() data.Database
+		setUp func() repo.Database
 	}{
 		"if no record is found, skip delete and return successful": {
-			setUp: func() data.Database {
+			setUp: func() repo.Database {
 				db := test.SetUpTestDB(t)
-				data.CreateFrameworksTable(db)
+				repo.CreateFrameworksTable(db)
 				return db
 			},
 		},
 		"if record is found, delete it and return successful": {
-			setUp: func() data.Database {
+			setUp: func() repo.Database {
 				db := test.SetUpTestDB(t)
-				data.CreateFrameworksTable(db)
+				repo.CreateFrameworksTable(db)
 				test.SeedFrameworksTable(t, repo.NewFrameworksRepo(db))
 				return db
 			},

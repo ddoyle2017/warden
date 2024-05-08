@@ -8,7 +8,6 @@ import (
 	"warden/command"
 	"warden/internal/api/thunderstore"
 	"warden/internal/config"
-	"warden/internal/data"
 	"warden/internal/data/file"
 	"warden/internal/data/repo"
 	"warden/internal/service"
@@ -29,12 +28,12 @@ func main() {
 	}
 
 	// Open database and initialize tables if they don't already exist
-	db, err := data.OpenDatabase(filepath.Join(home, ".warden.db"))
+	db, err := repo.OpenDatabase(filepath.Join(home, ".warden.db"))
 	if err != nil {
 		log.Fatal(err.Error())
 	}
-	data.CreateModsTable(db)
-	data.CreateFrameworksTable(db)
+	repo.CreateModsTable(db)
+	repo.CreateFrameworksTable(db)
 
 	// Initialize and injection dependencies into commands
 	mr := repo.NewModsRepo(db)

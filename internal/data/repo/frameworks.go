@@ -3,7 +3,6 @@ package repo
 import (
 	"database/sql"
 	"errors"
-	"warden/internal/data"
 	"warden/internal/domain/framework"
 )
 
@@ -26,10 +25,10 @@ type Frameworks interface {
 }
 
 type frameworks struct {
-	db data.Database
+	db Database
 }
 
-func NewFrameworksRepo(db data.Database) Frameworks {
+func NewFrameworksRepo(db Database) Frameworks {
 	return &frameworks{
 		db: db,
 	}

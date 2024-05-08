@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"warden/internal/data"
 	"warden/internal/data/repo"
 	"warden/internal/domain/framework"
 	"warden/internal/domain/mod"
@@ -16,10 +15,10 @@ const (
 	dbFile     = "warden-test.db"
 )
 
-func SetUpTestDB(t *testing.T) data.Database {
+func SetUpTestDB(t *testing.T) repo.Database {
 	path := filepath.Join(dataFolder, dbFile)
 
-	db, err := data.OpenDatabase(path)
+	db, err := repo.OpenDatabase(path)
 	if err != nil {
 		t.Errorf("unexpected error when creating test database, received: %+v", err)
 	}

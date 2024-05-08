@@ -5,7 +5,6 @@ import (
 	"errors"
 	"slices"
 	"testing"
-	"warden/internal/data"
 	"warden/internal/data/repo"
 	"warden/internal/domain/mod"
 	"warden/internal/test"
@@ -14,8 +13,8 @@ import (
 
 func TestListMods_Happy(t *testing.T) {
 	db := test.SetUpTestDB(t)
-	data.CreateModsTable(db)
-	data.CreateFrameworksTable(db)
+	repo.CreateModsTable(db)
+	repo.CreateFrameworksTable(db)
 
 	mr := repo.NewModsRepo(db)
 	fr := repo.NewFrameworksRepo(db)
@@ -41,17 +40,17 @@ func TestListMods_Happy(t *testing.T) {
 
 func TestListMods_Sad(t *testing.T) {
 	tests := map[string]struct {
-		setUp func() data.Database
+		setUp func() repo.Database
 	}{
 		"return error if database doesn't exist": {
-			setUp: func() data.Database {
+			setUp: func() repo.Database {
 				db := test.SetUpTestDB(t)
 				test.RemoveDBFile(t)
 				return db
 			},
 		},
 		"return error if mods table doesn't exist": {
-			setUp: func() data.Database {
+			setUp: func() repo.Database {
 				return test.SetUpTestDB(t)
 			},
 		},
@@ -80,8 +79,8 @@ func TestListMods_Sad(t *testing.T) {
 
 func TestGetMod_Happy(t *testing.T) {
 	db := test.SetUpTestDB(t)
-	data.CreateModsTable(db)
-	data.CreateFrameworksTable(db)
+	repo.CreateModsTable(db)
+	repo.CreateFrameworksTable(db)
 
 	mr := repo.NewModsRepo(db)
 	fr := repo.NewFrameworksRepo(db)
@@ -103,7 +102,7 @@ func TestGetMod_Happy(t *testing.T) {
 
 func TestGetMod_Sad(t *testing.T) {
 	tests := map[string]struct {
-		db          data.Database
+		db          repo.Database
 		name        string
 		expectedErr error
 	}{
@@ -140,8 +139,8 @@ func TestGetMod_Sad(t *testing.T) {
 
 func TestInsertMod_Happy(t *testing.T) {
 	db := test.SetUpTestDB(t)
-	data.CreateModsTable(db)
-	data.CreateFrameworksTable(db)
+	repo.CreateModsTable(db)
+	repo.CreateFrameworksTable(db)
 
 	mr := repo.NewModsRepo(db)
 	fr := repo.NewFrameworksRepo(db)
@@ -174,7 +173,7 @@ func TestInsertMod_Happy(t *testing.T) {
 
 func TestInsertMod_Sad(t *testing.T) {
 	tests := map[string]struct {
-		db          data.Database
+		db          repo.Database
 		expectedErr error
 	}{
 		"returns error when unable to prepare an INSERT SQL statement": {
@@ -205,8 +204,8 @@ func TestInsertMod_Sad(t *testing.T) {
 
 func TestUpdateMod_Happy(t *testing.T) {
 	db := test.SetUpTestDB(t)
-	data.CreateModsTable(db)
-	data.CreateFrameworksTable(db)
+	repo.CreateModsTable(db)
+	repo.CreateFrameworksTable(db)
 
 	mr := repo.NewModsRepo(db)
 	fr := repo.NewFrameworksRepo(db)
@@ -283,7 +282,7 @@ func TestUpdateMod_Happy(t *testing.T) {
 
 func TestUpdateMod_Sad(t *testing.T) {
 	tests := map[string]struct {
-		db          data.Database
+		db          repo.Database
 		expectedErr error
 	}{
 		"returns error when unable to prepare an UPDATE SQL statement": {
@@ -314,8 +313,8 @@ func TestUpdateMod_Sad(t *testing.T) {
 
 func TestDeleteMod_Happy(t *testing.T) {
 	db := test.SetUpTestDB(t)
-	data.CreateModsTable(db)
-	data.CreateFrameworksTable(db)
+	repo.CreateModsTable(db)
+	repo.CreateFrameworksTable(db)
 
 	mr := repo.NewModsRepo(db)
 	fr := repo.NewFrameworksRepo(db)
@@ -381,7 +380,7 @@ func TestDeleteMod_Happy(t *testing.T) {
 
 func TestDeleteMod_Sad(t *testing.T) {
 	tests := map[string]struct {
-		db          data.Database
+		db          repo.Database
 		expectedErr error
 	}{
 		"returns error when unable to prepare a DELETE SQL statement": {
