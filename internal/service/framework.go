@@ -123,6 +123,7 @@ func (fs *frameworkService) UpdateBepInEx() error {
 		if tries >= 2 {
 			return ErrMaxAttempts
 		}
+		fmt.Println("... successfully updated BepInEx! ...")
 		return nil
 	}
 	fmt.Println("... BepInEx is up-to-date! ...")

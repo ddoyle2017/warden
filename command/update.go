@@ -40,11 +40,8 @@ func newUpdateAllCommand(ms service.Mod) *cobra.Command {
 		Short: "Updates all mods",
 		Long:  "Installs the latest version of every mod that is currently installed",
 		Run: func(cmd *cobra.Command, args []string) {
-			err := ms.UpdateAllMods()
-			if err != nil {
+			if err := ms.UpdateAllMods(); err != nil {
 				parseUpdateError(err)
-			} else {
-				fmt.Println("... all mods successfully updated! ...")
 			}
 		},
 	}
@@ -79,5 +76,9 @@ func parseUpdateError(err error) {
 		fmt.Println("... unable to update mod's depedencies, stopping update ...")
 	} else if errors.Is(err, service.ErrMaxAttempts) {
 		fmt.Println("... unable to confim update, aborting ...")
+	} else if errors.Is(err, service.ErrFrameworkNotInstalled) {
+		fmt.Println("... BepInEx is not installed ...")
+	} else if errors.Is(err, service.ErrUnableToUpdateFramework) {
+		fmt.Println("... unable to update BepInEx ...")
 	}
 }

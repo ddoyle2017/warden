@@ -48,7 +48,7 @@ func main() {
 	listCmd := command.NewListCommand(ms)
 	addCmd := command.NewAddCommand(fs, ms)
 	removeCmd := command.NewRemoveCommand(fs, ms)
-	updateCmd := command.NewUpdateCommand(ms)
+	updateCmd := command.NewUpdateCommand(fs, ms)
 	configCmd := command.NewConfigCommand(*cfg)
 
 	command.Execute(listCmd, addCmd, removeCmd, updateCmd, configCmd)
