@@ -21,6 +21,7 @@ var (
 	ErrModDeleteFailed       = errors.New("unable to delete mod directory")
 	ErrDeleteAllModsFailed   = errors.New("unable to delete all mods")
 	ErrFrameworkDeleteFailed = errors.New("unable to delete framework")
+	ErrFrameworkUpdateFailed = errors.New("unable to update framework")
 )
 
 // Manager provides an interface for all file-related mod operations, e.g. installing and deleting mods.
@@ -43,6 +44,9 @@ type Manager interface {
 	// Downloads BepInEx, installs it, and migrates any existing mods to the new
 	// plugin folder
 	InstallBepInEx(url, fullName string) (string, error)
+
+	// Updates BepInEx while maintaining any existing mods
+	UpdateBepInEx(url, fullName string) error
 
 	// Removes all BepInEx files
 	RemoveBepInEx() error
@@ -126,6 +130,36 @@ func (m *manager) InstallBepInEx(url, fullName string) (string, error) {
 	return m.valheimDirectory, nil
 }
 
+// TODO there's some risk here of the operation failing halfway through and
+// ruining the user's Valheim folder. Need to find some sort of transaction
+// to wrap this in, or maybe a back-up process involving the DB
+func (m *manager) UpdateBepInEx(url, fullName string) error {
+	// Move BepInEx mods to /tmp
+	tmp, err := os.MkdirTemp("", "warden")
+	if err != nil {
+		panic("return some error")
+	}
+	defer os.RemoveAll(tmp)
+
+	if err := moveFiles(m.modDirectory, tmp); err != nil {
+		return ErrFrameworkUpdateFailed
+	}
+
+	// Update BepInEx
+	if err := m.RemoveBepInEx(); err != nil {
+		return ErrFrameworkUpdateFailed
+	}
+	if _, err := m.InstallBepInEx(url, fullName); err != nil {
+		return ErrFrameworkUpdateFailed
+	}
+
+	// Move mods back to BepInEx mods folder
+	if err := moveFiles(tmp, m.modDirectory); err != nil {
+		return ErrFrameworkUpdateFailed
+	}
+	return nil
+}
+
 func (m *manager) RemoveBepInEx() error {
 	files := []string{
 		filepath.Join(m.valheimDirectory, "BepInEx"),                 // core BepInEx files
@@ -173,7 +207,7 @@ func (m *manager) RemoveAllMods() error {
 	// Recreate parent folder for all mods
 	err = os.MkdirAll(m.modDirectory, os.ModePerm)
 	if err != nil {
-		return ErrCreateDirectoryFailed
+		return ErrDirectoryCreateFailed
 	}
 	return nil
 }
@@ -181,17 +215,8 @@ func (m *manager) RemoveAllMods() error {
 func (m *manager) moveBepInExFiles() {
 	path := filepath.Join(m.valheimDirectory, BepInExContentsDirectory)
 
-	entries, err := os.ReadDir(path)
-	if err != nil {
-		panic("BING BONG")
-	}
-	for _, e := range entries {
-		source := filepath.Join(path, e.Name())
-		dest := filepath.Join(m.valheimDirectory, e.Name())
-
-		if err := os.Rename(source, dest); err != nil {
-			panic("KUNG FU KENNY")
-		}
+	if err := moveFiles(path, m.valheimDirectory); err != nil {
+		panic("KUNG FU KENNY")
 	}
 	if err := os.RemoveAll(path); err != nil {
 		panic("NOT LIKE US")

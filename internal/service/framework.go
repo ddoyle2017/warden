@@ -30,15 +30,15 @@ type Framework interface {
 }
 
 type frameworkService struct {
-	r  repo.Frameworks
+	fr repo.Frameworks
 	fm file.Manager
 	ts thunderstore.Thunderstore
 	in *bufio.Scanner
 }
 
-func NewFrameworkService(r repo.Frameworks, fm file.Manager, ts thunderstore.Thunderstore, reader io.Reader) Framework {
+func NewFrameworkService(fr repo.Frameworks, fm file.Manager, ts thunderstore.Thunderstore, reader io.Reader) Framework {
 	return &frameworkService{
-		r:  r,
+		fr: fr,
 		fm: fm,
 		ts: ts,
 		in: bufio.NewScanner(reader),
@@ -47,7 +47,7 @@ func NewFrameworkService(r repo.Frameworks, fm file.Manager, ts thunderstore.Thu
 
 func (fs *frameworkService) InstallBepInEx() error {
 	// Check if BepInEx already installed
-	if _, err := fs.r.GetFramework(framework.BepInEx); err == nil {
+	if _, err := fs.fr.GetFramework(framework.BepInEx); err == nil {
 		return nil
 	}
 
@@ -65,7 +65,6 @@ func (fs *frameworkService) InstallBepInEx() error {
 
 			_, err = fs.fm.InstallBepInEx(pkg.Latest.DownloadURL, pkg.Latest.FullName)
 			if err != nil {
-				fmt.Printf("%+v\n", err)
 				return ErrUnableToInstallFramework
 			}
 
@@ -76,7 +75,7 @@ func (fs *frameworkService) InstallBepInEx() error {
 				WebsiteURL:  pkg.Latest.WebsiteURL,
 				Description: pkg.Latest.Description,
 			}
-			err = fs.r.InsertFramework(f)
+			err = fs.fr.InsertFramework(f)
 			if err != nil {
 				return ErrUnableToInstallFramework
 			}
@@ -98,7 +97,7 @@ func (fs *frameworkService) InstallBepInEx() error {
 
 func (fs *frameworkService) UpdateBepInEx() error {
 	// Check if BepInEx is installed
-	current, err := fs.r.GetFramework(framework.BepInEx)
+	current, err := fs.fr.GetFramework(framework.BepInEx)
 	if err != nil && errors.Is(err, repo.ErrFrameworkFetchNoResults) {
 		return ErrFrameworkNotInstalled
 	}
@@ -118,15 +117,37 @@ func (fs *frameworkService) UpdateBepInEx() error {
 		// If new version is found, confirm with the user if they want to update
 		tries := 0
 		for fs.in.Scan() && tries < 2 {
-			// Update version + keep current mods
+			if fs.in.Text() == yes {
+				if err := fs.fm.UpdateBepInEx(pkg.Latest.DownloadURL, pkg.Latest.FullName); err != nil {
+					return ErrUnableToUpdateFramework
+				}
+
+				f := framework.Framework{
+					ID:          current.ID,
+					Name:        pkg.Latest.Name,
+					Namespace:   pkg.Latest.Namespace,
+					Version:     pkg.Latest.VersionNumber,
+					WebsiteURL:  pkg.Latest.WebsiteURL,
+					Description: pkg.Latest.Description,
+				}
+				err = fs.fr.UpdateFramework(f)
+				if err != nil {
+					return ErrUnableToInstallFramework
+				}
+				return nil
+			} else if fs.in.Text() == no {
+				fmt.Println("... aborting ...")
+				return nil
+			} else {
+				tries++
+			}
 		}
 		if tries >= 2 {
 			return ErrMaxAttempts
 		}
-		fmt.Println("... successfully updated BepInEx! ...")
-		return nil
+	} else {
+		fmt.Println("... BepInEx is up-to-date! ...")
 	}
-	fmt.Println("... BepInEx is up-to-date! ...")
 	return nil
 }
 
@@ -139,7 +160,7 @@ func (fs *frameworkService) RemoveBepInEx() error {
 			if err := fs.fm.RemoveBepInEx(); err != nil {
 				return ErrUnableToRemoveFramework
 			}
-			if err := fs.r.DeleteFramework(framework.BepInEx); err != nil {
+			if err := fs.fr.DeleteFramework(framework.BepInEx); err != nil {
 				return ErrUnableToRemoveFramework
 			}
 			return nil
