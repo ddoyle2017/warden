@@ -3,7 +3,6 @@ package file
 import (
 	"archive/zip"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -14,6 +13,7 @@ var (
 	ErrFileCreateFailed = errors.New("unable to create file")
 	ErrFileWriteFailed  = errors.New("unable to write data to file")
 	ErrFileRenameFailed = errors.New("unable to rename file")
+	ErrFileCopyFailed   = errors.New("unable to copy")
 
 	ErrDirectoryCreateFailed = errors.New("unable to create new directory")
 	ErrDirectoryOpenFailed   = errors.New("unable to open directory")
@@ -23,7 +23,7 @@ var (
 // Unzip is a helper function that takes a path to a zip file (source) and extracts all of its
 // contents into a destination folder.
 func Unzip(source, destination string) error {
-	// Create the destination directory for all mod files
+	// Create the destination directory for all files
 	err := os.MkdirAll(destination, os.ModePerm)
 	if err != nil {
 		return ErrDirectoryCreateFailed
@@ -62,7 +62,6 @@ func Unzip(source, destination string) error {
 
 // createFile is a helper function that creates a new file and writes data from io.Reader into it
 func createFile(filePath string, fileSource io.Reader) error {
-	fmt.Println(filePath)
 	// Create the empty file
 	out, err := os.Create(filePath)
 	if err != nil {
@@ -94,4 +93,28 @@ func moveFiles(source, destination string) error {
 		}
 	}
 	return nil
+}
+
+func copyFile(source, destination string) error {
+	src, err := os.Open(source)
+	if err != nil {
+		return ErrFileOpenFailed
+	}
+	defer src.Close()
+
+	dst, err := os.Create(destination)
+	if err != nil {
+		return ErrFileCreateFailed
+	}
+	defer dst.Close()
+
+	if _, err := io.Copy(dst, src); err != nil {
+		return ErrFileCopyFailed
+	}
+
+	info, err := src.Stat()
+	if err != nil {
+		return err
+	}
+	return os.Chmod(dst.Name(), info.Mode())
 }

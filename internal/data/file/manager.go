@@ -53,6 +53,7 @@ type Manager interface {
 }
 
 type manager struct {
+	backup           Backup
 	client           api.HTTPClient
 	valheimDirectory string
 	modDirectory     string
@@ -60,6 +61,7 @@ type manager struct {
 
 func NewManager(c api.HTTPClient, vd string) Manager {
 	return &manager{
+		backup:           NewBackup(),
 		client:           c,
 		valheimDirectory: vd,
 		modDirectory:     filepath.Join(vd, BepInExPluginDirectory),
@@ -95,6 +97,34 @@ func (m *manager) InstallMod(url, fullName string) (string, error) {
 		return "", ErrZipDeleteFailed
 	}
 	return destination, nil
+}
+
+func (m *manager) RemoveMod(fullName string) error {
+	modPath := filepath.Join(m.modDirectory, fullName)
+
+	err := os.RemoveAll(modPath)
+
+	// If error is thrown because the file does not exist, we ignore. For
+	// any other error, return that the delete failed.
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return ErrModDeleteFailed
+	}
+	return nil
+}
+
+func (m *manager) RemoveAllMods() error {
+	// Delete the parent folder for all mods and everything inside
+	err := os.RemoveAll(m.modDirectory)
+	if err != nil {
+		return ErrDeleteAllModsFailed
+	}
+
+	// Recreate parent folder for all mods
+	err = os.MkdirAll(m.modDirectory, os.ModePerm)
+	if err != nil {
+		return ErrDirectoryCreateFailed
+	}
+	return nil
 }
 
 func (m *manager) InstallBepInEx(url, fullName string) (string, error) {
@@ -134,6 +164,8 @@ func (m *manager) InstallBepInEx(url, fullName string) (string, error) {
 // ruining the user's Valheim folder. Need to find some sort of transaction
 // to wrap this in, or maybe a back-up process involving the DB
 func (m *manager) UpdateBepInEx(url, fullName string) error {
+	m.backup.Create(m.modDirectory)
+
 	// Move BepInEx mods to /tmp
 	tmp, err := os.MkdirTemp("", "warden")
 	if err != nil {
@@ -180,34 +212,6 @@ func (m *manager) RemoveBepInEx() error {
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return ErrFrameworkDeleteFailed
 		}
-	}
-	return nil
-}
-
-func (m *manager) RemoveMod(fullName string) error {
-	modPath := filepath.Join(m.modDirectory, fullName)
-
-	err := os.RemoveAll(modPath)
-
-	// If error is thrown because the file does not exist, we ignore. For
-	// any other error, return that the delete failed.
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return ErrModDeleteFailed
-	}
-	return nil
-}
-
-func (m *manager) RemoveAllMods() error {
-	// Delete the parent folder for all mods and everything inside
-	err := os.RemoveAll(m.modDirectory)
-	if err != nil {
-		return ErrDeleteAllModsFailed
-	}
-
-	// Recreate parent folder for all mods
-	err = os.MkdirAll(m.modDirectory, os.ModePerm)
-	if err != nil {
-		return ErrDirectoryCreateFailed
 	}
 	return nil
 }
