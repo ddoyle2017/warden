@@ -5,15 +5,38 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"warden/internal/data/file"
 	"warden/internal/data/repo"
 	"warden/internal/domain/framework"
 	"warden/internal/domain/mod"
 )
 
 const (
-	dataFolder = "../../test/data"
-	dbFile     = "warden-test.db"
+	dataFolder    = "../../test/data"
+	valheimFolder = "../../test/file"
+	modFullName   = "Azumatt-Where_You_At-1.0.9"
+	dbFile        = "warden-test.db"
 )
+
+func SetUpTestFiles(t *testing.T) {
+	source := filepath.Join(dataFolder, modFullName+".zip")
+	destination := filepath.Join(valheimFolder, file.BepInExPluginDirectory, modFullName)
+
+	err := file.Unzip(source, destination)
+	if err != nil {
+		t.Errorf("unexpected error creating test files, received error: %+v", err)
+	}
+}
+
+func CleanUpTestFiles(t *testing.T) {
+	err := os.RemoveAll(valheimFolder)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("unexpected error when cleaning-up test files, received: %+v", err)
+	}
+	if err := os.MkdirAll(valheimFolder, os.ModePerm); err != nil {
+		t.Errorf("unexpected error creating test file folder, received: %+v", err)
+	}
+}
 
 func SetUpTestDB(t *testing.T) repo.Database {
 	path := filepath.Join(dataFolder, dbFile)

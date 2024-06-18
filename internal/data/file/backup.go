@@ -23,6 +23,9 @@ type Backup interface {
 
 	// Restores the saved backup to the given destination, then delete the backup
 	Restore(destination string) error
+
+	// Returns the location of the current backup
+	Path() *string
 }
 
 type backup struct {
@@ -91,4 +94,8 @@ func (b *backup) Remove() error {
 		return ErrBackupDeleteFailed
 	}
 	return nil
+}
+
+func (b *backup) Path() *string {
+	return b.location
 }

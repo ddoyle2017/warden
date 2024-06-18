@@ -10,6 +10,7 @@ import (
 	"testing"
 	"warden/internal/api"
 	"warden/internal/data/file"
+	"warden/internal/test"
 	"warden/internal/test/mock"
 )
 
@@ -53,7 +54,7 @@ func TestInstallMod_Happy(t *testing.T) {
 	}
 
 	t.Cleanup(func() {
-		cleanUpTestFiles(t)
+		test.CleanUpTestFiles(t)
 	})
 }
 
@@ -86,27 +87,27 @@ func TestInstallMod_Sad(t *testing.T) {
 		},
 	}
 
-	for name, test := range tests {
+	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			manager := file.NewManager(test.client, valheimDirectory)
+			manager := file.NewManager(tt.client, valheimDirectory)
 
-			path, err := manager.InstallMod(testURL, test.fullName)
-			if !errors.Is(err, test.expectedErr) {
-				t.Errorf("expected error: %+v, received error: %+v", test.expectedErr, err)
+			path, err := manager.InstallMod(testURL, tt.fullName)
+			if !errors.Is(err, tt.expectedErr) {
+				t.Errorf("expected error: %+v, received error: %+v", tt.expectedErr, err)
 			}
 			if path != "" {
 				t.Errorf("expected an empty mod folder path, received: %s", path)
 			}
 
 			t.Cleanup(func() {
-				cleanUpTestFiles(t)
+				test.CleanUpTestFiles(t)
 			})
 		})
 	}
 }
 
 func TestRemoveMod_Happy(t *testing.T) {
-	setUpTestFiles(t)
+	test.SetUpTestFiles(t)
 
 	tests := map[string]struct {
 		name string
@@ -130,7 +131,7 @@ func TestRemoveMod_Happy(t *testing.T) {
 		})
 	}
 	t.Cleanup(func() {
-		cleanUpTestFiles(t)
+		test.CleanUpTestFiles(t)
 	})
 }
 
@@ -143,7 +144,7 @@ func TestRemoveAllMods_Happy(t *testing.T) {
 		},
 		"successfully removes all mods": {
 			setUp: func(t *testing.T) {
-				setUpTestFiles(t)
+				test.SetUpTestFiles(t)
 			},
 		},
 	}
@@ -160,7 +161,7 @@ func TestRemoveAllMods_Happy(t *testing.T) {
 		})
 	}
 	t.Cleanup(func() {
-		cleanUpTestFiles(t)
+		test.CleanUpTestFiles(t)
 	})
 }
 
@@ -188,7 +189,7 @@ func TestInstallBepInEx_Happy(t *testing.T) {
 	}
 
 	t.Cleanup(func() {
-		cleanUpTestFiles(t)
+		test.CleanUpTestFiles(t)
 	})
 }
 
@@ -221,20 +222,20 @@ func TestInstallBepInEx_Sad(t *testing.T) {
 		},
 	}
 
-	for name, test := range tests {
+	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			manager := file.NewManager(test.client, valheimDirectory)
+			manager := file.NewManager(tt.client, valheimDirectory)
 
-			path, err := manager.InstallBepInEx(testURL, test.fullName)
-			if !errors.Is(err, test.expected) {
-				t.Errorf("expected error: %+v, received error: %+v", test.expected, err)
+			path, err := manager.InstallBepInEx(testURL, tt.fullName)
+			if !errors.Is(err, tt.expected) {
+				t.Errorf("expected error: %+v, received error: %+v", tt.expected, err)
 			}
 			if path != "" {
 				t.Errorf("expected an empty path, received: %s", path)
 			}
 
 			t.Cleanup(func() {
-				cleanUpTestFiles(t)
+				test.CleanUpTestFiles(t)
 			})
 		})
 	}
@@ -287,25 +288,5 @@ func TestRemoveBepInEx_Happy(t *testing.T) {
 				t.Errorf("expected a nil error, received: %+v", err)
 			}
 		})
-	}
-}
-
-func setUpTestFiles(t *testing.T) {
-	source := filepath.Join(dataFolder, testMod+".zip")
-	destination := filepath.Join(valheimDirectory, file.BepInExPluginDirectory, testMod)
-
-	err := file.Unzip(source, destination)
-	if err != nil {
-		t.Errorf("unexpected error creating test files, received error: %+v", err)
-	}
-}
-
-func cleanUpTestFiles(t *testing.T) {
-	err := os.RemoveAll(valheimDirectory)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("unexpected error when cleaning-up test files, received: %+v", err)
-	}
-	if err := os.MkdirAll(valheimDirectory, os.ModePerm); err != nil {
-		t.Errorf("unexpected error creating test file folder, received: %+v", err)
 	}
 }
