@@ -45,25 +45,25 @@ func (b *backup) Create(source string) error {
 
 	return filepath.Walk(source, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			return err
+			return ErrBackupCreateFailed
 		}
 
 		// Create the destination path
 		relPath, err := filepath.Rel(source, path)
 		if err != nil {
-			return err
+			return ErrBackupCreateFailed
 		}
 		dstPath := filepath.Join(tmp, relPath)
 
 		if info.IsDir() {
 			// Create the directory in the destination path
 			if err := os.MkdirAll(dstPath, info.Mode()); err != nil {
-				return err
+				return ErrBackupCreateFailed
 			}
 		} else {
 			// Copy the file to the destination path
 			if err := copyFile(path, dstPath); err != nil {
-				return err
+				return ErrBackupCreateFailed
 			}
 		}
 		return nil
@@ -90,9 +90,13 @@ func (b *backup) Restore(destination string) error {
 }
 
 func (b *backup) Remove() error {
+	if b.location == nil {
+		return ErrBackupMissing
+	}
 	if err := os.RemoveAll(*b.location); err != nil {
 		return ErrBackupDeleteFailed
 	}
+	b.location = nil
 	return nil
 }
 
