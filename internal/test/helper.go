@@ -12,15 +12,16 @@ import (
 )
 
 const (
-	dataFolder    = "../../test/data"
-	valheimFolder = "../../test/file"
-	modFullName   = "Azumatt-Where_You_At-1.0.9"
-	dbFile        = "warden-test.db"
+	DataFolder    = "../../test/data"
+	ValheimFolder = "../../test/file"
+	ModFullName   = "Azumatt-Where_You_At-1.0.9"
+
+	dbFile = "warden-test.db"
 )
 
 func SetUpTestFiles(t *testing.T) {
-	source := filepath.Join(dataFolder, modFullName+".zip")
-	destination := filepath.Join(valheimFolder, file.BepInExPluginDirectory, modFullName)
+	source := filepath.Join(DataFolder, ModFullName+".zip")
+	destination := filepath.Join(ValheimFolder, file.BepInExPluginDirectory, ModFullName)
 
 	err := file.Unzip(source, destination)
 	if err != nil {
@@ -29,17 +30,17 @@ func SetUpTestFiles(t *testing.T) {
 }
 
 func CleanUpTestFiles(t *testing.T) {
-	err := os.RemoveAll(valheimFolder)
+	err := os.RemoveAll(ValheimFolder)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("unexpected error when cleaning-up test files, received: %+v", err)
 	}
-	if err := os.MkdirAll(valheimFolder, os.ModePerm); err != nil {
+	if err := os.MkdirAll(ValheimFolder, os.ModePerm); err != nil {
 		t.Errorf("unexpected error creating test file folder, received: %+v", err)
 	}
 }
 
 func SetUpTestDB(t *testing.T) repo.Database {
-	path := filepath.Join(dataFolder, dbFile)
+	path := filepath.Join(DataFolder, dbFile)
 
 	db, err := repo.OpenDatabase(path)
 	if err != nil {
@@ -49,7 +50,7 @@ func SetUpTestDB(t *testing.T) repo.Database {
 }
 
 func RemoveDBFile(t *testing.T) {
-	err := os.Remove(filepath.Join(dataFolder, dbFile))
+	err := os.Remove(filepath.Join(DataFolder, dbFile))
 	if errors.Is(err, os.ErrNotExist) {
 		// Test database was already removed. This is fine, so we ignore the error and continue.
 		return
