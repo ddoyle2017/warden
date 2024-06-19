@@ -20,8 +20,8 @@ type fileHelper interface {
 }
 
 func (h *helper) SetUpServerFiles() {
-	source := filepath.Join(h.dataFolder, ModFullName+".zip")
-	destination := filepath.Join(h.valheimFolder, file.BepInExPluginDirectory, ModFullName)
+	source := filepath.Join(h.dataFolder, TestModFullName+".zip")
+	destination := filepath.Join(h.valheimFolder, file.BepInExPluginDirectory, TestModFullName)
 
 	err := file.Unzip(source, destination)
 	if err != nil {

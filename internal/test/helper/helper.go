@@ -3,7 +3,8 @@ package helper
 import "testing"
 
 const (
-	ModFullName = "Azumatt-Where_You_At-1.0.9"
+	TestModFullName     = "Azumatt-Where_You_At-1.0.9"
+	TestBepInExFullName = "denikson-BepInExPack_Valheim-5.4.2202"
 )
 
 // Defines convenience functions for writing unit tests
@@ -12,6 +13,7 @@ type Helper interface {
 	databaseHelper
 
 	GetValheimDirectory() string
+	GetDataDirectory() string
 }
 
 type helper struct {
@@ -64,4 +66,8 @@ func WithConfigFile(filename string) Option {
 
 func (h *helper) GetValheimDirectory() string {
 	return h.valheimFolder
+}
+
+func (h *helper) GetDataDirectory() string {
+	return h.dataFolder
 }

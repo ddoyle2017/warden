@@ -8,6 +8,10 @@ import (
 	"path/filepath"
 )
 
+const (
+	ZipFileExtension = ".zip"
+)
+
 var (
 	ErrFileOpenFailed   = errors.New("unable to open file")
 	ErrFileCreateFailed = errors.New("unable to create file")
