@@ -8,11 +8,14 @@ import (
 	"warden/internal/data/repo"
 	"warden/internal/domain/mod"
 	"warden/internal/test"
+	"warden/internal/test/helper"
 	"warden/internal/test/mock"
 )
 
 func TestListMods_Happy(t *testing.T) {
-	db := test.SetUpTestDB(t)
+	th := helper.NewHelper(t)
+
+	db := th.CreateDatabase()
 	repo.CreateModsTable(db)
 	repo.CreateFrameworksTable(db)
 
@@ -34,24 +37,26 @@ func TestListMods_Happy(t *testing.T) {
 	}
 
 	t.Cleanup(func() {
-		test.RemoveDBFile(t)
+		th.DeleteDatabase()
 	})
 }
 
 func TestListMods_Sad(t *testing.T) {
+	th := helper.NewHelper(t)
+
 	tests := map[string]struct {
 		setUp func() repo.Database
 	}{
 		"return error if database doesn't exist": {
 			setUp: func() repo.Database {
-				db := test.SetUpTestDB(t)
-				test.RemoveDBFile(t)
+				db := th.CreateDatabase()
+				th.DeleteDatabase()
 				return db
 			},
 		},
 		"return error if mods table doesn't exist": {
 			setUp: func() repo.Database {
-				return test.SetUpTestDB(t)
+				return th.CreateDatabase()
 			},
 		},
 	}
@@ -73,12 +78,14 @@ func TestListMods_Sad(t *testing.T) {
 	}
 
 	t.Cleanup(func() {
-		test.RemoveDBFile(t)
+		th.DeleteDatabase()
 	})
 }
 
 func TestGetMod_Happy(t *testing.T) {
-	db := test.SetUpTestDB(t)
+	th := helper.NewHelper(t)
+
+	db := th.CreateDatabase()
 	repo.CreateModsTable(db)
 	repo.CreateFrameworksTable(db)
 
@@ -96,7 +103,7 @@ func TestGetMod_Happy(t *testing.T) {
 	}
 
 	t.Cleanup(func() {
-		test.RemoveDBFile(t)
+		th.DeleteDatabase()
 	})
 }
 
@@ -131,14 +138,12 @@ func TestGetMod_Sad(t *testing.T) {
 			}
 		})
 	}
-
-	t.Cleanup(func() {
-		test.RemoveDBFile(t)
-	})
 }
 
 func TestInsertMod_Happy(t *testing.T) {
-	db := test.SetUpTestDB(t)
+	th := helper.NewHelper(t)
+
+	db := th.CreateDatabase()
 	repo.CreateModsTable(db)
 	repo.CreateFrameworksTable(db)
 
@@ -167,7 +172,7 @@ func TestInsertMod_Happy(t *testing.T) {
 		t.Errorf("expected %d mods, but found %d mods", expectedModCount, len(modList))
 	}
 	t.Cleanup(func() {
-		test.RemoveDBFile(t)
+		th.DeleteDatabase()
 	})
 }
 
@@ -196,14 +201,12 @@ func TestInsertMod_Sad(t *testing.T) {
 			}
 		})
 	}
-
-	t.Cleanup(func() {
-		test.RemoveDBFile(t)
-	})
 }
 
 func TestUpdateMod_Happy(t *testing.T) {
-	db := test.SetUpTestDB(t)
+	th := helper.NewHelper(t)
+
+	db := th.CreateDatabase()
 	repo.CreateModsTable(db)
 	repo.CreateFrameworksTable(db)
 
@@ -276,7 +279,7 @@ func TestUpdateMod_Happy(t *testing.T) {
 	}
 
 	t.Cleanup(func() {
-		test.RemoveDBFile(t)
+		th.DeleteDatabase()
 	})
 }
 
@@ -305,14 +308,12 @@ func TestUpdateMod_Sad(t *testing.T) {
 			}
 		})
 	}
-
-	t.Cleanup(func() {
-		test.RemoveDBFile(t)
-	})
 }
 
 func TestDeleteMod_Happy(t *testing.T) {
-	db := test.SetUpTestDB(t)
+	th := helper.NewHelper(t)
+
+	db := th.CreateDatabase()
 	repo.CreateModsTable(db)
 	repo.CreateFrameworksTable(db)
 
@@ -374,7 +375,7 @@ func TestDeleteMod_Happy(t *testing.T) {
 	}
 
 	t.Cleanup(func() {
-		test.RemoveDBFile(t)
+		th.DeleteDatabase()
 	})
 }
 
@@ -403,14 +404,12 @@ func TestDeleteMod_Sad(t *testing.T) {
 			}
 		})
 	}
-
-	t.Cleanup(func() {
-		test.RemoveDBFile(t)
-	})
 }
 
 func TestDeleteAllMods_Happy(t *testing.T) {
+	th := helper.NewHelper(t)
+
 	t.Cleanup(func() {
-		test.RemoveDBFile(t)
+		th.DeleteDatabase()
 	})
 }

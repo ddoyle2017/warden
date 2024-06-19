@@ -1,11 +1,7 @@
 package test
 
 import (
-	"errors"
-	"os"
-	"path/filepath"
 	"testing"
-	"warden/internal/data/file"
 	"warden/internal/data/repo"
 	"warden/internal/domain/framework"
 	"warden/internal/domain/mod"
@@ -18,47 +14,6 @@ const (
 
 	dbFile = "warden-test.db"
 )
-
-func SetUpTestFiles(t *testing.T) {
-	source := filepath.Join(DataFolder, ModFullName+".zip")
-	destination := filepath.Join(ValheimFolder, file.BepInExPluginDirectory, ModFullName)
-
-	err := file.Unzip(source, destination)
-	if err != nil {
-		t.Errorf("unexpected error creating test files, received error: %+v", err)
-	}
-}
-
-func CleanUpTestFiles(t *testing.T) {
-	err := os.RemoveAll(ValheimFolder)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("unexpected error when cleaning-up test files, received: %+v", err)
-	}
-	if err := os.MkdirAll(ValheimFolder, os.ModePerm); err != nil {
-		t.Errorf("unexpected error creating test file folder, received: %+v", err)
-	}
-}
-
-func SetUpTestDB(t *testing.T) repo.Database {
-	path := filepath.Join(DataFolder, dbFile)
-
-	db, err := repo.OpenDatabase(path)
-	if err != nil {
-		t.Errorf("unexpected error when creating test database, received: %+v", err)
-	}
-	return db
-}
-
-func RemoveDBFile(t *testing.T) {
-	err := os.Remove(filepath.Join(DataFolder, dbFile))
-	if errors.Is(err, os.ErrNotExist) {
-		// Test database was already removed. This is fine, so we ignore the error and continue.
-		return
-	}
-	if err != nil {
-		t.Errorf("unexpected error when cleaning up test database, received error: %+v", err)
-	}
-}
 
 func SeedModsTable(t *testing.T, mr repo.Mods, fr repo.Frameworks) []mod.Mod {
 	SeedFrameworksTable(t, fr)

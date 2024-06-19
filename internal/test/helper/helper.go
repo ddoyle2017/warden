@@ -5,6 +5,7 @@ import "testing"
 const (
 	TestModFullName     = "Azumatt-Where_You_At-1.0.9"
 	TestBepInExFullName = "denikson-BepInExPack_Valheim-5.4.2202"
+	TestDownloadURL     = "testurl.com/file"
 )
 
 // Defines convenience functions for writing unit tests

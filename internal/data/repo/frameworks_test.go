@@ -7,11 +7,14 @@ import (
 	"warden/internal/data/repo"
 	"warden/internal/domain/framework"
 	"warden/internal/test"
+	"warden/internal/test/helper"
 	"warden/internal/test/mock"
 )
 
 func TestGetFramework_Happy(t *testing.T) {
-	db := test.SetUpTestDB(t)
+	th := helper.NewHelper(t)
+
+	db := th.CreateDatabase()
 	repo.CreateFrameworksTable(db)
 
 	fr := repo.NewFrameworksRepo(db)
@@ -26,11 +29,13 @@ func TestGetFramework_Happy(t *testing.T) {
 	}
 
 	t.Cleanup(func() {
-		test.RemoveDBFile(t)
+		th.DeleteDatabase()
 	})
 }
 
 func TestGetFramework_Sad(t *testing.T) {
+	th := helper.NewHelper(t)
+
 	tests := map[string]struct {
 		setUp    func() repo.Database
 		expected error
@@ -47,7 +52,7 @@ func TestGetFramework_Sad(t *testing.T) {
 		},
 		"if query returns no results, return an error": {
 			setUp: func() repo.Database {
-				db := test.SetUpTestDB(t)
+				db := th.CreateDatabase()
 				repo.CreateFrameworksTable(db)
 				return db
 			},
@@ -55,7 +60,7 @@ func TestGetFramework_Sad(t *testing.T) {
 		},
 		"if the query returns multiple results, return an error": {
 			setUp: func() repo.Database {
-				db := test.SetUpTestDB(t)
+				db := th.CreateDatabase()
 				repo.CreateFrameworksTable(db)
 
 				fr := repo.NewFrameworksRepo(db)
@@ -83,7 +88,7 @@ func TestGetFramework_Sad(t *testing.T) {
 				t.Errorf("expected error: %+v, received: %+v", tt.expected, err)
 			}
 			t.Cleanup(func() {
-				test.RemoveDBFile(t)
+				th.DeleteDatabase()
 			})
 		})
 	}
@@ -91,7 +96,9 @@ func TestGetFramework_Sad(t *testing.T) {
 }
 
 func TestInsertFramework_Happy(t *testing.T) {
-	db := test.SetUpTestDB(t)
+	th := helper.NewHelper(t)
+
+	db := th.CreateDatabase()
 	repo.CreateFrameworksTable(db)
 
 	fr := repo.NewFrameworksRepo(db)
@@ -106,7 +113,7 @@ func TestInsertFramework_Happy(t *testing.T) {
 	}
 
 	t.Cleanup(func() {
-		test.RemoveDBFile(t)
+		th.DeleteDatabase()
 	})
 }
 
@@ -121,26 +128,24 @@ func TestInsertFramework_Sad(t *testing.T) {
 	if err := fr.InsertFramework(framework.Framework{}); !errors.Is(err, repo.ErrInvalidStatement) {
 		t.Errorf("expected error: %+v, received: %+v", repo.ErrInvalidStatement, err)
 	}
-
-	t.Cleanup(func() {
-		test.RemoveDBFile(t)
-	})
 }
 
 func TestUpdateFramework_Happy(t *testing.T) {
+	th := helper.NewHelper(t)
+
 	tests := map[string]struct {
 		setUp func() repo.Database
 	}{
 		"if framework isn't found, update nothing and return successful": {
 			setUp: func() repo.Database {
-				db := test.SetUpTestDB(t)
+				db := th.CreateDatabase()
 				repo.CreateFrameworksTable(db)
 				return db
 			},
 		},
 		"if framework is found, update framework and return successful": {
 			setUp: func() repo.Database {
-				db := test.SetUpTestDB(t)
+				db := th.CreateDatabase()
 				repo.CreateFrameworksTable(db)
 
 				test.SeedFrameworksTable(t, repo.NewFrameworksRepo(db))
@@ -164,7 +169,7 @@ func TestUpdateFramework_Happy(t *testing.T) {
 			}
 
 			t.Cleanup(func() {
-				test.RemoveDBFile(t)
+				th.DeleteDatabase()
 			})
 		})
 	}
@@ -181,26 +186,24 @@ func TestUpdateFramework_Sad(t *testing.T) {
 	if err := fr.UpdateFramework(framework.Framework{}); !errors.Is(err, repo.ErrInvalidStatement) {
 		t.Errorf("expected error: %+v, received: %+v", repo.ErrInvalidStatement, err)
 	}
-
-	t.Cleanup(func() {
-		test.RemoveDBFile(t)
-	})
 }
 
 func TestDeleteFramework_Happy(t *testing.T) {
+	th := helper.NewHelper(t)
+
 	tests := map[string]struct {
 		setUp func() repo.Database
 	}{
 		"if no record is found, skip delete and return successful": {
 			setUp: func() repo.Database {
-				db := test.SetUpTestDB(t)
+				db := th.CreateDatabase()
 				repo.CreateFrameworksTable(db)
 				return db
 			},
 		},
 		"if record is found, delete it and return successful": {
 			setUp: func() repo.Database {
-				db := test.SetUpTestDB(t)
+				db := th.CreateDatabase()
 				repo.CreateFrameworksTable(db)
 				test.SeedFrameworksTable(t, repo.NewFrameworksRepo(db))
 				return db
@@ -218,7 +221,7 @@ func TestDeleteFramework_Happy(t *testing.T) {
 			}
 
 			t.Cleanup(func() {
-				test.RemoveDBFile(t)
+				th.DeleteDatabase()
 			})
 		})
 	}
@@ -235,8 +238,4 @@ func TestDeleteFramework_Sad(t *testing.T) {
 	if err := fr.DeleteFramework(framework.BepInEx); !errors.Is(err, repo.ErrInvalidStatement) {
 		t.Errorf("expected error: %+v, received: %+v", repo.ErrInvalidStatement, err)
 	}
-
-	t.Cleanup(func() {
-		test.RemoveDBFile(t)
-	})
 }

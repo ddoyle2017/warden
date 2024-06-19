@@ -10,7 +10,6 @@ import (
 	"testing"
 	"warden/internal/api"
 	"warden/internal/data/file"
-	"warden/internal/test"
 	"warden/internal/test/helper"
 	"warden/internal/test/mock"
 )
@@ -32,7 +31,7 @@ func TestInstallBepInEx_Happy(t *testing.T) {
 	}
 	m := file.NewManager(&client, th.GetValheimDirectory())
 
-	path, err := m.InstallBepInEx(testURL, helper.TestBepInExFullName)
+	path, err := m.InstallBepInEx(helper.TestDownloadURL, helper.TestBepInExFullName)
 	if err != nil {
 		t.Errorf("expected a nil error, received: %+v", err)
 	}
@@ -41,7 +40,7 @@ func TestInstallBepInEx_Happy(t *testing.T) {
 	}
 
 	t.Cleanup(func() {
-		test.CleanUpTestFiles(t)
+		th.RemoveServerFiles()
 	})
 }
 
@@ -80,7 +79,7 @@ func TestInstallBepInEx_Sad(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			manager := file.NewManager(tt.client, th.GetValheimDirectory())
 
-			path, err := manager.InstallBepInEx(testURL, tt.fullName)
+			path, err := manager.InstallBepInEx(helper.TestDownloadURL, tt.fullName)
 			if !errors.Is(err, tt.expected) {
 				t.Errorf("expected error: %+v, received error: %+v", tt.expected, err)
 			}
@@ -89,7 +88,7 @@ func TestInstallBepInEx_Sad(t *testing.T) {
 			}
 
 			t.Cleanup(func() {
-				test.CleanUpTestFiles(t)
+				th.RemoveServerFiles()
 			})
 		})
 	}

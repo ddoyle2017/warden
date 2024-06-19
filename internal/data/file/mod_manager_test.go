@@ -10,7 +10,6 @@ import (
 	"testing"
 	"warden/internal/api"
 	"warden/internal/data/file"
-	"warden/internal/test"
 	"warden/internal/test/helper"
 	"warden/internal/test/mock"
 )
@@ -40,7 +39,7 @@ func TestInstallMod_Happy(t *testing.T) {
 	}
 	manager := file.NewManager(&client, th.GetValheimDirectory())
 
-	path, err := manager.InstallMod(testURL, helper.TestModFullName)
+	path, err := manager.InstallMod(helper.TestDownloadURL, helper.TestModFullName)
 	if err != nil {
 		t.Errorf("expected a nil error, received: %+v", err)
 	}
@@ -49,7 +48,7 @@ func TestInstallMod_Happy(t *testing.T) {
 	}
 
 	t.Cleanup(func() {
-		test.CleanUpTestFiles(t)
+		th.RemoveServerFiles()
 	})
 }
 
@@ -88,7 +87,7 @@ func TestInstallMod_Sad(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			manager := file.NewManager(tt.client, th.GetValheimDirectory())
 
-			path, err := manager.InstallMod(testURL, tt.fullName)
+			path, err := manager.InstallMod(helper.TestDownloadURL, tt.fullName)
 			if !errors.Is(err, tt.expectedErr) {
 				t.Errorf("expected error: %+v, received error: %+v", tt.expectedErr, err)
 			}
