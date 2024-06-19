@@ -15,6 +15,8 @@ type fileHelper interface {
 	RemoveServerFiles()
 
 	VerifyBackup(original, backup string)
+	GetFileList(directory string) (map[string]string, error)
+	AreFileListsEqual(original, backup map[string]string) bool
 }
 
 func (h *helper) SetUpServerFiles() {
@@ -38,17 +40,17 @@ func (h *helper) RemoveServerFiles() {
 }
 
 func (h *helper) VerifyBackup(original, backup string) {
-	of, err := getFileList(original)
+	of, err := h.GetFileList(original)
 	if err != nil {
 		h.t.Errorf("unable to fetch original files, received err: %+v", err)
 	}
 
-	bf, err := getFileList(backup)
+	bf, err := h.GetFileList(backup)
 	if err != nil {
 		h.t.Errorf("unable to fetch backup files, received err: %+v", err)
 	}
 
-	if !areFileListsEqual(of, bf) {
+	if !h.AreFileListsEqual(of, bf) {
 		h.t.Error("backup file list does not match original")
 	}
 	if !areFileContentsEqual(of, bf) {
@@ -56,14 +58,14 @@ func (h *helper) VerifyBackup(original, backup string) {
 	}
 }
 
-func getFileList(dir string) (map[string]string, error) {
+func (h *helper) GetFileList(directory string) (map[string]string, error) {
 	files := make(map[string]string)
-	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+	err := filepath.Walk(directory, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 		if !info.IsDir() {
-			relPath, err := filepath.Rel(dir, path)
+			relPath, err := filepath.Rel(directory, path)
 			if err != nil {
 				return err
 			}
@@ -74,7 +76,7 @@ func getFileList(dir string) (map[string]string, error) {
 	return files, err
 }
 
-func areFileListsEqual(original, backup map[string]string) bool {
+func (h *helper) AreFileListsEqual(original, backup map[string]string) bool {
 	if len(original) != len(backup) {
 		return false
 	}

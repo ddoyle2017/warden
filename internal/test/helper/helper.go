@@ -10,6 +10,8 @@ const (
 type Helper interface {
 	fileHelper
 	databaseHelper
+
+	GetValheimDirectory() string
 }
 
 type helper struct {
@@ -58,4 +60,8 @@ func WithConfigFile(filename string) Option {
 	return func(h *helper) {
 		h.configFile = filename
 	}
+}
+
+func (h *helper) GetValheimDirectory() string {
+	return h.valheimFolder
 }

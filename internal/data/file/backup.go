@@ -79,6 +79,9 @@ func (b *backup) Restore(destination string) error {
 	if err := os.RemoveAll(destination); err != nil {
 		return ErrBackupRestoreFailed
 	}
+	if err := os.MkdirAll(destination, os.ModePerm); err != nil {
+		return ErrBackupRestoreFailed
+	}
 
 	// Move backed up files to destination
 	if err := moveFiles(*b.location, destination); err != nil {
@@ -86,7 +89,11 @@ func (b *backup) Restore(destination string) error {
 	}
 
 	// Delete back-up once successfuly moved over
-	return os.RemoveAll(*b.location)
+	if err := os.RemoveAll(*b.location); err != nil {
+		return ErrBackupDeleteFailed
+	}
+	b.location = nil
+	return nil
 }
 
 func (b *backup) Remove() error {

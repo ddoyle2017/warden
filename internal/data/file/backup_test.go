@@ -1,34 +1,29 @@
 package file_test
 
 import (
-	"crypto/md5"
 	"errors"
-	"fmt"
-	"io"
 	"os"
-	"path/filepath"
 	"testing"
 	"warden/internal/data/file"
-	"warden/internal/test"
+	"warden/internal/test/helper"
 )
 
-const valheimFolder = "../../test/file"
-
 func TestCreate_Happy(t *testing.T) {
-	test.SetUpTestFiles(t)
+	th := helper.NewHelper(t)
+	th.SetUpServerFiles()
 
 	b := file.NewBackup()
 
-	if err := b.Create(valheimFolder); err != nil {
+	if err := b.Create(th.GetValheimDirectory()); err != nil {
 		t.Errorf("expected a nil error, received: %+v", err)
 	}
 	if b.Path() == nil {
 		t.Error("expected a valid backup path, received nil")
 	}
-	validateBackup(t, valheimFolder, *b.Path())
+	th.VerifyBackup(th.GetValheimDirectory(), *b.Path())
 
 	t.Cleanup(func() {
-		test.CleanUpTestFiles(t)
+		th.RemoveServerFiles()
 		if err := os.RemoveAll(*b.Path()); err != nil {
 			t.Errorf("unexpected error during backup clean-up, err: %+v", err)
 		}
@@ -54,10 +49,11 @@ func TestCreate_Sad(t *testing.T) {
 }
 
 func TestRemove_Happy(t *testing.T) {
-	test.SetUpTestFiles(t)
+	th := helper.NewHelper(t)
+	th.SetUpServerFiles()
 
 	b := file.NewBackup()
-	if err := b.Create(valheimFolder); err != nil {
+	if err := b.Create(th.GetValheimDirectory()); err != nil {
 		t.Errorf("unexpected error creating backup, received: %+v", err)
 	}
 	if err := b.Remove(); err != nil {
@@ -68,12 +64,13 @@ func TestRemove_Happy(t *testing.T) {
 	}
 
 	t.Cleanup(func() {
-		test.CleanUpTestFiles(t)
+		th.RemoveServerFiles()
 	})
 }
 
 func TestRemove_Sad(t *testing.T) {
-	test.SetUpTestFiles(t)
+	th := helper.NewHelper(t)
+	th.SetUpServerFiles()
 
 	tests := map[string]struct {
 		setup    func(b file.Backup)
@@ -86,7 +83,7 @@ func TestRemove_Sad(t *testing.T) {
 		"returns nil when registered backup is missing, then clears backup path": {
 			setup: func(b file.Backup) {
 				// Create a valid backup
-				if err := b.Create(valheimFolder); err != nil {
+				if err := b.Create(th.GetValheimDirectory()); err != nil {
 					t.Errorf("unexpected error creating backup, received: %+v", err)
 				}
 				// Remove the files without updating the Backup struct
@@ -112,106 +109,93 @@ func TestRemove_Sad(t *testing.T) {
 	}
 
 	t.Cleanup(func() {
-		test.CleanUpTestFiles(t)
+		th.RemoveServerFiles()
 	})
 }
 
 func TestRestore_Happy(t *testing.T) {
-	test.SetUpTestFiles(t)
+	th := helper.NewHelper(t)
+	th.SetUpServerFiles()
+
+	// Create backup
+	b := file.NewBackup()
+	if err := b.Create(th.GetValheimDirectory()); err != nil {
+		t.Errorf("unexpected error creating backup, received: %+v", err)
+	}
+
+	// Verify backup is correct
+	if b.Path() == nil {
+		t.Error("expected a valid backup path, received nil")
+	}
+	th.VerifyBackup(th.GetValheimDirectory(), *b.Path())
+
+	// Save a list of the original files
+	original, err := th.GetFileList(th.GetValheimDirectory())
+	if err != nil {
+		t.Errorf("unexpected error retrieving file list, received: %+v", err)
+	}
+
+	// Restore backup
+	if err := b.Restore(th.GetValheimDirectory()); err != nil {
+		t.Errorf("received an error when restoring backup, received: %+v", err)
+	}
+	if b.Path() != nil {
+		t.Errorf("expected backup path to be nil, received: %s", *b.Path())
+	}
+
+	// Verify current file list is the same as the original set
+	current, err := th.GetFileList(th.GetValheimDirectory())
+	if err != nil {
+		t.Errorf("unexpected error retrieving file list, received: %+v", err)
+	}
+
+	if !th.AreFileListsEqual(original, current) {
+		t.Error("restored backup has a different file list than the original")
+	}
 
 	t.Cleanup(func() {
-		test.CleanUpTestFiles(t)
+		th.RemoveServerFiles()
 	})
 }
 
 func TestRestore_Sad(t *testing.T) {
-	test.SetUpTestFiles(t)
+	th := helper.NewHelper(t)
+	th.SetUpServerFiles()
+
+	tests := map[string]struct {
+		setup       func(b file.Backup)
+		destination string
+		expected    error
+	}{
+		"return error if restore is called when there is no backup": {
+			setup:       func(b file.Backup) {},
+			destination: th.GetValheimDirectory(),
+			expected:    file.ErrBackupMissing,
+		},
+		"return error if restore destination is invalid": {
+			setup: func(b file.Backup) {
+				if err := b.Create(th.GetValheimDirectory()); err != nil {
+					t.Errorf("unexpected error when creating backup, received: %+v", err)
+				}
+			},
+			destination: "//dwa   32352.///dbiquwbdi   \\diqwbdiu dqwi",
+			expected:    file.ErrBackupRestoreFailed,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			b := file.NewBackup()
+			tt.setup(b)
+
+			err := b.Restore(tt.destination)
+			if !errors.Is(err, tt.expected) {
+				t.Errorf("expected error: %+v, received: %+v", tt.expected, err)
+			}
+		})
+	}
 
 	t.Cleanup(func() {
-		test.CleanUpTestFiles(t)
+		th.RemoveServerFiles()
 	})
-}
-
-func validateBackup(t *testing.T, original, backup string) {
-	of, err := getFileList(original)
-	if err != nil {
-		t.Errorf("unable to fetch original files, received err: %+v", err)
-	}
-
-	bf, err := getFileList(backup)
-	if err != nil {
-		t.Errorf("unable to fetch backup files, received err: %+v", err)
-	}
-
-	if !areFileListsEqual(of, bf) {
-		t.Error("backup file list does not match original")
-	}
-	if !areFileContentsEqual(of, bf) {
-		t.Errorf("backup file contents do not match original")
-	}
-}
-
-func getFileList(dir string) (map[string]string, error) {
-	files := make(map[string]string)
-	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if !info.IsDir() {
-			relPath, err := filepath.Rel(dir, path)
-			if err != nil {
-				return err
-			}
-			files[relPath] = path
-		}
-		return nil
-	})
-	return files, err
-}
-
-func areFileListsEqual(original, backup map[string]string) bool {
-	if len(original) != len(backup) {
-		return false
-	}
-	for relPath := range original {
-		if _, ok := backup[relPath]; !ok {
-			return false
-		}
-	}
-	return true
-}
-
-func areFileContentsEqual(original, backup map[string]string) bool {
-	for relPath, of := range original {
-		bf := backup[relPath]
-
-		ofHash, err := getHash(of)
-		if err != nil {
-			return false
-		}
-
-		bfHash, err := getHash(bf)
-		if err != nil {
-			return false
-		}
-
-		if ofHash != bfHash {
-			return false
-		}
-	}
-	return true
-}
-
-func getHash(path string) (string, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-
-	hasher := md5.New()
-	if _, err := io.Copy(hasher, file); err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("%x", hasher.Sum(nil)), nil
 }
