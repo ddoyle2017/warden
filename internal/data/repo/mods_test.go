@@ -7,7 +7,6 @@ import (
 	"testing"
 	"warden/internal/data/repo"
 	"warden/internal/domain/mod"
-	"warden/internal/test"
 	"warden/internal/test/helper"
 	"warden/internal/test/mock"
 )
@@ -22,7 +21,7 @@ func TestListMods_Happy(t *testing.T) {
 	mr := repo.NewModsRepo(db)
 	fr := repo.NewFrameworksRepo(db)
 
-	expectedMods := test.SeedModsTable(t, mr, fr)
+	expectedMods := th.SeedModsTable(mr, fr)
 
 	results, err := mr.ListMods()
 	if err != nil {
@@ -92,7 +91,7 @@ func TestGetMod_Happy(t *testing.T) {
 	mr := repo.NewModsRepo(db)
 	fr := repo.NewFrameworksRepo(db)
 
-	mods := test.SeedModsTable(t, mr, fr)
+	mods := th.SeedModsTable(mr, fr)
 
 	m, err := mr.GetMod(mods[0].Name)
 	if err != nil {
@@ -150,7 +149,7 @@ func TestInsertMod_Happy(t *testing.T) {
 	mr := repo.NewModsRepo(db)
 	fr := repo.NewFrameworksRepo(db)
 
-	expectedMods := test.SeedModsTable(t, mr, fr)
+	expectedMods := th.SeedModsTable(mr, fr)
 	newMod := mod.Mod{
 		Name:      "X-ray hack",
 		Namespace: "Bob",
@@ -213,7 +212,7 @@ func TestUpdateMod_Happy(t *testing.T) {
 	mr := repo.NewModsRepo(db)
 	fr := repo.NewFrameworksRepo(db)
 
-	currentMods := test.SeedModsTable(t, mr, fr)
+	currentMods := th.SeedModsTable(mr, fr)
 	newVersion := "102.23.78"
 
 	tests := map[string]struct {
@@ -320,7 +319,7 @@ func TestDeleteMod_Happy(t *testing.T) {
 	mr := repo.NewModsRepo(db)
 	fr := repo.NewFrameworksRepo(db)
 
-	currentMods := test.SeedModsTable(t, mr, fr)
+	currentMods := th.SeedModsTable(mr, fr)
 	last := len(currentMods) - 1
 
 	tests := map[string]struct {

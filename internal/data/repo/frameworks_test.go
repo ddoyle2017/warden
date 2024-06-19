@@ -6,7 +6,6 @@ import (
 	"testing"
 	"warden/internal/data/repo"
 	"warden/internal/domain/framework"
-	"warden/internal/test"
 	"warden/internal/test/helper"
 	"warden/internal/test/mock"
 )
@@ -18,7 +17,7 @@ func TestGetFramework_Happy(t *testing.T) {
 	repo.CreateFrameworksTable(db)
 
 	fr := repo.NewFrameworksRepo(db)
-	frameworks := test.SeedFrameworksTable(t, fr)
+	frameworks := th.SeedFrameworksTable(fr)
 
 	result, err := fr.GetFramework(framework.BepInEx)
 	if err != nil {
@@ -64,7 +63,7 @@ func TestGetFramework_Sad(t *testing.T) {
 				repo.CreateFrameworksTable(db)
 
 				fr := repo.NewFrameworksRepo(db)
-				test.SeedFrameworksTable(t, fr)
+				th.SeedFrameworksTable(fr)
 				fr.InsertFramework(framework.Framework{
 					Name:      framework.BepInEx,
 					Namespace: framework.BepInExNamespace,
@@ -148,7 +147,7 @@ func TestUpdateFramework_Happy(t *testing.T) {
 				db := th.CreateDatabase()
 				repo.CreateFrameworksTable(db)
 
-				test.SeedFrameworksTable(t, repo.NewFrameworksRepo(db))
+				th.SeedFrameworksTable(repo.NewFrameworksRepo(db))
 				return db
 			},
 		},
@@ -205,7 +204,7 @@ func TestDeleteFramework_Happy(t *testing.T) {
 			setUp: func() repo.Database {
 				db := th.CreateDatabase()
 				repo.CreateFrameworksTable(db)
-				test.SeedFrameworksTable(t, repo.NewFrameworksRepo(db))
+				th.SeedFrameworksTable(repo.NewFrameworksRepo(db))
 				return db
 			},
 		},
