@@ -17,11 +17,12 @@ const (
 )
 
 var (
-	ErrZipDeleteFailed       = errors.New("unable to delete zip archive")
-	ErrModDeleteFailed       = errors.New("unable to delete mod directory")
-	ErrDeleteAllModsFailed   = errors.New("unable to delete all mods")
-	ErrFrameworkDeleteFailed = errors.New("unable to delete framework")
-	ErrFrameworkUpdateFailed = errors.New("unable to update framework")
+	ErrZipDeleteFailed        = errors.New("unable to delete zip archive")
+	ErrModDeleteFailed        = errors.New("unable to delete mod directory")
+	ErrDeleteAllModsFailed    = errors.New("unable to delete all mods")
+	ErrFrameworkInstallFailed = errors.New("unable to install framework")
+	ErrFrameworkDeleteFailed  = errors.New("unable to delete framework")
+	ErrFrameworkUpdateFailed  = errors.New("unable to update framework")
 )
 
 // Manager provides an interface for all file-related mod operations, e.g. installing and deleting mods.
@@ -76,54 +77,64 @@ func (m *manager) InstallMod(url, fullName string) (string, error) {
 	}
 	defer resp.Body.Close()
 
+	m.backup.Create(m.modDirectory)
+
 	// Create the zip archive
 	zipPath := filepath.Join(m.modDirectory, fullName+".zip")
-
-	err = createFile(zipPath, resp.Body)
-	if err != nil {
+	if err := createFile(zipPath, resp.Body); err != nil {
+		m.backup.Restore(m.modDirectory)
 		return "", err
 	}
 
 	// Extract zip files into a new folder for the mod
 	destination := filepath.Join(m.modDirectory, fullName)
-	err = Unzip(zipPath, destination)
-	if err != nil {
+	if err := Unzip(zipPath, destination); err != nil {
+		m.backup.Restore(m.modDirectory)
 		return "", err
 	}
 
 	// Remove zip file after finishing extraction
-	err = os.Remove(zipPath)
-	if err != nil {
+	if err := os.Remove(zipPath); err != nil {
+		m.backup.Restore(m.modDirectory)
 		return "", ErrZipDeleteFailed
 	}
+	m.backup.Remove()
 	return destination, nil
 }
 
 func (m *manager) RemoveMod(fullName string) error {
 	modPath := filepath.Join(m.modDirectory, fullName)
 
+	m.backup.Create(m.modDirectory)
 	err := os.RemoveAll(modPath)
 
 	// If error is thrown because the file does not exist, we ignore. For
 	// any other error, return that the delete failed.
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		m.backup.Restore(m.modDirectory)
 		return ErrModDeleteFailed
 	}
+	m.backup.Remove()
 	return nil
 }
 
 func (m *manager) RemoveAllMods() error {
+	m.backup.Create(m.modDirectory)
+
 	// Delete the parent folder for all mods and everything inside
 	err := os.RemoveAll(m.modDirectory)
 	if err != nil {
+		m.backup.Restore(m.modDirectory)
 		return ErrDeleteAllModsFailed
 	}
 
 	// Recreate parent folder for all mods
 	err = os.MkdirAll(m.modDirectory, os.ModePerm)
 	if err != nil {
+		m.backup.Restore(m.modDirectory)
 		return ErrDirectoryCreateFailed
 	}
+	m.backup.Remove()
 	return nil
 }
 
@@ -135,60 +146,68 @@ func (m *manager) InstallBepInEx(url, fullName string) (string, error) {
 	}
 	defer resp.Body.Close()
 
+	m.backup.Create(m.valheimDirectory)
+
 	// Create the zip archive
 	zipPath := filepath.Join(m.valheimDirectory, fullName+".zip")
-
-	err = createFile(zipPath, resp.Body)
-	if err != nil {
+	if err := createFile(zipPath, resp.Body); err != nil {
+		m.backup.Restore(m.valheimDirectory)
 		return "", err
 	}
 
 	// Extract zip files into Valheim server folder
-	err = Unzip(zipPath, m.valheimDirectory)
-	if err != nil {
+	if err := Unzip(zipPath, m.valheimDirectory); err != nil {
+		m.backup.Restore(m.valheimDirectory)
 		return "", err
 	}
 
-	// Remove zip file after finishing extraction
-	err = os.Remove(zipPath)
-	if err != nil {
+	// Remove zip file after finishing extractio
+	if err = os.Remove(zipPath); err != nil {
+		m.backup.Restore(m.valheimDirectory)
 		return "", ErrZipDeleteFailed
 	}
 
 	// Move BepInEx files to Valheim installation directory and remove top level folder
-	m.moveBepInExFiles()
+	if err := m.moveBepInExFiles(); err != nil {
+		m.backup.Restore(m.valheimDirectory)
+		return "", ErrFrameworkInstallFailed
+	}
+	m.backup.Remove()
 	return m.valheimDirectory, nil
 }
 
-// TODO there's some risk here of the operation failing halfway through and
-// ruining the user's Valheim folder. Need to find some sort of transaction
-// to wrap this in, or maybe a back-up process involving the DB
 func (m *manager) UpdateBepInEx(url, fullName string) error {
-	m.backup.Create(m.modDirectory)
+	m.backup.Create(m.valheimDirectory)
 
 	// Move BepInEx mods to /tmp
 	tmp, err := os.MkdirTemp("", "warden")
 	if err != nil {
-		panic("return some error")
+		m.backup.Restore(m.valheimDirectory)
+		return ErrFrameworkUpdateFailed
 	}
 	defer os.RemoveAll(tmp)
 
 	if err := moveFiles(m.modDirectory, tmp); err != nil {
+		m.backup.Restore(m.valheimDirectory)
 		return ErrFrameworkUpdateFailed
 	}
 
 	// Update BepInEx
 	if err := m.RemoveBepInEx(); err != nil {
+		m.backup.Restore(m.valheimDirectory)
 		return ErrFrameworkUpdateFailed
 	}
 	if _, err := m.InstallBepInEx(url, fullName); err != nil {
+		m.backup.Restore(m.valheimDirectory)
 		return ErrFrameworkUpdateFailed
 	}
 
 	// Move mods back to BepInEx mods folder
 	if err := moveFiles(tmp, m.modDirectory); err != nil {
+		m.backup.Restore(m.valheimDirectory)
 		return ErrFrameworkUpdateFailed
 	}
+	m.backup.Remove()
 	return nil
 }
 
@@ -206,23 +225,24 @@ func (m *manager) RemoveBepInEx() error {
 		filepath.Join(m.valheimDirectory, "CHANGELOG.md"),            // BepInEx markdown change log
 		filepath.Join(m.valheimDirectory, "changelog.txt"),           // BepInEx plain text change log
 	}
+	m.backup.Create(m.valheimDirectory)
 
 	for _, f := range files {
 		err := os.RemoveAll(f)
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			m.backup.Restore(m.valheimDirectory)
 			return ErrFrameworkDeleteFailed
 		}
 	}
+	m.backup.Remove()
 	return nil
 }
 
-func (m *manager) moveBepInExFiles() {
+func (m *manager) moveBepInExFiles() error {
 	path := filepath.Join(m.valheimDirectory, BepInExContentsDirectory)
 
 	if err := moveFiles(path, m.valheimDirectory); err != nil {
-		panic("KUNG FU KENNY")
+		return err
 	}
-	if err := os.RemoveAll(path); err != nil {
-		panic("NOT LIKE US")
-	}
+	return os.RemoveAll(path)
 }
