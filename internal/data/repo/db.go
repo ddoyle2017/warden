@@ -10,8 +10,14 @@ import (
 // Database is an interface for basic SQL driver functions that Warden needs. Its fulfilled by both the
 // SQLite database driver and mock.Database
 type Database interface {
+	// Executes the given SQL query, using any passed in args
 	Query(query string, args ...any) (*sql.Rows, error)
+
+	// Prepares and executes a SQL statement (UPDATE, INSERT, etc.)
 	Prepare(query string) (*sql.Stmt, error)
+
+	// Begins a SQL transaction
+	Begin() (*sql.Tx, error)
 }
 
 func OpenDatabase(dbFile string) (Database, error) {

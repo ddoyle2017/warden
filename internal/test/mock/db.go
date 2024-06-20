@@ -7,6 +7,7 @@ import "database/sql"
 type Database struct {
 	QueryFunc   func(query string, args ...any) (*sql.Rows, error)
 	PrepareFunc func(query string) (*sql.Stmt, error)
+	BeginFunc   func() (*sql.Tx, error)
 }
 
 func (d *Database) Query(query string, args ...any) (*sql.Rows, error) {
@@ -15,4 +16,8 @@ func (d *Database) Query(query string, args ...any) (*sql.Rows, error) {
 
 func (d *Database) Prepare(query string) (*sql.Stmt, error) {
 	return d.PrepareFunc(query)
+}
+
+func (d *Database) Begin() (*sql.Tx, error) {
+	return d.BeginFunc()
 }
