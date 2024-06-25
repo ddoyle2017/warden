@@ -43,6 +43,7 @@ func main() {
 
 	ms := service.NewModService(mr, fm, ts, os.Stdin)
 	fs := service.NewFrameworkService(fr, fm, ts, os.Stdin)
+	ss := service.NewServerService(cfg.ValheimDirectory)
 
 	// Register commands
 	listCmd := command.NewListCommand(ms)
@@ -50,6 +51,7 @@ func main() {
 	removeCmd := command.NewRemoveCommand(fs, ms)
 	updateCmd := command.NewUpdateCommand(fs, ms)
 	configCmd := command.NewConfigCommand(*cfg)
+	startCmd := command.NewStartCommand(ss)
 
-	command.Execute(listCmd, addCmd, removeCmd, updateCmd, configCmd)
+	command.Execute(listCmd, addCmd, removeCmd, updateCmd, configCmd, startCmd)
 }
