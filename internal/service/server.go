@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 const (
@@ -36,12 +37,15 @@ func NewServerService(valheimDirectory string) Server {
 }
 
 func (s *serverService) Start(config string) (string, error) {
+	config = normalize(config)
 
 	var scriptPath string
 	if config == modded {
 		scriptPath = filepath.Join(s.valheimDirectory, moddedServerScript)
-	} else {
+	} else if config == vanilla {
 		scriptPath = filepath.Join(s.valheimDirectory, vanillaServerScript)
+	} else {
+		return "", ErrInvalidGameType
 	}
 
 	cmd := exec.Command("sh", scriptPath)
@@ -52,9 +56,14 @@ func (s *serverService) Start(config string) (string, error) {
 		return string(output), ErrServerStartFailed
 	}
 	return string(output), nil
-
 }
 
 func (s *serverService) IsValidGameType(config string) bool {
+	config = normalize(config)
 	return config == vanilla || config == modded
+}
+
+func normalize(s string) string {
+	s = strings.ToLower(s)
+	return strings.TrimSpace(s)
 }
