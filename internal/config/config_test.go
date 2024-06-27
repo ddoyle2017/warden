@@ -16,6 +16,8 @@ import (
 const testConfigPath = "../test/config"
 
 func TestLoad_Happy(t *testing.T) {
+	os := runtime.GOOS
+
 	tests := map[string]struct {
 		setUp    func() error
 		expected config.Config
@@ -25,8 +27,8 @@ func TestLoad_Happy(t *testing.T) {
 				return nil
 			},
 			expected: config.Config{
-				ValheimDirectory: config.DefaultSteamInstallPath,
-				Platform:         runtime.GOOS,
+				ValheimDirectory: config.GetInstallPath(os),
+				Platform:         os,
 			},
 		},
 		"if config file does exist, load existing values and return success": {

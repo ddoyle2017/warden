@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"os/user"
 	"path/filepath"
 	"runtime"
 
@@ -17,8 +18,10 @@ const (
 	Windows = "windows"
 	Linux   = "linux"
 
-	WardenConfigFile        = configName + "." + configType
-	DefaultSteamInstallPath = ".steam/SteamApps/common/Valheim dedicated server"
+	WardenConfigFile               = configName + "." + configType
+	DefaultSteamLinuxInstallPath   = "~/.steam/SteamApps/common/Valheim dedicated server"
+	DefaultSteamMacOSInstallPath   = "/Library/Application Support/Steam/steamapps/common/Valheim dedicated server/valheim_server"
+	DefaultSteamWindowsInstallPath = "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Valheim Dedicated Server"
 )
 
 var (
@@ -44,9 +47,11 @@ func Load(path string) (*Config, error) {
 	viper.SetConfigType(configType)
 
 	err := viper.ReadInConfig()
+	os := runtime.GOOS
+
 	cfg := &Config{
-		ValheimDirectory: DefaultSteamInstallPath,
-		Platform:         runtime.GOOS,
+		ValheimDirectory: GetInstallPath(os),
+		Platform:         os,
 	}
 
 	// If config doesn't exist, create the file and add default values
@@ -73,4 +78,22 @@ func createConfigFile(cfg *Config, path string) error {
 		return ErrUnableToWriteConfig
 	}
 	return nil
+}
+
+func GetInstallPath(os string) string {
+	if os == Windows {
+		return DefaultSteamWindowsInstallPath
+	}
+	if os == Linux {
+		return DefaultSteamLinuxInstallPath
+	}
+	if os == MacOS {
+		// Get user
+		currentUser, err := user.Current()
+		if err != nil {
+			panic("unable to fetch current user")
+		}
+		return filepath.Join("/Users", currentUser.Username, DefaultSteamMacOSInstallPath)
+	}
+	return "" // figure out how to handle a default value
 }
