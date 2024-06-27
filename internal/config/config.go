@@ -3,12 +3,21 @@ package config
 import (
 	"errors"
 	"path/filepath"
+	"runtime"
 
 	"github.com/spf13/viper"
 )
 
 const (
-	WardenConfigFile        = ".warden.yaml"
+	configName = ".warden"
+	configType = "yaml"
+
+	// These values are based on what the Go stdlib labels each operating system
+	MacOS   = "darwin"
+	Windows = "windows"
+	Linux   = "linux"
+
+	WardenConfigFile        = configName + "." + configType
 	DefaultSteamInstallPath = ".steam/SteamApps/common/Valheim dedicated server"
 )
 
@@ -31,12 +40,13 @@ type Config struct {
 // path. If one doesn't exist, a new file is created with default values
 func Load(path string) (*Config, error) {
 	viper.AddConfigPath(path)
-	viper.SetConfigName(".warden")
-	viper.SetConfigType("yaml")
+	viper.SetConfigName(configName)
+	viper.SetConfigType(configType)
 
 	err := viper.ReadInConfig()
 	cfg := &Config{
 		ValheimDirectory: DefaultSteamInstallPath,
+		Platform:         runtime.GOOS,
 	}
 
 	// If config doesn't exist, create the file and add default values
@@ -56,6 +66,7 @@ func Load(path string) (*Config, error) {
 // Creates a new configuration file called .warden.yaml, with the given settings
 func createConfigFile(cfg *Config, path string) error {
 	viper.Set("valheim-directory", cfg.ValheimDirectory)
+	viper.Set("platform", cfg.Platform)
 
 	file := filepath.Join(path, WardenConfigFile)
 	if err := viper.WriteConfigAs(file); err != nil {

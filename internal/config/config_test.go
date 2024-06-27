@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"warden/internal/config"
@@ -25,14 +26,16 @@ func TestLoad_Happy(t *testing.T) {
 			},
 			expected: config.Config{
 				ValheimDirectory: config.DefaultSteamInstallPath,
+				Platform:         runtime.GOOS,
 			},
 		},
 		"if config file does exist, load existing values and return success": {
 			setUp: func() error {
-				return createTestConfigFile(t, "valheim-directory: ./test/file\n")
+				return createTestConfigFile(t, "valheim-directory: ./test/file\nplatform: linux\n")
 			},
 			expected: config.Config{
 				ValheimDirectory: "./test/file",
+				Platform:         config.Linux,
 			},
 		},
 	}
@@ -49,8 +52,8 @@ func TestLoad_Happy(t *testing.T) {
 			if err != nil {
 				t.Errorf("expected a nil error, received: %+v", cfg)
 			}
-			if cfg.ValheimDirectory != test.expected.ValheimDirectory {
-				t.Errorf("expected config: %s, received: %s", test.expected.ValheimDirectory, cfg.ValheimDirectory)
+			if !doConfigsMatch(test.expected, *cfg) {
+				t.Errorf("expected config: %+v, received: %+v", test.expected, cfg)
 			}
 			resetTestConfig(t)
 		})
@@ -124,4 +127,14 @@ func resetTestConfig(t *testing.T) {
 	if err := os.RemoveAll(path); err != nil {
 		t.Errorf("unable to clean-up test config file, error: %+v", err)
 	}
+}
+
+func doConfigsMatch(a, b config.Config) bool {
+	if a.ValheimDirectory != b.ValheimDirectory {
+		return false
+	}
+	if a.Platform != b.Platform {
+		return false
+	}
+	return true
 }
