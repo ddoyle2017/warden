@@ -1,6 +1,7 @@
 package command
 
 import (
+	"errors"
 	"fmt"
 	"warden/internal/service"
 
@@ -24,6 +25,7 @@ func NewStartCommand(server service.Server) *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) {
 			output, err := server.Start(args[0])
 			if err != nil {
+				parseStartError(err)
 				fmt.Println(output)
 			} else {
 				fmt.Println("... successfully started server! ...")
@@ -32,4 +34,12 @@ func NewStartCommand(server service.Server) *cobra.Command {
 		},
 	}
 	return cmd
+}
+
+func parseStartError(err error) {
+	if !errors.Is(err, service.ErrInvalidGameType) {
+		fmt.Println("... invalid game type ...")
+	} else if !errors.Is(err, service.ErrServerStartFailed) {
+		fmt.Println("... Valheim server failed to start ...")
+	}
 }
