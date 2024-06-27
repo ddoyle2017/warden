@@ -20,7 +20,11 @@ var (
 // Config represents all configurable values needed to make warden work, e.g. the directory
 // to install mods to
 type Config struct {
+	// The directory containing all of the Valheim server files
 	ValheimDirectory string `mapstructure:"valheim-directory"`
+
+	// The type of operating system the server is running on, e.g. Windows, Linux, or macOS
+	Platform string `mapstructure:"platform"`
 }
 
 // Load creates a new instance of Config, based on a configuration YAML file at the given
