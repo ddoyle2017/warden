@@ -60,11 +60,6 @@ func (s *serverService) IsValidGameType(config string) bool {
 	return config == vanilla || config == modded
 }
 
-func normalize(s string) string {
-	s = strings.ToLower(s)
-	return strings.TrimSpace(s)
-}
-
 func (s *serverService) getStartScript(gameType string) string {
 	if gameType == modded {
 		return filepath.Join(s.ValheimDirectory, moddedStartScript)
@@ -80,4 +75,9 @@ func (s *serverService) getStartScript(gameType string) string {
 			return ""
 		}
 	}
+}
+
+func normalize(s string) string {
+	s = strings.ToLower(s)
+	return strings.TrimSpace(s)
 }

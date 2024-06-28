@@ -20,7 +20,7 @@ const (
 
 	WardenConfigFile               = configName + "." + configType
 	DefaultSteamLinuxInstallPath   = "~/.steam/SteamApps/common/Valheim dedicated server"
-	DefaultSteamMacOSInstallPath   = "/Library/Application Support/Steam/steamapps/common/Valheim dedicated server/valheim_server"
+	DefaultSteamMacOSInstallPath   = "/Library/Application Support/Steam/steamapps/common/Valheim dedicated server"
 	DefaultSteamWindowsInstallPath = "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Valheim Dedicated Server"
 )
 
