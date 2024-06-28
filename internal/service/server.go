@@ -5,14 +5,17 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"warden/internal/config"
 )
 
 const (
 	vanilla = "vanilla"
 	modded  = "modded"
 
-	vanillaServerScript = "start_server.sh"
-	moddedServerScript  = "start_server_bepinex.sh"
+	linuxStartScript   = "start_server.sh"
+	macOSStartScript   = "start_server.command"
+	windowsStartScript = "start_headless_server.bat"
+	moddedStartScript  = "start_server_bepinex.sh"
 )
 
 var (
@@ -27,28 +30,22 @@ type Server interface {
 }
 
 type serverService struct {
-	valheimDirectory string
+	config.Config
 }
 
-func NewServerService(valheimDirectory string) Server {
+func NewServerService(cfg config.Config) Server {
 	return &serverService{
-		valheimDirectory: valheimDirectory,
+		cfg,
 	}
 }
 
-func (s *serverService) Start(config string) (string, error) {
-	config = normalize(config)
-
-	var scriptPath string
-	if config == modded {
-		scriptPath = filepath.Join(s.valheimDirectory, moddedServerScript)
-	} else if config == vanilla {
-		scriptPath = filepath.Join(s.valheimDirectory, vanillaServerScript)
-	} else {
+func (s *serverService) Start(gameType string) (string, error) {
+	gameType = normalize(gameType)
+	if !s.IsValidGameType(gameType) {
 		return "", ErrInvalidGameType
 	}
 
-	cmd := exec.Command("sh", scriptPath)
+	cmd := exec.Command("sh", s.getStartScript(gameType))
 
 	// Capture the output of the script
 	output, err := cmd.CombinedOutput()
@@ -66,4 +63,21 @@ func (s *serverService) IsValidGameType(config string) bool {
 func normalize(s string) string {
 	s = strings.ToLower(s)
 	return strings.TrimSpace(s)
+}
+
+func (s *serverService) getStartScript(gameType string) string {
+	if gameType == modded {
+		return filepath.Join(s.ValheimDirectory, moddedStartScript)
+	} else {
+		switch s.Platform {
+		case config.Linux:
+			return filepath.Join(s.ValheimDirectory, linuxStartScript)
+		case config.MacOS:
+			return filepath.Join(s.ValheimDirectory, macOSStartScript)
+		case config.Windows:
+			return filepath.Join(s.ValheimDirectory, windowsStartScript)
+		default:
+			return ""
+		}
+	}
 }
