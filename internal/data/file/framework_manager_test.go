@@ -21,11 +21,17 @@ func TestInstallBepInEx_Happy(t *testing.T) {
 	if err != nil {
 		t.Errorf("unexpected error reading BepInEx zip file, received err: %+v", err)
 	}
+	archiveInfo, err := archive.Stat()
+	if err != nil {
+		t.Errorf("unexpected error reading zip file metadata, received err: %+v", err)
+	}
+
 	client := mock.HTTPClient{
 		GetFunc: func(_ string) (*http.Response, error) {
 			return &http.Response{
-				StatusCode: http.StatusOK,
-				Body:       archive,
+				StatusCode:    http.StatusOK,
+				Body:          archive,
+				ContentLength: archiveInfo.Size(),
 			}, nil
 		},
 	}

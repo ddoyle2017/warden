@@ -2,9 +2,12 @@ package file
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"warden/internal/api"
+
+	"github.com/schollz/progressbar/v3"
 )
 
 // An interface for all framework/BepInEx related file operations
@@ -30,9 +33,14 @@ func (m *manager) InstallBepInEx(url, fullName string) (string, error) {
 
 	m.backup.Create(m.valheimDirectory)
 
+	bar := progressbar.DefaultBytes(
+		resp.ContentLength,
+		"Downloading BepInEx...",
+	)
+
 	// Create the zip archive
 	zipPath := filepath.Join(m.valheimDirectory, fullName+".zip")
-	if err := createFile(zipPath, resp.Body); err != nil {
+	if err := createFile(zipPath, resp.Body, bar); err != nil {
 		m.backup.Restore(m.valheimDirectory)
 		return "", err
 	}
@@ -43,7 +51,7 @@ func (m *manager) InstallBepInEx(url, fullName string) (string, error) {
 		return "", err
 	}
 
-	// Remove zip file after finishing extractio
+	// Remove zip file after finishing extraction
 	if err = os.Remove(zipPath); err != nil {
 		m.backup.Restore(m.valheimDirectory)
 		return "", ErrZipDeleteFailed
@@ -54,6 +62,7 @@ func (m *manager) InstallBepInEx(url, fullName string) (string, error) {
 		m.backup.Restore(m.valheimDirectory)
 		return "", ErrFrameworkInstallFailed
 	}
+
 	m.backup.Remove()
 	return m.valheimDirectory, nil
 }
@@ -124,6 +133,7 @@ func (m *manager) moveBepInExFiles() error {
 	path := filepath.Join(m.valheimDirectory, BepInExContentsDirectory)
 
 	if err := moveFiles(path, m.valheimDirectory); err != nil {
+		fmt.Printf("%+v", err)
 		return err
 	}
 	return os.RemoveAll(path)

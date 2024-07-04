@@ -37,7 +37,7 @@ func (m *manager) InstallMod(url, fullName string) (string, error) {
 
 	// Create the zip archive
 	zipPath := filepath.Join(m.modDirectory, fullName+".zip")
-	if err := createFile(zipPath, resp.Body); err != nil {
+	if err := createFile(zipPath, resp.Body, nil); err != nil {
 		m.backup.Restore(m.modDirectory)
 		return "", err
 	}

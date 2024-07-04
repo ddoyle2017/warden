@@ -3,9 +3,12 @@ package file
 import (
 	"archive/zip"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+
+	"github.com/schollz/progressbar/v3"
 )
 
 const (
@@ -40,6 +43,8 @@ func Unzip(source, destination string) error {
 	}
 	defer archive.Close()
 
+	fmt.Printf("Extracting %d files", len(archive.File))
+
 	// Loop through each file inside of the zip
 	for _, f := range archive.File {
 		filePath := filepath.Join(destination, f.Name)
@@ -59,22 +64,30 @@ func Unzip(source, destination string) error {
 		}
 		defer srcFile.Close()
 
-		createFile(filePath, srcFile)
+		createFile(filePath, srcFile, nil)
 	}
 	return nil
 }
 
 // createFile is a helper function that creates a new file and writes data from io.Reader into it
-func createFile(filePath string, fileSource io.Reader) error {
+func createFile(filePath string, source io.Reader, bar *progressbar.ProgressBar) error {
 	// Create the empty file
-	out, err := os.Create(filePath)
+	f, err := os.Create(filePath)
 	if err != nil {
 		return ErrFileCreateFailed
 	}
-	defer out.Close()
+	defer f.Close()
+
+	// Attach a progress bar to the file write if one is provided
+	var writer io.Writer
+	if bar == nil {
+		writer = f
+	} else {
+		writer = io.MultiWriter(f, bar)
+	}
 
 	// Write the body to file
-	_, err = io.Copy(out, fileSource)
+	_, err = io.Copy(writer, source)
 	if err != nil {
 		return ErrFileWriteFailed
 	}
@@ -91,6 +104,20 @@ func moveFiles(source, destination string) error {
 	for _, e := range entries {
 		src := filepath.Join(source, e.Name())
 		dest := filepath.Join(destination, e.Name())
+
+		// If the destination exists and is a directory, delete its contents
+		if info, err := os.Stat(dest); err == nil && info.IsDir() {
+			if err := os.RemoveAll(dest); err != nil {
+				return ErrFileRenameFailed
+			}
+		}
+
+		// If the destination exists and is not a directory, remove it
+		if _, err := os.Stat(dest); err == nil {
+			if err := os.Remove(dest); err != nil {
+				return ErrFileRenameFailed
+			}
+		}
 
 		if err := os.Rename(src, dest); err != nil {
 			return ErrFileRenameFailed
