@@ -63,7 +63,6 @@ func (ms *modService) AddMod(namespace, name string) error {
 
 	if err == nil && !current.Equals(&mod.Mod{}) {
 		// Mod already installed
-		fmt.Printf("...%s is already installed\n", name)
 		return ErrModAlreadyInstalled
 	}
 	if err != nil && !errors.Is(err, repo.ErrModFetchNoResults) {
@@ -196,11 +195,13 @@ func (ms *modService) UpdateAllMods() error {
 }
 
 func (ms *modService) RemoveMod(namespace, name string) error {
-	fmt.Printf("are you sure you want to remove this mod? %s\n", yesOrNo)
+	fmt.Printf("Are you sure you want to remove this mod? %s: ", yesOrNo)
 
 	tries := 0
 	for ms.in.Scan() && tries < 2 {
 		if ms.in.Text() == yes {
+			fmt.Printf("Removing %s...\n", name)
+
 			// Find the current installation of the mod
 			current, err := ms.r.GetMod(name)
 			if err != nil && errors.Is(err, repo.ErrModFetchNoResults) {
@@ -209,6 +210,7 @@ func (ms *modService) RemoveMod(namespace, name string) error {
 			if err != nil {
 				return ErrUnableToRemoveMod
 			}
+			fmt.Printf("Found version %s...\n", current.Version)
 
 			// Remove mod record
 			err = ms.r.DeleteMod(name, namespace)
@@ -221,9 +223,10 @@ func (ms *modService) RemoveMod(namespace, name string) error {
 			if err != nil {
 				return ErrUnableToRemoveMod
 			}
+			fmt.Printf("...Successfully removed %s!\n\n", name)
 			return nil
 		} else if ms.in.Text() == no {
-			fmt.Println("... aborting ...")
+			fmt.Println("Aborting ...")
 			return nil
 		} else {
 			tries++

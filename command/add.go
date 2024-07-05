@@ -37,16 +37,16 @@ func NewAddCommand(fs service.Framework, ms service.Mod) *cobra.Command {
 
 func parseAddError(err error) {
 	if errors.Is(err, service.ErrModAlreadyInstalled) {
-		fmt.Println("... mod already installed ...")
+		fmt.Println("Mod already installed ...")
 	} else if errors.Is(err, service.ErrModInstallFailed) {
-		fmt.Println("... unable to install mod ...")
+		fmt.Println("Unable to install mod ...")
 	} else if errors.Is(err, service.ErrModNotFound) {
-		fmt.Println("... unable to find mod on Thunderstore")
+		fmt.Println("Unable to find mod on Thunderstore...")
 	} else if errors.Is(err, service.ErrAddDependenciesFailed) {
-		fmt.Println("... unable to install mod's dependencies...")
+		fmt.Println("Unable to install mod's dependencies...")
 	} else if errors.Is(err, service.ErrUnableToInstallFramework) {
-		fmt.Println("... unable to install BepInEx ...")
+		fmt.Println("Unable to install BepInEx ...")
 	} else if errors.Is(err, service.ErrFrameworkNotFound) {
-		fmt.Println("... unable to find BepInEx ...")
+		fmt.Println("Unable to find BepInEx ...")
 	}
 }

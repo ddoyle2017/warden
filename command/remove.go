@@ -17,11 +17,8 @@ func NewRemoveCommand(fs service.Framework, ms service.Mod) *cobra.Command {
 		Short: "Removes the specified mod.",
 		Long:  "Deletes the mod from your mod folder and removes it from the local data storage.",
 		Run: func(cmd *cobra.Command, args []string) {
-			err := ms.RemoveMod(namespace, modPkg)
-			if err != nil {
+			if err := ms.RemoveMod(namespace, modPkg); err != nil {
 				parseRemoveError(err)
-			} else {
-				fmt.Println("... mod successfully removed! ...")
 			}
 		},
 	}

@@ -67,10 +67,16 @@ func (m *manager) InstallMod(url, fullName string) (string, error) {
 }
 
 func (m *manager) RemoveMod(fullName string) error {
-	modPath := filepath.Join(m.modDirectory, fullName)
-
 	m.backup.Create(m.modDirectory)
-	err := os.RemoveAll(modPath)
+
+	modPath := filepath.Join(m.modDirectory, fullName)
+	files, err := os.ReadDir(modPath)
+	if err != nil {
+		return ErrModDeleteFailed
+	}
+	fmt.Printf("Removing %d files...\n", len(files))
+
+	err = os.RemoveAll(modPath)
 
 	// If error is thrown because the file does not exist, we ignore. For
 	// any other error, return that the delete failed.
