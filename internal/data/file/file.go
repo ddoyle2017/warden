@@ -43,7 +43,7 @@ func Unzip(source, destination string) error {
 	}
 	defer archive.Close()
 
-	fmt.Printf("Extracting %d files", len(archive.File))
+	fmt.Printf("Extracting %d files...\n", len(archive.File))
 
 	// Loop through each file inside of the zip
 	for _, f := range archive.File {

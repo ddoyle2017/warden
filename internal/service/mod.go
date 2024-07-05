@@ -63,6 +63,7 @@ func (ms *modService) AddMod(namespace, name string) error {
 
 	if err == nil && !current.Equals(&mod.Mod{}) {
 		// Mod already installed
+		fmt.Printf("...%s is already installed\n", name)
 		return ErrModAlreadyInstalled
 	}
 	if err != nil && !errors.Is(err, repo.ErrModFetchNoResults) {
@@ -71,11 +72,14 @@ func (ms *modService) AddMod(namespace, name string) error {
 		return ErrModInstallFailed
 	}
 
+	fmt.Printf("Installing %s...\n", name)
+
 	// Find the requested mod online
 	pkg, err := ms.ts.GetPackage(namespace, name)
 	if err != nil {
 		return ErrModNotFound
 	}
+	fmt.Printf("Found version %s...\n", pkg.Latest.VersionNumber)
 
 	// Install the mod and it's dependencies
 	err = ms.installMod(pkg.Latest)
@@ -83,14 +87,17 @@ func (ms *modService) AddMod(namespace, name string) error {
 		return ErrModInstallFailed
 	}
 
-	if len(pkg.Latest.Dependencies) > 0 {
-		fmt.Printf("... mod has %d dependencies, installing them ...\n", len(pkg.Latest.Dependencies))
+	// Currently, all mods use BepInEx as a dependency. So if there's > 1 depedencies, there's something
+	// besides BepInEx to install. BepInEx is mandatory to install, so we don't include it here.
+	if len(pkg.Latest.Dependencies) > 1 {
+		fmt.Printf("Found %d dependencies, installing them ...\n", len(pkg.Latest.Dependencies)-1)
 
 		err = ms.addDependencies(pkg.Latest.Dependencies)
 		if err != nil {
 			return ErrAddDependenciesFailed
 		}
 	}
+	fmt.Printf("...Successfully installed %s!\n\n", name)
 	return nil
 }
 

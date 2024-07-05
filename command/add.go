@@ -23,8 +23,6 @@ func NewAddCommand(fs service.Framework, ms service.Mod) *cobra.Command {
 			}
 			if err := ms.AddMod(namespace, modPkg); err != nil {
 				parseAddError(err)
-			} else {
-				fmt.Println("... successfully installed mod! ...")
 			}
 		},
 	}

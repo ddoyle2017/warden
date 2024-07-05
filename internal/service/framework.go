@@ -51,7 +51,7 @@ func (fs *frameworkService) InstallBepInEx() error {
 		return nil
 	}
 
-	fmt.Printf("BepInEx installation is missing ...\n\n")
+	fmt.Printf("BepInEx installation is missing ...\n")
 	fmt.Printf("Did you want to install BepInEx? %s: ", yesOrNo)
 
 	tries := 0
@@ -64,6 +64,7 @@ func (fs *frameworkService) InstallBepInEx() error {
 			if err != nil {
 				return ErrFrameworkNotFound
 			}
+			fmt.Printf("Found version %s...\n", pkg.Latest.VersionNumber)
 
 			_, err = fs.fm.InstallBepInEx(pkg.Latest.DownloadURL, pkg.Latest.FullName)
 			if err != nil {
@@ -82,10 +83,10 @@ func (fs *frameworkService) InstallBepInEx() error {
 				return ErrUnableToInstallFramework
 			}
 
-			fmt.Println("Successfully installed BepInEx ...")
+			fmt.Printf("...Successfully installed BepInEx!\n\n")
 			return nil
 		} else if fs.in.Text() == no {
-			fmt.Println("... aborting ...")
+			fmt.Println("Aborting ...")
 			return nil
 		} else {
 			tries++
