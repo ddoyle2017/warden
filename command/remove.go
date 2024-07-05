@@ -41,11 +41,8 @@ func newRemoveAllCommand(ms service.Mod) *cobra.Command {
 		Short: "Removes all mods.",
 		Long:  "Deletes all mods from your mod folder, and removes records of them from the local data storage.",
 		Run: func(cmd *cobra.Command, args []string) {
-			err := ms.RemoveAllMods()
-			if err != nil {
+			if err := ms.RemoveAllMods(); err != nil {
 				parseRemoveAllError(err)
-			} else {
-				fmt.Println("... all mods were removed successfully! ...")
 			}
 		},
 	}

@@ -239,20 +239,31 @@ func (ms *modService) RemoveMod(namespace, name string) error {
 }
 
 func (ms *modService) RemoveAllMods() error {
-	fmt.Printf("are you sure you want to remove ALL mods? %s\n", yesOrNoLong)
+	fmt.Printf("Are you sure you want to remove ALL mods? %s: ", yesOrNoLong)
 
 	tries := 0
 	for ms.in.Scan() && tries < 2 {
 		if ms.in.Text() == yesLong {
+			mods, err := ms.r.ListMods()
+			if err != nil {
+				return ErrUnableToListMods
+			}
+			if len(mods) == 0 {
+				fmt.Println("...No mods are installed")
+				return nil
+			}
+			fmt.Printf("Removing %d mods...\n", len(mods))
+
 			errRepo := ms.r.DeleteAllMods()
 			errFile := ms.fm.RemoveAllMods()
 
 			if errRepo != nil || errFile != nil {
 				return ErrUnableToRemoveMod
 			}
+			fmt.Printf("...Succcessfully removed all mods!\n\n")
 			return nil
 		} else if ms.in.Text() == noLong {
-			fmt.Println("... aborting ...")
+			fmt.Println("Aborting...")
 			return nil
 		} else {
 			tries++

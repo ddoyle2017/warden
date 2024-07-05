@@ -74,7 +74,7 @@ func (m *manager) RemoveMod(fullName string) error {
 	if err != nil {
 		return ErrModDeleteFailed
 	}
-	fmt.Printf("Removing %d files...\n", len(files))
+	fmt.Printf("Deleting %d files...\n", len(files))
 
 	err = os.RemoveAll(modPath)
 
@@ -92,18 +92,17 @@ func (m *manager) RemoveAllMods() error {
 	m.backup.Create(m.modDirectory)
 
 	// Delete the parent folder for all mods and everything inside
-	err := os.RemoveAll(m.modDirectory)
-	if err != nil {
+	if err := os.RemoveAll(m.modDirectory); err != nil {
 		m.backup.Restore(m.modDirectory)
 		return ErrDeleteAllModsFailed
 	}
 
 	// Recreate parent folder for all mods
-	err = os.MkdirAll(m.modDirectory, os.ModePerm)
-	if err != nil {
+	if err := os.MkdirAll(m.modDirectory, os.ModePerm); err != nil {
 		m.backup.Restore(m.modDirectory)
 		return ErrDirectoryCreateFailed
 	}
+	fmt.Println("Recreating server mods directory...")
 	m.backup.Remove()
 	return nil
 }
