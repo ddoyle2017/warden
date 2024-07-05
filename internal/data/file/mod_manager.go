@@ -2,9 +2,12 @@ package file
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"warden/internal/api"
+
+	"github.com/schollz/progressbar/v3"
 )
 
 // An interface for all mod file operations
@@ -35,9 +38,14 @@ func (m *manager) InstallMod(url, fullName string) (string, error) {
 
 	m.backup.Create(m.modDirectory)
 
+	bar := progressbar.DefaultBytes(
+		resp.ContentLength,
+		fmt.Sprintf("Downloading %s...", fullName),
+	)
+
 	// Create the zip archive
 	zipPath := filepath.Join(m.modDirectory, fullName+".zip")
-	if err := createFile(zipPath, resp.Body, nil); err != nil {
+	if err := createFile(zipPath, resp.Body, bar); err != nil {
 		m.backup.Restore(m.modDirectory)
 		return "", err
 	}
