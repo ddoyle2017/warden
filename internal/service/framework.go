@@ -155,20 +155,33 @@ func (fs *frameworkService) UpdateBepInEx() error {
 }
 
 func (fs *frameworkService) RemoveBepInEx() error {
-	fmt.Printf("are you sure you want to remove BepInEx? %s\n", yesOrNoLong)
+	fmt.Printf("Are you sure you want to remove BepInEx? %s: ", yesOrNoLong)
 
 	tries := 0
 	for fs.in.Scan() && tries < 2 {
 		if fs.in.Text() == yesLong {
-			if err := fs.fm.RemoveBepInEx(); err != nil {
+			fmt.Println("\nRemoving BepInEx...")
+
+			// Find the current installation of BepInEx
+			current, err := fs.fr.GetFramework(framework.BepInEx)
+			if err != nil && errors.Is(err, repo.ErrFrameworkFetchFailed) {
+				return ErrFrameworkNotInstalled
+			}
+			if err != nil {
 				return ErrUnableToRemoveFramework
 			}
+			fmt.Printf("Found version %s...\n", current.Version)
+
 			if err := fs.fr.DeleteFramework(framework.BepInEx); err != nil {
 				return ErrUnableToRemoveFramework
 			}
+			if err := fs.fm.RemoveBepInEx(); err != nil {
+				return ErrUnableToRemoveFramework
+			}
+			fmt.Printf("... Successfully removed BepInEx!\n\n")
 			return nil
 		} else if fs.in.Text() == noLong {
-			fmt.Println("... aborting ...")
+			fmt.Println("Aborting ...")
 			return nil
 		} else {
 			tries++

@@ -118,6 +118,8 @@ func (m *manager) RemoveBepInEx() error {
 	}
 	m.backup.Create(m.valheimDirectory)
 
+	fmt.Printf("Deleting %d files...\n", len(files))
+
 	for _, f := range files {
 		err := os.RemoveAll(f)
 		if err != nil && !errors.Is(err, os.ErrNotExist) {

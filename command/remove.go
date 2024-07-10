@@ -55,11 +55,8 @@ func newRemoveBepInEx(fs service.Framework) *cobra.Command {
 		Short: "Removes BepInEx installation.",
 		Long:  "Removes BepInEx and all mods installed under it.",
 		Run: func(cmd *cobra.Command, args []string) {
-			err := fs.RemoveBepInEx()
-			if err != nil {
+			if err := fs.RemoveBepInEx(); err != nil {
 				parseRemoveError(err)
-			} else {
-				fmt.Println("... BepInEx and mods were removed successfully! ...")
 			}
 		},
 	}
@@ -68,20 +65,22 @@ func newRemoveBepInEx(fs service.Framework) *cobra.Command {
 
 func parseRemoveError(err error) {
 	if errors.Is(err, service.ErrUnableToRemoveMod) {
-		fmt.Println("... unable to remove mod ...")
+		fmt.Println("... Unable to remove mod")
 	} else if errors.Is(err, service.ErrMaxAttempts) {
-		fmt.Println("... unable to confim mod removal, aborting ...")
+		fmt.Println("... Unable to confim mod removal, aborting")
 	} else if errors.Is(err, service.ErrModNotInstalled) {
-		fmt.Println("... mod not installed ...")
+		fmt.Println("... Mod not installed")
 	} else if errors.Is(err, service.ErrUnableToRemoveFramework) {
-		fmt.Println("... unable to remove BepInEx ...")
+		fmt.Println("... Unable to remove BepInEx")
+	} else if errors.Is(err, service.ErrFrameworkNotInstalled) {
+		fmt.Println("... BepInEx not installed")
 	}
 }
 
 func parseRemoveAllError(err error) {
 	if errors.Is(err, service.ErrUnableToRemoveMod) {
-		fmt.Println("... unable to remove mods ...")
+		fmt.Println("... Unable to remove mods")
 	} else if errors.Is(err, service.ErrMaxAttempts) {
-		fmt.Println("... unable to confim mod removal, aborting ...")
+		fmt.Println("... Unable to confim mod removal, aborting")
 	}
 }
