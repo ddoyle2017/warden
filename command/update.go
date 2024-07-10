@@ -16,11 +16,8 @@ func NewUpdateCommand(fs service.Framework, ms service.Mod) *cobra.Command {
 		Short: "Updates the targetted mod.",
 		Long:  "Finds the latest version of the mod on Thunderstore and updates the currently installed version with the new one.",
 		Run: func(cmd *cobra.Command, args []string) {
-			err := ms.UpdateMod(modPkg)
-			if err != nil {
+			if err := ms.UpdateMod(modPkg); err != nil {
 				parseUpdateError(err)
-			} else {
-				fmt.Println("... mod successfully updated! ...")
 			}
 		},
 	}
@@ -54,11 +51,8 @@ func newUpdateBepInEx(fs service.Framework) *cobra.Command {
 		Short: "Updates BepInEx.",
 		Long:  "Updates the current BepInEx installation.",
 		Run: func(cmd *cobra.Command, args []string) {
-			err := fs.UpdateBepInEx()
-			if err != nil {
+			if err := fs.UpdateBepInEx(); err != nil {
 				parseUpdateError(err)
-			} else {
-				fmt.Println("...successfully updated BepInEx!...")
 			}
 		},
 	}
@@ -67,18 +61,18 @@ func newUpdateBepInEx(fs service.Framework) *cobra.Command {
 
 func parseUpdateError(err error) {
 	if errors.Is(err, service.ErrModNotInstalled) {
-		fmt.Println("... mod not installed, update stopped ...")
+		fmt.Println("...Mod not installed, update stopped")
 	} else if errors.Is(err, service.ErrUnableToUpdateMod) {
-		fmt.Println("... unable to update mod ...")
+		fmt.Println("...Unable to update mod")
 	} else if errors.Is(err, service.ErrModNotFound) {
-		fmt.Println("... could not find mod on Thunderstore, stopping update ...")
+		fmt.Println("... could not find mod on Thunderstore, stopping update")
 	} else if errors.Is(err, service.ErrAddDependenciesFailed) {
-		fmt.Println("... unable to update mod's depedencies, stopping update ...")
+		fmt.Println("...Unable to update mod's depedencies, stopping update")
 	} else if errors.Is(err, service.ErrMaxAttempts) {
-		fmt.Println("... unable to confim update, aborting ...")
+		fmt.Println("...Unable to confim update, aborting")
 	} else if errors.Is(err, service.ErrFrameworkNotInstalled) {
-		fmt.Println("... BepInEx is not installed ...")
+		fmt.Println("...BepInEx is not installed")
 	} else if errors.Is(err, service.ErrUnableToUpdateFramework) {
-		fmt.Println("... unable to update BepInEx ...")
+		fmt.Println("...Unable to update BepInEx")
 	}
 }

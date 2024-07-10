@@ -117,23 +117,27 @@ func (ms *modService) UpdateMod(name string) error {
 	}
 
 	if current.Version < pkg.Latest.VersionNumber {
-		fmt.Printf("... found a new version (%s) of %s %s ...\n", pkg.Latest.VersionNumber, current.Namespace, current.Name)
-		fmt.Printf("did you want to update this mod? %s\n", yesOrNo)
+		fmt.Printf("Found a new version (%s) of %s %s ...\n", pkg.Latest.VersionNumber, current.Namespace, current.Name)
+		fmt.Printf("Did you want to update this mod? %s: ", yesOrNo)
 
 		tries := 0
 		for ms.in.Scan() && tries < 2 {
 			if ms.in.Text() == yes {
+				fmt.Printf("\nUpdating %s to %s...\n", name, pkg.Latest.VersionNumber)
+
 				err = ms.updateMod(current.FullName(), pkg.Latest)
 				if err != nil {
 					return ErrUnableToUpdateMod
 				}
+
 				err = ms.addDependencies(pkg.Latest.Dependencies)
 				if err != nil {
 					return ErrAddDependenciesFailed
 				}
+				fmt.Printf("...Successfully installed %s!\n\n", name)
 				return nil
 			} else if ms.in.Text() == no {
-				fmt.Println("... aborting ...")
+				fmt.Println("... Aborting")
 				return nil
 			} else {
 				tries++
@@ -143,7 +147,7 @@ func (ms *modService) UpdateMod(name string) error {
 			return ErrMaxAttempts
 		}
 	} else {
-		fmt.Printf("... latest version of %s %s already installed (%s) ...\n", current.Namespace, current.Name, current.Version)
+		fmt.Printf("... Latest version of %s %s already installed (%s)\n", current.Namespace, current.Name, current.Version)
 	}
 	return nil
 }

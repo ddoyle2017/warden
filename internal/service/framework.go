@@ -164,7 +164,7 @@ func (fs *frameworkService) RemoveBepInEx() error {
 
 			// Find the current installation of BepInEx
 			current, err := fs.fr.GetFramework(framework.BepInEx)
-			if err != nil && errors.Is(err, repo.ErrFrameworkFetchFailed) {
+			if err != nil && errors.Is(err, repo.ErrFrameworkFetchNoResults) {
 				return ErrFrameworkNotInstalled
 			}
 			if err != nil {
