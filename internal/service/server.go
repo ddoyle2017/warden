@@ -1,7 +1,10 @@
 package service
 
 import (
+	"bufio"
 	"errors"
+	"fmt"
+	"io"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -44,15 +47,22 @@ func (s *serverService) Start(gameType string) (string, error) {
 	if !s.IsValidGameType(gameType) {
 		return "", ErrInvalidGameType
 	}
+	fmt.Printf("Launching %s game server...\n\n", gameType)
 
-	cmd := exec.Command("sh", s.getStartScript(gameType))
-
-	// Capture the output of the script
-	output, err := cmd.CombinedOutput()
+	cmd, stdout, stderr, err := startCommand("sh", s.getStartScript(gameType))
 	if err != nil {
-		return string(output), ErrServerStartFailed
+		return "", ErrServerStartFailed
 	}
-	return string(output), nil
+
+	streamOutput(stdout, stderr)
+
+	// Since command runs in the background, wait for it to finish
+	if err := cmd.Wait(); err != nil {
+		fmt.Println("... Server crashed!")
+	} else {
+		fmt.Println("... Closing server!")
+	}
+	return "", nil
 }
 
 func (s *serverService) IsValidGameType(config string) bool {
@@ -72,7 +82,7 @@ func (s *serverService) getStartScript(gameType string) string {
 		case config.Windows:
 			return filepath.Join(s.ValheimDirectory, windowsStartScript)
 		default:
-			return ""
+			panic("Unrecognized operating system")
 		}
 	}
 }
@@ -80,4 +90,46 @@ func (s *serverService) getStartScript(gameType string) string {
 func normalize(s string) string {
 	s = strings.ToLower(s)
 	return strings.TrimSpace(s)
+}
+
+func startCommand(name string, args ...string) (*exec.Cmd, io.ReadCloser, io.ReadCloser, error) {
+	// Initialize the command for running the server script +
+	// setup output pipes for streaming logs to user.
+	cmd := exec.Command(name, args...)
+
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, nil, nil, errors.New("unable to create stdout pipe")
+	}
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		return nil, nil, nil, errors.New("unable to create stderr pipe")
+	}
+
+	if err := cmd.Start(); err != nil {
+		return nil, nil, nil, ErrServerStartFailed
+	}
+	return cmd, stdoutPipe, stderrPipe, nil
+}
+
+// Streams output from both stdout and stderr to the command line
+func streamOutput(stdout, stderr io.Reader) {
+	go func() {
+		scanner := bufio.NewScanner(stdout)
+		for scanner.Scan() {
+			fmt.Println(scanner.Text())
+		}
+		if err := scanner.Err(); err != nil {
+			return
+		}
+	}()
+	go func() {
+		scanner := bufio.NewScanner(stderr)
+		for scanner.Scan() {
+			fmt.Println(scanner.Text())
+		}
+		if err := scanner.Err(); err != nil {
+			return
+		}
+	}()
 }
