@@ -153,16 +153,20 @@ func (ms *modService) UpdateMod(name string) error {
 }
 
 func (ms *modService) UpdateAllMods() error {
-	fmt.Printf("are you sure you wanted to update ALL mods? %s\n", yesOrNo)
+	fmt.Printf("Are you sure you wanted to update ALL mods? %s: ", yesOrNo)
 
 	tries := 0
 	for ms.in.Scan() && tries < 2 {
 		if ms.in.Text() == yes {
+			fmt.Printf("\nUpdating all mods...\n")
+
 			// Get all installed mods
 			mods, err := ms.r.ListMods()
 			if err != nil {
 				return ErrUnableToListMods
 			}
+
+			fmt.Printf("Found %d mods...\n", len(mods))
 
 			// For each one, check if there's an update and install it if there is
 			for _, m := range mods {
@@ -172,6 +176,8 @@ func (ms *modService) UpdateAllMods() error {
 				}
 
 				if m.Version < pkg.Latest.VersionNumber {
+					fmt.Printf("Updating %s to %s...", m.Name, pkg.Latest.VersionNumber)
+
 					err = ms.updateMod(m.FullName(), pkg.Latest)
 					if err != nil {
 						return ErrUnableToUpdateMod
@@ -181,12 +187,13 @@ func (ms *modService) UpdateAllMods() error {
 						return ErrAddDependenciesFailed
 					}
 				} else {
-					fmt.Printf("... latest version of %s %s already installed (%s) ...\n", m.Namespace, m.Name, m.Version)
+					fmt.Printf("%s is up-to-date...\n", m.Name)
 				}
 			}
+			fmt.Printf("...Successfully updated all mods!\n\n")
 			return nil
 		} else if ms.in.Text() == no {
-			fmt.Println("... aborting ...")
+			fmt.Println("... Aborting")
 			return nil
 		} else {
 			tries++

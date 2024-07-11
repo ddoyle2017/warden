@@ -114,13 +114,15 @@ func (fs *frameworkService) UpdateBepInEx() error {
 	}
 
 	if pkg.Latest.VersionNumber > current.Version {
-		fmt.Printf("... a new version of BepInEx was found (%s) ...\n", pkg.Latest.VersionNumber)
-		fmt.Printf("did you want to update BepInEx? %s\n", yesOrNo)
+		fmt.Printf("A new version (%s) of BepInEx was found...\n", pkg.Latest.VersionNumber)
+		fmt.Printf("Did you want to update BepInEx? %s: ", yesOrNo)
 
 		// If new version is found, confirm with the user if they want to update
 		tries := 0
 		for fs.in.Scan() && tries < 2 {
 			if fs.in.Text() == yes {
+				fmt.Printf("\nUpdating BepInEx to %s...\n", pkg.Latest.VersionNumber)
+
 				if err := fs.fm.UpdateBepInEx(pkg.Latest.DownloadURL, pkg.Latest.FullName); err != nil {
 					return ErrUnableToUpdateFramework
 				}
@@ -137,9 +139,10 @@ func (fs *frameworkService) UpdateBepInEx() error {
 				if err != nil {
 					return ErrUnableToInstallFramework
 				}
+				fmt.Println("... BepInEx is up-to-date!")
 				return nil
 			} else if fs.in.Text() == no {
-				fmt.Println("... aborting ...")
+				fmt.Println("... Aborting")
 				return nil
 			} else {
 				tries++
@@ -149,7 +152,7 @@ func (fs *frameworkService) UpdateBepInEx() error {
 			return ErrMaxAttempts
 		}
 	} else {
-		fmt.Println("... BepInEx is up-to-date! ...")
+		fmt.Println("... BepInEx is up-to-date!")
 	}
 	return nil
 }
