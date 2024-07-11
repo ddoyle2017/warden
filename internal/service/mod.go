@@ -54,6 +54,7 @@ func NewModService(r repo.Mods, fm file.Manager, ts thunderstore.Thunderstore, r
 }
 
 func (ms *modService) ListMods() ([]mod.Mod, error) {
+	fmt.Println("Retrieving list of mods...\n")
 	return ms.r.ListMods()
 }
 
