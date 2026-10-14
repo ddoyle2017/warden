@@ -164,63 +164,85 @@ func TestInstallMod_Sad(t *testing.T) {
 }
 
 func TestRemoveMod_Happy(t *testing.T) {
-	th := helper.NewHelper(t)
-	th.SetUpServerFiles()
-
-	tests := map[string]struct {
-		name string
-	}{
-		"if mod does not exist, delete nothing and return successful": {
-			name: "some-fake-mod-that-is-not-real_0.0.1",
-		},
-		"successfully removes target mod": {
-			name: helper.TestModFullName,
-		},
+	tests := map[string]string{
+		"given an absent target, when removing it, then preserve installed mods":   "some-fake-mod-that-is-not-real_0.0.1",
+		"given an installed target, when removing it, then finalize only that mod": helper.TestModFullName,
 	}
-
-	for name, test := range tests {
+	for name, fullName := range tests {
 		t.Run(name, func(t *testing.T) {
-			manager := file.NewManager(&mock.HTTPClient{}, th.GetValheimDirectory())
-
-			err := manager.RemoveMod(test.name)
+			th := helper.NewHelper(t)
+			th.SetUpServerFiles()
+			backups := t.TempDir()
+			t.Setenv("TMPDIR", backups)
+			plugins := filepath.Join(th.GetValheimDirectory(), file.BepInExPluginDirectory)
+			payload := filepath.Join(plugins, helper.TestModFullName, "WhereYouAt.dll")
+			original, err := os.ReadFile(payload)
 			if err != nil {
-				t.Errorf("expected nil error, received: %+v", err)
+				t.Fatal(err)
+			}
+			unrelated := filepath.Join(plugins, "unrelated.dll")
+			if err := os.WriteFile(unrelated, []byte("unrelated plugin bytes"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			manager := file.NewManager(&mock.HTTPClient{}, th.GetValheimDirectory())
+			if err := manager.RemoveMod(fullName); err != nil {
+				t.Fatal(err)
+			}
+			data, err := os.ReadFile(payload)
+			if fullName == helper.TestModFullName {
+				if !errors.Is(err, os.ErrNotExist) {
+					t.Errorf("removed mod remains installed: %v", err)
+				}
+			} else if err != nil || !bytes.Equal(data, original) {
+				t.Errorf("absent-target removal changed installed bytes: %v", err)
+			}
+			if data, err := os.ReadFile(unrelated); err != nil || string(data) != "unrelated plugin bytes" {
+				t.Errorf("removal changed unrelated plugin bytes: %q, %v", data, err)
+			}
+			if entries, err := os.ReadDir(backups); err != nil || len(entries) != 0 {
+				t.Errorf("file-only removal did not finalize its snapshot: %v, %v", entries, err)
+			}
+			if staged, err := filepath.Glob(filepath.Join(filepath.Dir(plugins), ".warden-removal-*")); err != nil || len(staged) != 0 {
+				t.Errorf("file-only removal left staging: %v, %v", staged, err)
 			}
 		})
 	}
-	t.Cleanup(func() {
-		th.RemoveServerFiles()
-	})
 }
 
 func TestRemoveAllMods_Happy(t *testing.T) {
-	th := helper.NewHelper(t)
-
-	tests := map[string]struct {
-		setUp func(t *testing.T)
-	}{
-		"if no mods are installed, clean directory and return successful": {
-			setUp: func(_ *testing.T) {},
-		},
-		"successfully removes all mods": {
-			setUp: func(t *testing.T) {
-				th.SetUpServerFiles()
-			},
-		},
+	tests := map[string]bool{
+		"given no installed mods, when removing all, then create an empty plugins directory": false,
+		"given installed mods, when removing all, then finalize their removal":               true,
 	}
-
-	for name, test := range tests {
+	for name, populated := range tests {
 		t.Run(name, func(t *testing.T) {
-			test.setUp(t)
+			th := helper.NewHelper(t)
+			if populated {
+				th.SetUpServerFiles()
+			}
+			backups := t.TempDir()
+			t.Setenv("TMPDIR", backups)
+			sentinel := filepath.Join(th.GetValheimDirectory(), "server-data")
+			if err := os.WriteFile(sentinel, []byte("unrelated server bytes"), 0o600); err != nil {
+				t.Fatal(err)
+			}
 			manager := file.NewManager(&mock.HTTPClient{}, th.GetValheimDirectory())
-
-			err := manager.RemoveAllMods()
-			if err != nil {
-				t.Errorf("expected nil error, received: %+v", err)
+			if err := manager.RemoveAllMods(); err != nil {
+				t.Fatal(err)
+			}
+			plugins := filepath.Join(th.GetValheimDirectory(), file.BepInExPluginDirectory)
+			if entries, err := os.ReadDir(plugins); err != nil || len(entries) != 0 {
+				t.Errorf("expected an empty plugins directory: %v, %v", entries, err)
+			}
+			if data, err := os.ReadFile(sentinel); err != nil || string(data) != "unrelated server bytes" {
+				t.Errorf("removal changed unrelated server bytes: %q, %v", data, err)
+			}
+			if entries, err := os.ReadDir(backups); err != nil || len(entries) != 0 {
+				t.Errorf("file-only removal did not finalize its snapshot: %v, %v", entries, err)
+			}
+			if staged, err := filepath.Glob(filepath.Join(filepath.Dir(plugins), ".warden-removal-*")); err != nil || len(staged) != 0 {
+				t.Errorf("file-only removal left staging: %v, %v", staged, err)
 			}
 		})
 	}
-	t.Cleanup(func() {
-		th.RemoveServerFiles()
-	})
 }
