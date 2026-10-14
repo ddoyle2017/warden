@@ -3,6 +3,7 @@ package file
 import (
 	"archive/zip"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -85,7 +86,7 @@ func createFile(filePath string, fileSource io.Reader) error {
 func moveFiles(source, destination string) error {
 	entries, err := os.ReadDir(source)
 	if err != nil {
-		return ErrDirectoryOpenFailed
+		return fmt.Errorf("%w: %w", ErrDirectoryOpenFailed, err)
 	}
 
 	for _, e := range entries {
@@ -93,27 +94,51 @@ func moveFiles(source, destination string) error {
 		dest := filepath.Join(destination, e.Name())
 
 		if err := os.Rename(src, dest); err != nil {
-			return ErrFileRenameFailed
+			return fmt.Errorf("%w: %w", ErrFileRenameFailed, err)
 		}
 	}
 	return nil
 }
 
-func copyFile(source, destination string) error {
+func copyDirectory(source, destination string) error {
+	return filepath.Walk(source, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		relative, err := filepath.Rel(source, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(destination, relative)
+		if info.IsDir() {
+			return os.MkdirAll(target, info.Mode())
+		}
+		if err := copyFile(path, target); err != nil {
+			return fmt.Errorf("copy %q: %w", path, err)
+		}
+		return nil
+	})
+}
+
+func copyFile(source, destination string) (err error) {
 	src, err := os.Open(source)
 	if err != nil {
-		return ErrFileOpenFailed
+		return fmt.Errorf("%w: %w", ErrFileOpenFailed, err)
 	}
 	defer src.Close()
 
 	dst, err := os.Create(destination)
 	if err != nil {
-		return ErrFileCreateFailed
+		return fmt.Errorf("%w: %w", ErrFileCreateFailed, err)
 	}
-	defer dst.Close()
+	defer func() {
+		if closeErr := dst.Close(); closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("%w: close %q: %w", ErrFileCopyFailed, destination, closeErr))
+		}
+	}()
 
 	if _, err := io.Copy(dst, src); err != nil {
-		return ErrFileCopyFailed
+		return fmt.Errorf("%w: %w", ErrFileCopyFailed, err)
 	}
 
 	info, err := src.Stat()

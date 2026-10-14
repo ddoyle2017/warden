@@ -45,7 +45,7 @@ Earlier completed steps can remain in effect if a later step fails.
 | Remove a mod | Confirm, take a complete backup and stage its versioned directory outside the plugin tree, delete its record, then discard staged files and the backup. |
 | Remove all mods | Require the stronger confirmation, back up and stage the plugin directory, recreate an empty plugin directory, delete the records, then discard staged files and the backup. |
 | Install BepInEx | Download and unpack the framework into the server directory, move the archive wrapper's contents into place, then insert the framework record. |
-| Update BepInEx | Move plugins to temporary storage, remove and install framework files, move plugins back, then update the framework record. |
+| Update BepInEx | Copy plugins to a temporary sibling of the server directory, remove and install framework files, transfer plugin copies through destination-local staging, then update the framework record. |
 | Remove BepInEx | Remove the framework's known files, including the plugin directory, then delete its framework record. The current path does not also delete mod records. |
 
 Installing a root mod can succeed before a dependency fails. Updating a mod
@@ -98,14 +98,45 @@ retained paths and instructions to verify database state. A committed cleanup
 error is shown as a completed removal with a cleanup warning, not as a failed
 removal.
 
-The general backup restore helper still removes the destination before moving
-backed-up files, and those moves do not support cross-filesystem transfer.
-Framework updates still reuse one backup object across nested operations, so a
-later successful backup can replace the snapshot needed by the outer update.
-Installation and framework paths still ignore some restoration and cleanup
-errors. Framework updates also replace existing BepInEx configuration rather
-than preserving it. Neither temporary backups nor staged removal establish
-crash-safe filesystem/database atomicity.
+Restoration copies the snapshot into staging beside the destination before
+renaming any live files. The snapshot itself is never renamed across
+filesystems. A preparation failure leaves live files and the active backup
+unchanged. Publishing first moves the prior tree aside; if publishing fails,
+restoration moves that tree back. If recovery also fails, the error identifies
+the retained prior tree, prepared replacement, and original backup. Keep these
+paths until the intended tree has been recovered and inspected.
+
+Successful publication consumes the active backup, even if later cleanup
+fails. Cleanup errors identify leftover paths; a partially deleted snapshot is
+not offered for another restore. The restored destination remains available.
+Missing destinations and parents are supported, but restoration rejects
+non-directory or symlink targets, filesystem roots, working-directory
+ancestors, and paths overlapping the backup, including resolved aliases.
+Restoration needs space and write access in the destination's parent and a
+destination that can be renamed. A mount point that cannot be renamed fails
+without deleting its live contents. The rename/recovery sequence is not
+crash-atomic and does not guard against concurrent filesystem changes.
+
+Framework plugin staging keeps a complete copy outside the server tree, where
+framework removal and whole-server restoration cannot erase it. This needs
+space and write access in the server directory's parent. A failed initial copy
+stops before framework removal and cleans up its partial staging; the
+file-layer error reports any cleanup failure and the retained server backup.
+Once framework replacement starts, a failed update retains the
+complete plugin snapshot and reports its path. Plugin transfer copies into the
+plugins directory before using local renames, preserving non-conflicting
+bundled plugins and keeping the independent snapshot even after a partial
+transfer. A successful transfer removes that snapshot and reports cleanup
+failures rather than attempting another framework rollback.
+
+Framework updates still reuse one server backup object across nested
+operations, so a later successful backup can replace the snapshot needed by
+the outer update; successful nested cleanup can also leave no active server
+backup. Some existing callers still discard restoration, cleanup, or underlying
+file-layer error details. Framework updates also replace existing BepInEx
+configuration rather than preserving it. Safe file transfer and retained
+plugin snapshots do not establish whole-update rollback, database recovery,
+or preservation of user-owned framework configuration.
 
 When changing these paths, define the observable filesystem and database state
 for success, cancellation, and each failure being handled. Verify those states,

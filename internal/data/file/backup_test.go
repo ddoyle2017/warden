@@ -289,6 +289,7 @@ func TestRestore_Sad(t *testing.T) {
 						t.Errorf("unable to clean up backup: %v", err)
 					}
 				}
+
 			})
 			if tt.createBackup {
 				if err := b.Create(th.GetValheimDirectory()); err != nil {
@@ -313,6 +314,173 @@ func TestRestore_Sad(t *testing.T) {
 					t.Fatal("expected failed restore to retain the backup")
 				}
 				th.VerifyBackup(th.GetValheimDirectory(), *b.Path())
+			}
+		})
+	}
+}
+
+func TestRestoreDestinations(t *testing.T) {
+	tests := map[string]struct {
+		missing       bool
+		missingParent bool
+		emptyTarget   bool
+		emptySnapshot bool
+		symlinkParent bool
+	}{
+		"given a populated destination, when restoring, then replace its entire file set":         {},
+		"given an empty destination, when restoring, then populate the complete tree":             {emptyTarget: true},
+		"given a missing destination, when restoring, then create the complete tree":              {missing: true},
+		"given missing parents, when restoring, then create the complete tree":                    {missing: true, missingParent: true},
+		"given an empty snapshot, when restoring, then remove live files and leave a directory":   {emptySnapshot: true},
+		"given a symlinked parent, when restoring, then safely publish in the resolved directory": {symlinkParent: true},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			th := helper.NewHelper(t)
+			source, parent, backups := th.GetValheimDirectory(), t.TempDir(), t.TempDir()
+			t.Setenv("TMPDIR", backups)
+			if !tt.emptySnapshot {
+				if err := os.MkdirAll(filepath.Join(source, "nested", "empty"), 0o750); err != nil {
+					t.Fatal(err)
+				}
+				executable := filepath.Join(source, "nested", "plugin")
+				if err := os.WriteFile(executable, []byte("original plugin bytes"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Chmod(executable, 0o751); err != nil {
+					t.Fatal(err)
+				}
+			}
+			destination := filepath.Join(parent, "server")
+			if tt.missingParent {
+				destination = filepath.Join(parent, "missing", "parent", "server")
+			}
+			if !tt.missing {
+				if err := os.Mkdir(destination, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if !tt.emptyTarget {
+					if err := os.WriteFile(filepath.Join(destination, "live-only"), []byte("live bytes"), 0o600); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			if tt.symlinkParent {
+				alias := filepath.Join(t.TempDir(), "alias")
+				if err := os.Symlink(parent, alias); err != nil {
+					t.Fatal(err)
+				}
+				destination = filepath.Join(alias, "server")
+			}
+			b := file.NewBackup()
+			if err := b.Create(source); err != nil {
+				t.Fatal(err)
+			}
+			if err := b.Restore(destination); err != nil {
+				t.Fatal(err)
+			}
+			th.VerifyBackup(source, destination)
+			if info, err := os.Stat(destination); err != nil || !info.IsDir() {
+				t.Fatalf("restored destination is not a directory: %v", err)
+			}
+			if !tt.emptySnapshot {
+				info, err := os.Stat(filepath.Join(destination, "nested", "plugin"))
+				if err != nil || info.Mode().Perm() != 0o751 {
+					t.Errorf("restored executable lost its mode: %v, %v", info, err)
+				}
+				if info, err := os.Stat(filepath.Join(destination, "nested", "empty")); err != nil || !info.IsDir() {
+					t.Errorf("restoration lost the empty directory: %v", err)
+				}
+			}
+			if b.Path() != nil {
+				t.Error("successful restoration did not consume the backup")
+			}
+			if entries, err := os.ReadDir(backups); err != nil || len(entries) != 0 {
+				t.Errorf("backup cleanup left files: %v, %v", entries, err)
+			}
+			if entries, err := os.ReadDir(filepath.Dir(destination)); err != nil || len(entries) != 1 || entries[0].Name() != "server" {
+				t.Errorf("restoration left staging or prior files: %v, %v", entries, err)
+			}
+		})
+	}
+}
+
+func TestRestoreUnsafeDestinations(t *testing.T) {
+	tests := map[string]func(root, snapshot string) string{
+		"given a file target, when restoring, then reject it without mutation": func(root, _ string) string {
+			return filepath.Join(root, "file")
+		},
+		"given a symlink target, when restoring, then reject it without mutation": func(root, _ string) string {
+			return filepath.Join(root, "link")
+		},
+		"given the backup as target, when restoring, then reject it without mutation": func(_, snapshot string) string {
+			return snapshot
+		},
+		"given a target below the backup, when restoring, then reject it before creating parents": func(_, snapshot string) string {
+			return filepath.Join(snapshot, "missing", "child")
+		},
+		"given a target containing the backup, when restoring, then reject it without mutation": func(_, snapshot string) string {
+			return filepath.Dir(snapshot)
+		},
+		"given a parent alias into the backup, when restoring, then reject the overlapping target": func(root, _ string) string {
+			return filepath.Join(root, "alias", "child")
+		},
+	}
+	for name, target := range tests {
+		t.Run(name, func(t *testing.T) {
+			th := helper.NewHelper(t)
+			root := t.TempDir()
+			t.Setenv("TMPDIR", t.TempDir())
+			if err := os.WriteFile(filepath.Join(th.GetValheimDirectory(), "saved"), []byte("snapshot bytes"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			b := file.NewBackup()
+			if err := b.Create(th.GetValheimDirectory()); err != nil {
+				t.Fatal(err)
+			}
+			snapshot := *b.Path()
+			live := filepath.Join(root, "live")
+			if err := os.Mkdir(live, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			for _, path := range []string{filepath.Join(root, "file"), filepath.Join(live, "sentinel")} {
+				if err := os.WriteFile(path, []byte("live bytes"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			links := map[string]string{"link": live, "alias": snapshot}
+			for name, target := range links {
+				if err := os.Symlink(target, filepath.Join(root, name)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			before, err := th.GetFileList(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := b.Restore(target(root, snapshot)); !errors.Is(err, file.ErrBackupRestoreFailed) {
+				t.Fatalf("expected unsafe destination failure, got %v", err)
+			}
+			if b.Path() == nil || *b.Path() != snapshot {
+				t.Fatal("invalid destination changed the active backup")
+			}
+			th.VerifyBackup(th.GetValheimDirectory(), snapshot)
+			after, err := th.GetFileList(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !th.AreFileListsEqual(before, after) {
+				t.Error("invalid restoration changed the live file set")
+			}
+			for _, path := range []string{filepath.Join(root, "file"), filepath.Join(live, "sentinel")} {
+				if data, err := os.ReadFile(path); err != nil || string(data) != "live bytes" {
+					t.Errorf("invalid restoration changed live bytes: %q, %v", data, err)
+				}
+			}
+			for name, target := range links {
+				if got, err := os.Readlink(filepath.Join(root, name)); err != nil || got != target {
+					t.Errorf("invalid restoration changed symlink %q: %q, %v", name, got, err)
+				}
 			}
 		})
 	}
