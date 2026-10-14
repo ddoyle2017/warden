@@ -146,6 +146,7 @@ func TestInsertMod_Happy(t *testing.T) {
 	fr := repo.NewFrameworksRepo(db)
 
 	expectedMods := th.SeedModsTable(mr, fr)
+	mr = repo.NewModsRepo(transactionOnlyDatabase(t, db))
 	newMod := mod.Mod{
 		Name:      "X-ray hack",
 		Namespace: "Bob",
@@ -157,7 +158,7 @@ func TestInsertMod_Happy(t *testing.T) {
 
 	err := mr.InsertMod(newMod)
 	if err != nil {
-		t.Errorf("expected a nil error, received: %+v", err)
+		t.Fatalf("expected a nil error, received: %+v", err)
 	}
 	modList, err := mr.ListMods()
 	if err != nil {
@@ -165,6 +166,14 @@ func TestInsertMod_Happy(t *testing.T) {
 	}
 	if len(modList) != expectedModCount {
 		t.Errorf("expected %d mods, but found %d mods", expectedModCount, len(modList))
+	}
+	newMod.ID = expectedModCount
+	stored, err := repo.NewModsRepo(db).GetMod(newMod.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stored.Equals(&newMod) {
+		t.Errorf("expected persisted mod %+v, received %+v", newMod, stored)
 	}
 	t.Cleanup(func() {
 		th.DeleteDatabase()
@@ -205,6 +214,7 @@ func TestUpdateMod_Happy(t *testing.T) {
 			repo.CreateFrameworksTable(db)
 			mr := repo.NewModsRepo(db)
 			current := th.SeedModsTable(mr, repo.NewFrameworksRepo(db))
+			mr = repo.NewModsRepo(transactionOnlyDatabase(t, db))
 			update := current[0]
 			update.ID = test.id
 			update.Version = newVersion
@@ -268,6 +278,7 @@ func TestDeleteMod_Happy(t *testing.T) {
 			repo.CreateFrameworksTable(db)
 			mr := repo.NewModsRepo(db)
 			current := th.SeedModsTable(mr, repo.NewFrameworksRepo(db))
+			mr = repo.NewModsRepo(transactionOnlyDatabase(t, db))
 			expected := current[:test.expectedCount]
 
 			err := mr.DeleteMod(test.modName, test.namespace)
@@ -309,6 +320,7 @@ func TestDeleteAllMods_Happy(t *testing.T) {
 		repo.CreateFrameworksTable(db)
 		mr := repo.NewModsRepo(db)
 		installed := th.SeedModsTable(mr, repo.NewFrameworksRepo(db))
+		mr = repo.NewModsRepo(transactionOnlyDatabase(t, db))
 
 		if err := mr.DeleteAllMods(); err != nil {
 			t.Fatal(err)

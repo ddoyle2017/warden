@@ -58,24 +58,7 @@ func (fr *frameworks) GetFramework(name string) (framework.Framework, error) {
 func (fr *frameworks) InsertFramework(f framework.Framework) error {
 	sql := `INSERT INTO frameworks(name, namespace, version, websiteUrl, description) VALUES (?, ?, ?, ?, ?)`
 
-	tx, err := fr.db.Begin()
-	if err != nil {
-		return ErrTransactionFailed
-	}
-
-	statement, err := fr.db.Prepare(sql)
-	if err != nil {
-		tx.Rollback()
-		return ErrInvalidStatement
-	}
-	defer statement.Close()
-
-	_, err = statement.Exec(f.Name, f.Namespace, f.Version, f.WebsiteURL, f.Description)
-	if err != nil {
-		tx.Rollback()
-		return ErrFrameworkInsertFailed
-	}
-	return tx.Commit()
+	return executeWrite(fr.db, sql, ErrFrameworkInsertFailed, f.Name, f.Namespace, f.Version, f.WebsiteURL, f.Description)
 }
 
 func (fr *frameworks) UpdateFramework(f framework.Framework) error {
@@ -83,46 +66,13 @@ func (fr *frameworks) UpdateFramework(f framework.Framework) error {
 	SET name = ?, namespace = ?, version = ?, websiteUrl = ?, description = ?
 	WHERE id = ?`
 
-	tx, err := fr.db.Begin()
-	if err != nil {
-		return ErrTransactionFailed
-	}
-
-	statement, err := fr.db.Prepare(sql)
-	if err != nil {
-		tx.Rollback()
-		return ErrInvalidStatement
-	}
-	defer statement.Close()
-
-	_, err = statement.Exec(f.Name, f.Namespace, f.Version, f.WebsiteURL, f.Description, f.ID)
-	if err != nil {
-		tx.Rollback()
-		return ErrFrameworkUpdateFailed
-	}
-	return tx.Commit()
+	return executeWrite(fr.db, sql, ErrFrameworkUpdateFailed, f.Name, f.Namespace, f.Version, f.WebsiteURL, f.Description, f.ID)
 }
 
 func (fr *frameworks) DeleteFramework(name string) error {
 	sql := `DELETE FROM frameworks WHERE name = ?`
 
-	tx, err := fr.db.Begin()
-	if err != nil {
-		return ErrTransactionFailed
-	}
-
-	statement, err := fr.db.Prepare(sql)
-	if err != nil {
-		tx.Rollback()
-		return ErrInvalidStatement
-	}
-
-	_, err = statement.Exec(name)
-	if err != nil {
-		tx.Rollback()
-		return ErrFrameworkDeleteFailed
-	}
-	return tx.Commit()
+	return executeWrite(fr.db, sql, ErrFrameworkDeleteFailed, name)
 }
 
 func mapRowsToFramework(rows *sql.Rows) ([]framework.Framework, error) {

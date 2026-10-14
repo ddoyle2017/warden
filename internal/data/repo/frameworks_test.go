@@ -98,7 +98,7 @@ func TestInsertFramework_Happy(t *testing.T) {
 	db := th.CreateDatabase()
 	repo.CreateFrameworksTable(db)
 
-	fr := repo.NewFrameworksRepo(db)
+	fr := repo.NewFrameworksRepo(transactionOnlyDatabase(t, db))
 	f := framework.Framework{
 		Name:      framework.BepInEx,
 		Namespace: framework.BepInExNamespace,
@@ -106,7 +106,15 @@ func TestInsertFramework_Happy(t *testing.T) {
 	}
 
 	if err := fr.InsertFramework(f); err != nil {
-		t.Errorf("expected a nil error, received: %+v", err)
+		t.Fatalf("expected a nil error, received: %+v", err)
+	}
+	f.ID = 1
+	stored, err := repo.NewFrameworksRepo(db).GetFramework(f.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stored.Equals(&f) {
+		t.Errorf("expected persisted framework %+v, received %+v", f, stored)
 	}
 
 	t.Cleanup(func() {
@@ -144,6 +152,7 @@ func TestUpdateFramework_Happy(t *testing.T) {
 			if tt.installed {
 				th.SeedFrameworksTable(fr)
 			}
+			fr = repo.NewFrameworksRepo(transactionOnlyDatabase(t, db))
 			update := framework.Framework{
 				ID:        1,
 				Name:      framework.BepInEx,
@@ -201,6 +210,7 @@ func TestDeleteFramework_Happy(t *testing.T) {
 			if tt.installed {
 				th.SeedFrameworksTable(fr)
 			}
+			fr = repo.NewFrameworksRepo(transactionOnlyDatabase(t, db))
 
 			if err := fr.DeleteFramework(framework.BepInEx); err != nil {
 				t.Fatalf("expected a nil error, received: %+v", err)
