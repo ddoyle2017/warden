@@ -146,6 +146,10 @@ func TestUpdateBepInExPluginStaging(t *testing.T) {
 				if !errors.Is(err, file.ErrFrameworkUpdateFailed) || !errors.Is(err, tt.expected) {
 					t.Fatalf("expected update failure wrapping %v, got %v", tt.expected, err)
 				}
+				var completed *file.FrameworkMutationCleanupError
+				if errors.As(err, &completed) {
+					t.Errorf("incomplete update was reported as completed: %v", err)
+				}
 			} else if err != nil {
 				t.Fatal(err)
 			}
@@ -247,6 +251,10 @@ func TestUpdateBepInExPartialPluginTransfer(t *testing.T) {
 	err := file.NewManager(client, server).UpdateBepInEx(helper.TestDownloadURL, helper.TestBepInExFullName)
 	if !errors.Is(err, file.ErrFrameworkUpdateFailed) || !errors.Is(err, file.ErrFileRenameFailed) {
 		t.Fatalf("expected partial plugin transfer failure, got %v", err)
+	}
+	var completed *file.FrameworkMutationCleanupError
+	if errors.As(err, &completed) {
+		t.Errorf("partial plugin transfer was reported as a completed update: %v", err)
 	}
 	stages, globErr := filepath.Glob(filepath.Join(parent, ".warden-plugins-*"))
 	if globErr != nil || len(stages) != 1 {

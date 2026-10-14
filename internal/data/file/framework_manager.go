@@ -21,6 +21,21 @@ type frameworkManager interface {
 	RemoveBepInEx() error
 }
 
+// FrameworkMutationCleanupError reports cleanup failure after the requested
+// framework file operation completes, not an intermediate step or rollback.
+// Callers must not roll back that change.
+type FrameworkMutationCleanupError struct {
+	Err error
+}
+
+func (e *FrameworkMutationCleanupError) Error() string {
+	return fmt.Sprintf("framework files changed; cleanup failed: %v", e.Err)
+}
+
+func (e *FrameworkMutationCleanupError) Unwrap() error {
+	return e.Err
+}
+
 func (m *manager) InstallBepInEx(url, fullName string) (string, error) {
 	if err := preflightRestore(m.valheimDirectory); err != nil {
 		return "", fmt.Errorf("%w: %w", ErrFrameworkInstallFailed, err)
@@ -126,7 +141,7 @@ func (m *manager) updateBepInEx(url, fullName string, copyPlugins func(string, s
 		}
 	}
 	if cleanupErr != nil {
-		return fmt.Errorf("%w: framework and plugins installed; cleanup failed: %w", ErrFrameworkUpdateFailed, cleanupErr)
+		return fmt.Errorf("%w: %w", ErrFrameworkUpdateFailed, &FrameworkMutationCleanupError{Err: cleanupErr})
 	}
 	return nil
 }

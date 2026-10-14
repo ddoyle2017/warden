@@ -118,8 +118,13 @@ func (fs *frameworkService) UpdateBepInEx() error {
 		tries := 0
 		for fs.in.Scan() && tries < 2 {
 			if fs.in.Text() == yes {
+				var updateErr error
 				if err := fs.fm.UpdateBepInEx(pkg.Latest.DownloadURL, pkg.Latest.FullName); err != nil {
-					return ErrUnableToUpdateFramework
+					updateErr = fmt.Errorf("%w: %w", ErrUnableToUpdateFramework, err)
+					var completed *file.FrameworkMutationCleanupError
+					if !errors.As(err, &completed) {
+						return updateErr
+					}
 				}
 
 				f := framework.Framework{
@@ -132,9 +137,9 @@ func (fs *frameworkService) UpdateBepInEx() error {
 				}
 				err = fs.fr.UpdateFramework(f)
 				if err != nil {
-					return ErrUnableToInstallFramework
+					return errors.Join(updateErr, fmt.Errorf("%w: %w", ErrUnableToInstallFramework, err))
 				}
-				return nil
+				return updateErr
 			} else if fs.in.Text() == no {
 				fmt.Println("... aborting ...")
 				return nil

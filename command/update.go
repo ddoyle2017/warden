@@ -3,6 +3,7 @@ package command
 import (
 	"errors"
 	"fmt"
+	"warden/internal/data/file"
 	"warden/internal/service"
 
 	"github.com/spf13/cobra"
@@ -66,7 +67,10 @@ func newUpdateBepInEx(fs service.Framework) *cobra.Command {
 }
 
 func parseUpdateError(err error) {
-	if errors.Is(err, service.ErrModNotInstalled) {
+	var completed *file.FrameworkMutationCleanupError
+	if errors.As(err, &completed) || errors.Is(err, service.ErrUnableToInstallFramework) {
+		fmt.Printf("... %v ...\n", err)
+	} else if errors.Is(err, service.ErrModNotInstalled) {
 		fmt.Println("... mod not installed, update stopped ...")
 	} else if errors.Is(err, service.ErrUnableToUpdateMod) {
 		fmt.Println("... unable to update mod ...")

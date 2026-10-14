@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"warden/internal/test/mock"
 )
 
 func TestCopyDirectoryModes(t *testing.T) {
@@ -99,7 +98,7 @@ func TestUpdateBepInExCleanupFailures(t *testing.T) {
 				"server-data":                   "unrelated server bytes",
 			})
 			requests := 0
-			m := NewManager(&mock.HTTPClient{GetFunc: func(url string) (*http.Response, error) {
+			m := NewManager(&pluginHTTPClient{GetFunc: func(url string) (*http.Response, error) {
 				requests++
 				if url != "fixture-url" {
 					t.Fatalf("unexpected download URL %q", url)
@@ -138,6 +137,10 @@ func TestUpdateBepInExCleanupFailures(t *testing.T) {
 			if !errors.Is(err, ErrBackupDeleteFailed) ||
 				errors.Is(err, localErr) != tt.local || errors.Is(err, snapshotErr) != tt.snapshot {
 				t.Fatalf("cleanup errors did not retain their causes: %v", err)
+			}
+			var completed *FrameworkMutationCleanupError
+			if !errors.As(err, &completed) {
+				t.Fatalf("completed update was not distinguished from a failed update: %v", err)
 			}
 			if requests != 1 || backup.restores != 0 {
 				t.Errorf("completed publication retried or rolled back: downloads=%d, restores=%d", requests, backup.restores)
@@ -182,6 +185,14 @@ func (b *restoreTrackingBackup) Restore(destination string) error {
 	return b.Backup.Restore(destination)
 }
 
+type pluginHTTPClient struct {
+	GetFunc func(string) (*http.Response, error)
+}
+
+func (c *pluginHTTPClient) Get(url string) (*http.Response, error) {
+	return c.GetFunc(url)
+}
+
 func TestUpdatePluginPreparationFailure(t *testing.T) {
 	for name, tt := range map[string]struct{ partial, cleanupFailure bool }{
 		"given an initial staging failure, when updating, then retain server files and the backup":                 {},
@@ -200,7 +211,7 @@ func TestUpdatePluginPreparationFailure(t *testing.T) {
 			}
 			writeRestoreTree(t, server, files)
 			requests := 0
-			m := NewManager(&mock.HTTPClient{GetFunc: func(string) (*http.Response, error) {
+			m := NewManager(&pluginHTTPClient{GetFunc: func(string) (*http.Response, error) {
 				requests++
 				return nil, errors.New("unexpected download")
 			}}, server).(*manager)
@@ -225,6 +236,10 @@ func TestUpdatePluginPreparationFailure(t *testing.T) {
 			})
 			if !errors.Is(err, ErrFrameworkUpdateFailed) || !errors.Is(err, copyErr) {
 				t.Fatalf("expected staging failure, got %v", err)
+			}
+			var completed *FrameworkMutationCleanupError
+			if errors.As(err, &completed) {
+				t.Errorf("failed preparation was reported as a completed update: %v", err)
 			}
 			if requests != 0 {
 				t.Error("framework installation ran after staging failed")

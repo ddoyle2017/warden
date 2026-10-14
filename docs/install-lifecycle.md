@@ -141,6 +141,13 @@ bundled plugins and keeping the independent snapshot even after a partial
 transfer. A successful transfer removes that snapshot and reports cleanup
 failures rather than attempting another framework rollback.
 
+Completed framework updates with cleanup failures return
+`FrameworkMutationCleanupError`. The service still records the installed release
+and retains the cleanup diagnostics; if saving the record also fails, it reports
+both errors. The update command displays these completed-update diagnostics,
+including retained paths. A cleanup error after an incomplete or rolled-back
+update does not mark completion and must not advance its framework record.
+
 Framework updates still reuse one server backup object across nested
 operations, so a later successful backup can replace the snapshot needed by
 the outer update; successful nested cleanup can also leave no active server
