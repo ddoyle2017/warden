@@ -7,6 +7,7 @@ import (
 	"hash/crc32"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -51,6 +52,77 @@ func TestUnzip(t *testing.T) {
 					continue
 				}
 				assertFileContents(t, path, entry.contents)
+			}
+		})
+	}
+}
+
+func TestUnzipRelativeDestination(t *testing.T) {
+	const rootEnv = "WARDEN_UNZIP_TEST_ROOT"
+	const destinationEnv = "WARDEN_UNZIP_TEST_DESTINATION"
+	if root := os.Getenv(rootEnv); root != "" {
+		wd, err := os.Getwd()
+		if err != nil || wd != os.Getenv("PWD") {
+			t.Fatalf("expected Getwd to preserve PWD, got %q, error %v", wd, err)
+		}
+		if err := file.Unzip(filepath.Join(root, "archive.zip"), os.Getenv(destinationEnv)); err != nil {
+			t.Fatalf("Unzip() error = %v", err)
+		}
+		assertFileContents(t, filepath.Join(root, "server", "plugin.dll"), "unchanged")
+		assertFileContents(t, filepath.Join(root, "real", "work", "server", "plugin.dll"), "unchanged")
+		assertFileContents(t, filepath.Join(root, "real", "server", "plugin.dll"), "plugin payload")
+		return
+	}
+
+	tests := map[string]struct {
+		symlinkPWD  bool
+		destination string
+	}{
+		"given a physical PWD, when extracting to a relative parent, then the intended directory receives the payload": {
+			destination: "../server",
+		},
+		"given a symlinked PWD, when extracting to a relative parent, then outside files are unchanged": {
+			symlinkPWD: true, destination: "../server",
+		},
+		"given a relative destination symlink, when extracting through its parent, then physical path semantics are preserved": {
+			symlinkPWD: true, destination: "link/../server",
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			work := filepath.Join(root, "real", "work")
+			for _, dir := range []string{work, filepath.Join(root, "real", "other")} {
+				if err := os.MkdirAll(dir, 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for _, dir := range []string{filepath.Join(root, "server"), filepath.Join(work, "server")} {
+				if err := os.MkdirAll(dir, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, "plugin.dll"), []byte("unchanged"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := os.Symlink("../other", filepath.Join(work, "link")); err != nil {
+				t.Fatal(err)
+			}
+			writeArchive(t, filepath.Join(root, "archive.zip"), archiveEntry{name: "plugin.dll", contents: "plugin payload"})
+			pwd := work
+			if tt.symlinkPWD {
+				pwd = filepath.Join(root, "alias")
+				if err := os.Symlink(work, pwd); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			// Isolate cwd changes from other tests while preserving a shell's logical PWD.
+			cmd := exec.Command(os.Args[0], "-test.run=^TestUnzipRelativeDestination$")
+			cmd.Dir = work
+			cmd.Env = append(os.Environ(), "PWD="+pwd, rootEnv+"="+root, destinationEnv+"="+tt.destination)
+			if output, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("relative-destination check failed: %v\n%s", err, output)
 			}
 		})
 	}
@@ -137,7 +209,10 @@ func TestUnzipUnsafePaths(t *testing.T) {
 				entry = filepath.ToSlash(filepath.Join(outside, entry))
 			}
 			source := filepath.Join(root, "archive.zip")
-			writeArchive(t, source, archiveEntry{name: entry, contents: "untrusted payload"})
+			writeArchive(t, source,
+				archiveEntry{name: entry, contents: "untrusted payload"},
+				archiveEntry{name: "after.txt", contents: "later payload"},
+			)
 
 			if err := file.Unzip(source, destination); !errors.Is(err, zip.ErrInsecurePath) {
 				t.Errorf("Unzip() error = %v, want %v", err, zip.ErrInsecurePath)
@@ -149,6 +224,9 @@ func TestUnzipUnsafePaths(t *testing.T) {
 			}
 			if len(entries) != 1 || entries[0].Name() != "outside.txt" {
 				t.Errorf("unexpected changes outside the destination: %v", entries)
+			}
+			if _, err := os.Stat(filepath.Join(destination, "after.txt")); !errors.Is(err, os.ErrNotExist) {
+				t.Errorf("later entry should not be extracted, got error %v", err)
 			}
 		})
 	}

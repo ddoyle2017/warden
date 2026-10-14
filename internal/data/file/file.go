@@ -37,9 +37,17 @@ func Unzip(source, destination string) (err error) {
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrDirectoryOpenFailed, err)
 	}
-	root, err = filepath.Abs(root)
-	if err != nil {
-		return fmt.Errorf("%w: %w", ErrDirectoryOpenFailed, err)
+	if !filepath.IsAbs(root) {
+		wd, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("%w: %w", ErrDirectoryOpenFailed, err)
+		}
+		// Getwd may preserve a symlinked PWD whose parent differs from the physical cwd.
+		wd, err = filepath.EvalSymlinks(wd)
+		if err != nil {
+			return fmt.Errorf("%w: %w", ErrDirectoryOpenFailed, err)
+		}
+		root = filepath.Join(wd, root)
 	}
 
 	archive, err := zip.OpenReader(source)
@@ -55,6 +63,10 @@ func Unzip(source, destination string) (err error) {
 		return fmt.Errorf("%w: %w", ErrZipReadFailed, err)
 	}
 
+	return extractArchive(&archive.Reader, root)
+}
+
+func extractArchive(archive *zip.Reader, root string) error {
 	for _, f := range archive.File {
 		filePath, err := extractionPath(root, f.Name)
 		if err != nil {

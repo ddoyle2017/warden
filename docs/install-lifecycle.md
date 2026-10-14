@@ -68,7 +68,8 @@ when an archive omits directory entries. It rejects absolute paths, relative
 paths escaping the destination, and existing symlinks that resolve outside the
 destination or cannot be resolved. A symlinked destination is resolved first;
 symlinks within it are allowed only when their targets remain inside that
-resolved directory.
+resolved directory. Relative destinations retain their physical filesystem
+meaning, including parent components, even when the shell's `PWD` is a symlink.
 
 Extraction stops and returns an error on path, directory creation, entry read,
 checksum, file write, or close failures. Earlier entries and partially written
