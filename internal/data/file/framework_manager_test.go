@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -18,12 +19,40 @@ import (
 )
 
 func TestUpdateBepInExPluginStaging(t *testing.T) {
+	if os.Getenv("WARDEN_TEST_PLUGIN_STAGING_CHILD") != "1" {
+		// A child process fixes the umask without changing global test state.
+		cmd := exec.Command("sh", "-c", `umask 0022; exec "$@"`, "sh", os.Args[0],
+			"-test.run=^TestUpdateBepInExPluginStaging$", "-test.count=1")
+		cmd.Env = append(os.Environ(), "WARDEN_TEST_PLUGIN_STAGING_CHILD=1")
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("plugin staging with umask 0022: %v\n%s", err, output)
+		}
+		return
+	}
+
+	control := t.TempDir()
+	original := filepath.Join(control, "original")
+	if err := os.Mkdir(original, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(original, 0o775); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(original, filepath.Join(control, "moved")); err != nil {
+		t.Fatal(err)
+	}
+	assertPluginDirectoryModes(t, control, map[string]os.FileMode{"moved": 0o775})
+
 	tests := map[string]struct {
 		missingPlugins bool
+		emptyPlugins   bool
 		invalidArchive bool
 		expected       error
 	}{
 		"given installed plugins, when updating, then retain their bytes and modes alongside bundled plugins": {},
+		"given an empty plugins directory, when updating, then install bundled plugins": {
+			emptyPlugins: true,
+		},
 		"given no plugins directory, when staging fails, then leave the server and complete backup intact": {
 			missingPlugins: true, expected: os.ErrNotExist,
 		},
@@ -38,7 +67,12 @@ func TestUpdateBepInExPluginStaging(t *testing.T) {
 			th := helper.NewHelper(t, helper.WithValheimFolder(server))
 			t.Setenv("TMPDIR", backups)
 			files := map[string]string{"server-data": "unrelated bytes", "BepInEx/core/old": "old framework"}
-			plugins := map[string]string{"a-plugin": "plugin bytes", "nested/config": "plugin configuration"}
+			plugins := map[string]string{"a-plugin": "plugin bytes", "nested/deeper/config": "plugin configuration"}
+			directoryModes := map[string]os.FileMode{"nested": 0o775, "nested/deeper": 0o775, "empty": 0o775}
+			if tt.emptyPlugins {
+				plugins = map[string]string{}
+				directoryModes = map[string]os.FileMode{}
+			}
 			if !tt.missingPlugins {
 				for name, contents := range plugins {
 					files[filepath.Join("BepInEx", "plugins", name)] = contents
@@ -54,8 +88,26 @@ func TestUpdateBepInExPluginStaging(t *testing.T) {
 				}
 			}
 			if !tt.missingPlugins {
-				if err := os.Chmod(filepath.Join(server, "BepInEx", "plugins", "a-plugin"), 0o751); err != nil {
+				root := filepath.Join(server, "BepInEx", "plugins")
+				if err := os.MkdirAll(root, 0o755); err != nil {
 					t.Fatal(err)
+				}
+				if err := os.Chmod(root, 0o775); err != nil {
+					t.Fatal(err)
+				}
+				for name, mode := range directoryModes {
+					path := filepath.Join(root, name)
+					if err := os.MkdirAll(path, 0o755); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.Chmod(path, mode); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if !tt.emptyPlugins {
+					if err := os.Chmod(filepath.Join(root, "a-plugin"), 0o751); err != nil {
+						t.Fatal(err)
+					}
 				}
 			}
 			requests := 0
@@ -70,6 +122,8 @@ func TestUpdateBepInExPluginStaging(t *testing.T) {
 					t.Fatalf("plugin snapshot did not survive framework removal: %v, %v", stages, err)
 				}
 				assertPluginFiles(t, th, stages[0], plugins)
+				assertPluginDirectoryModes(t, stages[0], map[string]os.FileMode{".": 0o700})
+				assertPluginDirectoryModes(t, stages[0], directoryModes)
 				if tt.invalidArchive {
 					return &http.Response{Body: io.NopCloser(strings.NewReader("invalid archive"))}, nil
 				}
@@ -139,8 +193,11 @@ func TestUpdateBepInExPluginStaging(t *testing.T) {
 				}
 			}
 			assertPluginFiles(t, th, pluginRoot, plugins)
-			if info, err := os.Stat(filepath.Join(pluginRoot, "a-plugin")); err != nil || info.Mode().Perm() != 0o751 {
-				t.Errorf("plugin mode was not preserved: %v, %v", info, err)
+			assertPluginDirectoryModes(t, pluginRoot, directoryModes)
+			if !tt.emptyPlugins {
+				if info, err := os.Stat(filepath.Join(pluginRoot, "a-plugin")); err != nil || info.Mode().Perm() != 0o751 {
+					t.Errorf("plugin mode was not preserved: %v, %v", info, err)
+				}
 			}
 			if data, err := os.ReadFile(filepath.Join(server, "server-data")); err != nil || string(data) != "unrelated bytes" {
 				t.Errorf("update changed unrelated server bytes: %q, %v", data, err)
@@ -216,6 +273,20 @@ func assertPluginFiles(t *testing.T, th helper.Helper, root string, want map[str
 	for name, contents := range want {
 		if data, err := os.ReadFile(filepath.Join(root, name)); err != nil || string(data) != contents {
 			t.Errorf("file %q = %q, %v; want %q", name, data, err, contents)
+		}
+	}
+}
+
+func assertPluginDirectoryModes(t *testing.T, root string, want map[string]os.FileMode) {
+	t.Helper()
+	for name, mode := range want {
+		info, err := os.Stat(filepath.Join(root, name))
+		if err != nil {
+			t.Errorf("inspect directory %q at %q: %v", name, root, err)
+			continue
+		}
+		if !info.IsDir() || info.Mode().Perm() != mode {
+			t.Errorf("directory %q at %q has mode %v; want directory mode %04o", name, root, info.Mode(), mode)
 		}
 	}
 }

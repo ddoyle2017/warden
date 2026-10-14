@@ -129,9 +129,11 @@ These checks do not guarantee that later I/O or cleanup will succeed.
 
 Framework plugin staging keeps a complete copy outside the server tree, where
 framework removal and whole-server restoration cannot erase it. This needs
-space and write access in the server directory's parent. A failed initial copy
-stops before framework removal and cleans up its partial staging; the
-file-layer error reports any cleanup failure and the retained server backup.
+space and write access in the server directory's parent. Copying preserves plugin
+subdirectory permissions without broadening private snapshot or transfer roots.
+A failed initial copy stops before framework removal and cleans up its partial
+staging; the file-layer error reports any cleanup failure and the retained server
+backup.
 Once framework replacement starts, a failed update retains the
 complete plugin snapshot and reports its path. Plugin transfer copies into the
 plugins directory before using local renames, preserving non-conflicting

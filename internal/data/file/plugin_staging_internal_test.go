@@ -1,7 +1,10 @@
 package file
 
 import (
+	"archive/zip"
+	"bytes"
 	"errors"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -9,6 +12,175 @@ import (
 	"testing"
 	"warden/internal/test/mock"
 )
+
+func TestCopyDirectoryModes(t *testing.T) {
+	source, snapshot, local := t.TempDir(), t.TempDir(), t.TempDir()
+	files := map[string]string{"read-only/nested/plugin": "plugin bytes"}
+	modes := map[string]os.FileMode{"read-only": 0o555, "read-only/nested": 0o555, "empty": 0o555}
+	t.Cleanup(func() {
+		for _, root := range []string{source, snapshot, local} {
+			for _, name := range []string{"read-only", "read-only/nested", "empty"} {
+				if err := os.Chmod(filepath.Join(root, name), 0o700); err != nil && !errors.Is(err, os.ErrNotExist) {
+					t.Errorf("restore cleanup access at %q: %v", root, err)
+				}
+			}
+		}
+	})
+	writeRestoreTree(t, source, files)
+	if err := os.Mkdir(filepath.Join(source, "empty"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(source, 0o775); err != nil {
+		t.Fatal(err)
+	}
+	for _, root := range []string{snapshot, local} {
+		if err := os.Chmod(root, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for name, mode := range modes {
+		if err := os.Chmod(filepath.Join(source, name), mode); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, paths := range [][2]string{{source, snapshot}, {snapshot, local}} {
+		if err := copyDirectory(paths[0], paths[1]); err != nil {
+			t.Fatal(err)
+		}
+		assertRestoreTree(t, paths[1], files)
+		if info, err := os.Stat(paths[1]); err != nil || info.Mode().Perm() != 0o700 {
+			t.Errorf("copy changed private container permissions: %v, %v", info, err)
+		}
+		for name, mode := range modes {
+			info, err := os.Stat(filepath.Join(paths[1], name))
+			if err != nil || !info.IsDir() || info.Mode().Perm() != mode {
+				t.Errorf("copied directory %q = %v, %v; want mode %04o", name, info, err, mode)
+			}
+		}
+	}
+}
+
+func TestUpdateBepInExCleanupFailures(t *testing.T) {
+	var archive bytes.Buffer
+	writer := zip.NewWriter(&archive)
+	for _, entry := range []struct{ name, contents string }{
+		{"BepInExPack_Valheim/", ""},
+		{"BepInExPack_Valheim/BepInEx/", ""},
+		{"BepInExPack_Valheim/BepInEx/core/", ""},
+		{"BepInExPack_Valheim/BepInEx/plugins/", ""},
+		{"BepInExPack_Valheim/BepInEx/core/runtime", "new framework"},
+		{"BepInExPack_Valheim/BepInEx/plugins/bundled", "bundled plugin"},
+	} {
+		dst, err := writer.Create(entry.name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := io.WriteString(dst, entry.contents); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	for name, tt := range map[string]struct{ local, snapshot bool }{
+		"given local cleanup fails, when publication completes, then retain installed files without rollback": {local: true},
+		"given snapshot cleanup fails, when publication completes, then retain its complete recovery copy":    {snapshot: true},
+		"given both cleanups fail, when publication completes, then report both causes and retained paths":    {local: true, snapshot: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			server := filepath.Join(restoreTempDir(t), "server")
+			t.Setenv("TMPDIR", t.TempDir())
+			plugins := map[string]string{"a-plugin": "saved plugin", "nested/config": "saved configuration"}
+			writeRestoreTree(t, server, map[string]string{
+				"BepInEx/plugins/a-plugin":      plugins["a-plugin"],
+				"BepInEx/plugins/nested/config": plugins["nested/config"],
+				"BepInEx/core/old":              "old framework",
+				"server-data":                   "unrelated server bytes",
+			})
+			requests := 0
+			m := NewManager(&mock.HTTPClient{GetFunc: func(url string) (*http.Response, error) {
+				requests++
+				if url != "fixture-url" {
+					t.Fatalf("unexpected download URL %q", url)
+				}
+				return &http.Response{Body: io.NopCloser(bytes.NewReader(archive.Bytes()))}, nil
+			}}, server).(*manager)
+			backup := &restoreTrackingBackup{Backup: m.backup}
+			m.backup = backup
+			localErr, snapshotErr := errors.New("local cleanup interrupted"), errors.New("snapshot cleanup interrupted")
+			var snapshot, local string
+			err := m.updateBepInEx("fixture-url", "fixture-framework", func(source, target string) error {
+				switch source {
+				case m.modDirectory:
+					snapshot = target
+				case snapshot:
+					local = target
+				default:
+					t.Fatalf("unexpected plugin copy source %q", source)
+				}
+				return copyDirectory(source, target)
+			}, func(path string) error {
+				switch path {
+				case local:
+					if tt.local {
+						return localErr
+					}
+				case snapshot:
+					if tt.snapshot {
+						return snapshotErr
+					}
+				default:
+					t.Fatalf("unexpected cleanup path %q", path)
+				}
+				return os.RemoveAll(path)
+			})
+			if !errors.Is(err, ErrBackupDeleteFailed) ||
+				errors.Is(err, localErr) != tt.local || errors.Is(err, snapshotErr) != tt.snapshot {
+				t.Fatalf("cleanup errors did not retain their causes: %v", err)
+			}
+			if requests != 1 || backup.restores != 0 {
+				t.Errorf("completed publication retried or rolled back: downloads=%d, restores=%d", requests, backup.restores)
+			}
+			if filepath.Dir(snapshot) != filepath.Dir(server) || filepath.Dir(local) != m.modDirectory {
+				t.Fatalf("unexpected staging paths: snapshot=%q local=%q", snapshot, local)
+			}
+			for path, retained := range map[string]bool{local: tt.local, snapshot: tt.snapshot} {
+				info, statErr := os.Stat(path)
+				if retained {
+					if statErr != nil || !info.IsDir() || info.Mode().Perm() != 0o700 || !strings.Contains(err.Error(), path) {
+						t.Errorf("retained artifact is not private or reported: %q, %v, %v; error=%v", path, info, statErr, err)
+					}
+				} else if !errors.Is(statErr, os.ErrNotExist) {
+					t.Errorf("successful cleanup retained %q: %v", path, statErr)
+				}
+			}
+			assertRestoreTree(t, server, map[string]string{
+				"BepInEx/plugins/a-plugin":      plugins["a-plugin"],
+				"BepInEx/plugins/nested/config": plugins["nested/config"],
+				"BepInEx/plugins/bundled":       "bundled plugin",
+				"BepInEx/core/runtime":          "new framework",
+				"server-data":                   "unrelated server bytes",
+			})
+			if tt.local {
+				assertRestoreTree(t, local, map[string]string{})
+			}
+			if tt.snapshot {
+				assertRestoreTree(t, snapshot, plugins)
+			}
+		})
+	}
+}
+
+type restoreTrackingBackup struct {
+	Backup
+	restores int
+}
+
+func (b *restoreTrackingBackup) Restore(destination string) error {
+	b.restores++
+	return b.Backup.Restore(destination)
+}
 
 func TestUpdatePluginPreparationFailure(t *testing.T) {
 	for name, tt := range map[string]struct{ partial, cleanupFailure bool }{

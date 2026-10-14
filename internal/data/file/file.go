@@ -101,7 +101,12 @@ func moveFiles(source, destination string) error {
 }
 
 func copyDirectory(source, destination string) error {
-	return filepath.Walk(source, func(path string, info os.FileInfo, err error) error {
+	type directoryMode struct {
+		path string
+		mode os.FileMode
+	}
+	var directories []directoryMode
+	err := filepath.Walk(source, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -111,13 +116,31 @@ func copyDirectory(source, destination string) error {
 		}
 		target := filepath.Join(destination, relative)
 		if info.IsDir() {
-			return os.MkdirAll(target, info.Mode())
+			if err := os.MkdirAll(target, info.Mode()|0o700); err != nil {
+				return err
+			}
+			// Caller-owned staging roots retain their private permissions.
+			if relative != "." {
+				directories = append(directories, directoryMode{path: target, mode: info.Mode()})
+			}
+			return nil
 		}
 		if err := copyFile(path, target); err != nil {
 			return fmt.Errorf("copy %q: %w", path, err)
 		}
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	// Populate descendants before restoring potentially restrictive modes.
+	for i := len(directories) - 1; i >= 0; i-- {
+		directory := directories[i]
+		if err := os.Chmod(directory.path, directory.mode); err != nil {
+			return fmt.Errorf("%w: set directory permissions %q: %w", ErrFileCopyFailed, directory.path, err)
+		}
+	}
+	return nil
 }
 
 func copyFile(source, destination string) error {
