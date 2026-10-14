@@ -9,7 +9,9 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"warden/internal/api"
@@ -238,6 +240,13 @@ func TestUpdateBepInExPluginStaging(t *testing.T) {
 				if data, err := os.ReadFile(filepath.Join(server, "BepInEx", "core", "BepInEx.dll")); err != nil || len(data) == 0 {
 					t.Errorf("new framework was not installed: %v", err)
 				}
+				config := filepath.Join(server, "BepInEx", "config", "custom.cfg")
+				if data, err := os.ReadFile(config); err != nil || string(data) != "user configuration" {
+					t.Errorf("update lost existing configuration: %q, %v", data, err)
+				}
+				if info, err := os.Stat(config); err != nil || info.Mode().Perm() != 0o600 {
+					t.Errorf("configuration mode was not preserved: %v, %v", info, err)
+				}
 			}
 			assertPluginFiles(t, th, pluginRoot, plugins)
 			assertPluginDirectoryModes(t, pluginRoot, directoryModes)
@@ -321,6 +330,201 @@ func TestUpdateBepInExPartialPluginTransfer(t *testing.T) {
 	if entries, err := os.ReadDir(backups); err != nil || len(entries) != 0 {
 		t.Errorf("rollback orphaned server backups: %v, %v", entries, err)
 	}
+}
+
+func TestUpdateBepInExConfiguration(t *testing.T) {
+	defaults := map[string]string{
+		"BepInEx.cfg":         "packaged framework defaults",
+		"new.cfg":             "new packaged configuration",
+		"nested/default.json": "{\"new\": true}\n",
+	}
+	tests := map[string]struct {
+		existing map[string]string
+		packaged map[string]string
+		want     map[string]string
+		conflict bool
+	}{
+		"given existing configuration, when updating, then retain user bytes and modes alongside new defaults": {
+			existing: map[string]string{
+				"BepInEx.cfg":  "[Logging.Console]\r\nEnabled = false\r\n",
+				"Review.cfg":   "private mod configuration",
+				"nested/state": "\x00\xffarbitrary bytes\n",
+				"empty":        "",
+			},
+			packaged: defaults,
+			want: map[string]string{
+				"BepInEx.cfg":         "[Logging.Console]\r\nEnabled = false\r\n",
+				"Review.cfg":          "private mod configuration",
+				"nested/state":        "\x00\xffarbitrary bytes\n",
+				"empty":               "",
+				"new.cfg":             "new packaged configuration",
+				"nested/default.json": "{\"new\": true}\n",
+			},
+		},
+		"given missing configuration, when updating, then keep packaged defaults": {
+			packaged: defaults, want: defaults,
+		},
+		"given empty configuration, when updating, then keep packaged defaults": {
+			existing: map[string]string{}, packaged: defaults, want: defaults,
+		},
+		"given no packaged configuration, when updating, then restore the existing tree": {
+			existing: map[string]string{"nested/user": "saved settings"},
+			want:     map[string]string{"nested/user": "saved settings"},
+		},
+		"given a user file conflicting with a packaged directory, when preservation partially fails, then restore the original server": {
+			existing: map[string]string{"a.cfg": "old settings", "z-conflict": "user file"},
+			packaged: map[string]string{"a.cfg": "new defaults", "z-conflict/default.cfg": "packaged settings"},
+			conflict: true,
+		},
+		"given a user directory conflicting with a packaged file, when preservation fails, then restore the original server": {
+			existing: map[string]string{"z-conflict/user.cfg": "user settings"},
+			packaged: map[string]string{"z-conflict": "packaged file"},
+			conflict: true,
+		},
+		"given a packaged file at the configuration root, when preservation fails, then restore the original server": {
+			existing: map[string]string{"user.cfg": "user settings"},
+			packaged: map[string]string{"": "packaged file"},
+			conflict: true,
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			parent, backups := t.TempDir(), t.TempDir()
+			server := filepath.Join(parent, "server")
+			th := helper.NewHelper(t, helper.WithValheimFolder(server))
+			t.Setenv("TMPDIR", backups)
+			original := map[string]string{
+				"BepInEx/core/old":            "original framework",
+				"BepInEx/plugins/user/config": "plugin-local settings",
+				"doorstop_config.ini":         "old loader configuration",
+				"server-data":                 "unrelated server bytes",
+			}
+			for name, contents := range tt.existing {
+				original[filepath.Join("BepInEx", "config", name)] = contents
+			}
+			for name, contents := range original {
+				target := filepath.Join(server, name)
+				if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(target, []byte(contents), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			configRoot := filepath.Join(server, "BepInEx", "config")
+			if tt.existing != nil {
+				if err := os.MkdirAll(configRoot, 0o700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			packaged := map[string]string{
+				"BepInEx/core/runtime":    "replacement framework",
+				"BepInEx/plugins/bundled": "bundled plugin",
+				"doorstop_config.ini":     "new loader configuration",
+			}
+			for name, contents := range tt.packaged {
+				packaged[filepath.Join("BepInEx", "config", name)] = contents
+			}
+			archive := frameworkConfigArchive(t, packaged)
+			requests := 0
+			client := &mock.HTTPClient{GetFunc: func(url string) (*http.Response, error) {
+				requests++
+				if url != helper.TestDownloadURL {
+					t.Fatalf("unexpected download URL %q", url)
+				}
+				return &http.Response{Body: io.NopCloser(bytes.NewReader(archive))}, nil
+			}}
+			err := file.NewManager(client, server).UpdateBepInEx(helper.TestDownloadURL, helper.TestBepInExFullName)
+			stages, globErr := filepath.Glob(filepath.Join(parent, ".warden-plugins-*"))
+			if globErr != nil {
+				t.Fatal(globErr)
+			}
+			if tt.conflict {
+				var pathErr *os.PathError
+				if !errors.Is(err, file.ErrFrameworkUpdateFailed) || !errors.As(err, &pathErr) {
+					t.Fatalf("expected a configuration conflict causing update failure, got %v", err)
+				}
+				if !strings.Contains(pathErr.Path, string(filepath.Separator)+"config") {
+					t.Errorf("failure did not originate in configuration preservation: %v", err)
+				}
+				assertPluginFiles(t, th, server, original)
+				if len(stages) != 1 || !strings.Contains(err.Error(), stages[0]) {
+					t.Fatalf("failure lost or hid the independent plugin snapshot: %v, %v", stages, err)
+				}
+				assertPluginFiles(t, th, stages[0], map[string]string{"user/config": "plugin-local settings"})
+			} else {
+				if err != nil {
+					t.Fatal(err)
+				}
+				want := map[string]string{
+					"BepInEx/core/runtime":        "replacement framework",
+					"BepInEx/plugins/bundled":     "bundled plugin",
+					"BepInEx/plugins/user/config": "plugin-local settings",
+					"doorstop_config.ini":         "new loader configuration",
+					"server-data":                 "unrelated server bytes",
+				}
+				for name, contents := range tt.want {
+					want[filepath.Join("BepInEx", "config", name)] = contents
+				}
+				assertPluginFiles(t, th, server, want)
+				if len(stages) != 0 {
+					t.Errorf("successful update retained plugin staging: %v", stages)
+				}
+			}
+			for name := range tt.existing {
+				target := filepath.Join(configRoot, name)
+				if info, err := os.Stat(target); err != nil || info.Mode().Perm() != 0o600 {
+					t.Errorf("private configuration mode changed at %q: %v, %v", target, info, err)
+				}
+				if info, err := os.Stat(filepath.Dir(target)); err != nil || info.Mode().Perm() != 0o700 {
+					t.Errorf("private configuration directory mode changed: %v, %v", info, err)
+				}
+			}
+			if tt.existing != nil {
+				if info, err := os.Stat(configRoot); err != nil || info.Mode().Perm() != 0o700 {
+					t.Errorf("configuration root mode changed: %v, %v", info, err)
+				}
+			}
+			if requests != 1 {
+				t.Errorf("expected one fixture download, got %d", requests)
+			}
+			if entries, err := os.ReadDir(backups); err != nil || len(entries) != 0 {
+				t.Errorf("completed update or restoration orphaned server backups: %v, %v", entries, err)
+			}
+		})
+	}
+}
+
+func frameworkConfigArchive(t *testing.T, files map[string]string) []byte {
+	t.Helper()
+	entries := make(map[string]string)
+	for name, contents := range files {
+		name = path.Join("BepInExPack_Valheim", filepath.ToSlash(name))
+		entries[name] = contents
+		for dir := path.Dir(name); dir != "."; dir = path.Dir(dir) {
+			entries[dir+"/"] = ""
+		}
+	}
+	names := make([]string, 0, len(entries))
+	for name := range entries {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	var archive bytes.Buffer
+	writer := zip.NewWriter(&archive)
+	for _, name := range names {
+		entry, err := writer.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := io.WriteString(entry, entries[name]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return archive.Bytes()
 }
 
 func assertPluginFiles(t *testing.T, th helper.Helper, root string, want map[string]string) {

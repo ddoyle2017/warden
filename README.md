@@ -48,7 +48,7 @@ Warden supports the following commands:
     - `all`
         - A sub-command for updating *all* installed mods
     - `bepinex`
-        - Updates BepInEx while moving existing plugins aside during replacement
+        - Updates BepInEx while preserving existing plugins and `BepInEx/config` files
 - `remove`
     - Removes the targetted mod
     - `all`

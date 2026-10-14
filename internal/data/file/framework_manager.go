@@ -15,7 +15,7 @@ type frameworkManager interface {
 	// plugin folder
 	InstallBepInEx(url, fullName string) (string, error)
 
-	// Updates BepInEx while maintaining any existing mods
+	// Updates BepInEx while preserving existing plugins and BepInEx/config files.
 	UpdateBepInEx(url, fullName string) error
 
 	// Removes all BepInEx files
@@ -134,6 +134,10 @@ func (m *manager) updateBepInEx(url, fullName string, copyPlugins func(string, s
 	if err := m.installBepInExFiles(resp.Body, fullName); err != nil {
 		return fail(err)
 	}
+	config := filepath.Join("BepInEx", "config")
+	if err := preserveBepInExConfig(filepath.Join(*m.backup.Path(), config), filepath.Join(server, config)); err != nil {
+		return fail(fmt.Errorf("preserve BepInEx configuration: %w", err))
+	}
 	transferred, cleanupErr := copyStagedPlugins(tmp, m.modDirectory, copyPlugins, removeStaging)
 	if !transferred {
 		return fail(cleanupErr)
@@ -147,6 +151,41 @@ func (m *manager) updateBepInEx(url, fullName string, copyPlugins func(string, s
 		return fmt.Errorf("%w: %w", ErrFrameworkUpdateFailed, &FrameworkMutationCleanupError{Err: cleanupErr})
 	}
 	return nil
+}
+
+func preserveBepInExConfig(source, destination string) error {
+	info, err := os.Stat(source)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("configuration source %q is not a directory", source)
+	}
+
+	// Restrict existing packaged directories before copying private configuration.
+	if err := filepath.Walk(source, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			return nil
+		}
+		relative, err := filepath.Rel(source, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(destination, relative)
+		if err := os.MkdirAll(target, info.Mode()); err != nil {
+			return err
+		}
+		return os.Chmod(target, info.Mode())
+	}); err != nil {
+		return err
+	}
+	return copyDirectory(source, destination)
 }
 
 func copyStagedPlugins(source, destination string, copyPlugins func(string, string) error, removeStaging func(string) error) (transferred bool, err error) {

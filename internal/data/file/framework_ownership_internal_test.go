@@ -274,6 +274,7 @@ func TestFrameworkFinalizationErrors(t *testing.T) {
 			if tt.operation != "install" {
 				saved["BepInEx/core/old"] = "original framework"
 				saved["BepInEx/plugins/user"] = "original plugin"
+				saved["BepInEx/config/user.cfg"] = "user configuration"
 			}
 			writeRestoreTree(t, server, saved)
 			archive := frameworkReplacementArchive(t)
@@ -315,6 +316,7 @@ func TestFrameworkFinalizationErrors(t *testing.T) {
 					return os.RemoveAll(path)
 				}, os.RemoveAll)
 				want["BepInEx/plugins/user"] = "original plugin"
+				want["BepInEx/config/user.cfg"] = "user configuration"
 			case "install":
 				path, installErr := m.InstallBepInEx("fixture", "framework")
 				err = installErr

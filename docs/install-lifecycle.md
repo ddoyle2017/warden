@@ -22,8 +22,8 @@ two authors publishing a package with the same name.
 BepInEx is a framework, not an ordinary plugin. Its archive contains a wrapper
 directory whose contents are moved into the Valheim server directory. Ordinary
 mods are extracted into individual directories under `BepInEx/plugins`.
-Framework updates therefore need to preserve plugins while replacing framework
-files.
+Framework updates preserve plugins and user configuration while replacing
+framework files.
 
 Dependency strings include namespace, name, and version. Current dependency
 handling fetches the latest release for each direct dependency, rather than
@@ -45,7 +45,7 @@ Earlier completed steps can remain in effect if a later step fails.
 | Remove a mod | Confirm, take a complete backup and stage its versioned directory outside the plugin tree, delete its record, then discard staged files and the backup. |
 | Remove all mods | Require the stronger confirmation, back up and stage the plugin directory, recreate an empty plugin directory, delete the records, then discard staged files and the backup. |
 | Install BepInEx | Download and unpack the framework into the server directory, move the archive wrapper's contents into place, then insert the framework record. |
-| Update BepInEx | Take one original-server snapshot, copy plugins to a temporary sibling of the server directory, remove and install framework files, transfer plugin copies through destination-local staging, finalize the server snapshot, then update the framework record. |
+| Update BepInEx | Take one original-server snapshot, copy plugins to a temporary sibling of the server directory, remove and install framework files, preserve existing configuration over packaged defaults, transfer plugin copies through destination-local staging, finalize the server snapshot, then update the framework record. |
 | Remove BepInEx | Remove the framework's known files, including the plugin directory, then delete its framework record. The current path does not also delete mod records. |
 
 Installing a root mod can succeed before a dependency fails. Updating a mod
@@ -129,13 +129,27 @@ from inside the plugins directory: its rollback renames the original files back.
 These checks do not guarantee that later I/O or cleanup will succeed.
 
 A framework update owns one original-server snapshot throughout removal,
-installation, and plugin transfer. These steps do not replace or consume that
-snapshot. A reported removal, download, installation, or incomplete
-plugin-transfer failure triggers restoration of the original framework,
-plugins, configuration, and unrelated server files. If restoration fails before
-publication, the file-layer error identifies the retained server snapshot for
-recovery. Standalone framework installation and removal keep their own guarded
-backups and report restoration and cleanup failures.
+installation, configuration preservation, and plugin transfer. These steps do
+not replace or consume that snapshot. A reported removal, download,
+installation, configuration-preservation, or incomplete plugin-transfer failure
+triggers restoration of the original framework, plugins, configuration, and
+unrelated server files. Configuration file/directory conflicts and read or copy
+errors fail the update rather than discarding settings. If restoration fails
+before publication, the file-layer error identifies the retained server
+snapshot for recovery. Standalone framework installation and removal keep their
+own guarded backups and report restoration and cleanup failures.
+
+Before plugin transfer, the update copies the original `BepInEx/config` tree
+from that snapshot into the replacement framework. Existing files win
+byte-for-byte over packaged defaults at the same relative path; new,
+non-conflicting defaults remain. This includes `BepInEx.cfg`, mod-specific and
+nested configuration, and files without a `.cfg` extension. Missing or empty
+pre-update configuration is valid and leaves new defaults in place. Existing
+file permission bits are preserved, and configuration directory access is not
+broadened. Ownership and extended metadata are not preserved. Warden does not
+merge values or migrate settings.
+This policy applies only to framework updates and that tree, not loader or
+startup files elsewhere in the server or Warden's home configuration/database.
 
 Framework plugin staging keeps a complete copy outside the server tree, where
 framework removal and whole-server restoration cannot erase it. This needs
@@ -150,10 +164,11 @@ the plugins directory, copy-back creates it. Plugin transfer copies into the
 plugins directory before using local renames, preserving non-conflicting
 bundled plugins and keeping the independent snapshot even after a partial
 transfer. A successful transfer removes that snapshot and reports cleanup
-failures rather than attempting another framework rollback. Once framework and
-plugin replacement is complete, the update finalizes its server snapshot even
-if plugin cleanup fails. Cleanup errors identify leftover artifacts without
-advertising consumed server snapshots as valid recovery sources.
+failures rather than attempting another framework rollback. Once framework,
+configuration, and plugin replacement is complete, the update finalizes its
+server snapshot even if plugin cleanup fails. Cleanup errors identify leftover
+artifacts without advertising consumed server snapshots as valid recovery
+sources.
 
 Completed framework installation, update, or removal with cleanup failures
 returns `FrameworkMutationCleanupError`. The service still saves or deletes the
@@ -164,10 +179,9 @@ stops on a bootstrap diagnostic, but its recorded framework is reused on retry.
 A cleanup error after an incomplete or rolled-back operation does not mark
 completion and must not change its framework record.
 
-Successful framework updates still replace existing BepInEx configuration
-rather than preserving it. Some service callers still discard underlying
-file-layer error details, including recovery paths. Filesystem recovery does
-not roll back database writes or provide crash or concurrency atomicity.
+Some service callers still discard underlying file-layer error details,
+including recovery paths. Filesystem recovery does not roll back database
+writes or provide crash or concurrency atomicity.
 
 When changing these paths, define the observable filesystem and database state
 for success, cancellation, and each failure being handled. Verify those states,
