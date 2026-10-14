@@ -2,141 +2,81 @@ package config_test
 
 import (
 	"errors"
-	"io"
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"testing"
 	"warden/internal/config"
 
 	"github.com/spf13/viper"
 )
 
-const testConfigPath = "../test/config"
-
-func TestLoad_Happy(t *testing.T) {
-	os := runtime.GOOS
-
+func TestLoad(t *testing.T) {
 	tests := map[string]struct {
-		setUp    func() error
-		expected config.Config
+		content     string
+		expected    config.Config
+		expectedErr error
 	}{
-		"if config file doesn't exist, create one with the default values and return success": {
-			setUp: func() error {
-				return nil
-			},
+		"given no config file, when loading, then persist and return defaults": {
 			expected: config.Config{
-				ValheimDirectory: config.GetInstallPath(os),
-				Platform:         os,
+				ValheimDirectory: config.GetInstallPath(runtime.GOOS),
+				Platform:         runtime.GOOS,
 			},
 		},
-		"if config file does exist, load existing values and return success": {
-			setUp: func() error {
-				return createTestConfigFile(t, "valheim-directory: ./test/file\nplatform: linux\n")
-			},
+		"given an existing config, when loading, then preserve saved values": {
+			content: "valheim-directory: ./server\nplatform: linux\n",
 			expected: config.Config{
-				ValheimDirectory: "./test/file",
+				ValheimDirectory: "./server",
 				Platform:         config.Linux,
 			},
 		},
-	}
-
-	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			err := test.setUp()
-			if err != nil {
-				t.Errorf("unexpected error on test set-up, received error: %+v", err)
-			}
-
-			cfg, err := config.Load(testConfigPath)
-
-			if err != nil {
-				t.Errorf("expected a nil error, received: %+v", cfg)
-			}
-			if !doConfigsMatch(test.expected, *cfg) {
-				t.Errorf("expected config: %+v, received: %+v", test.expected, cfg)
-			}
-			resetTestConfig(t)
-		})
-	}
-	t.Cleanup(func() {
-		resetTestConfig(t)
-	})
-}
-
-func TestLoad_Sad(t *testing.T) {
-	tests := map[string]struct {
-		setUp    func() error
-		expected error
-	}{
-		"if config file is malformed, return an error": {
-			setUp: func() error {
-				return createTestConfigFile(t, "valh       eim-directory{} .12341234\n")
-			},
-			expected: config.ErrFailedToReadConfig,
+		"given malformed YAML, when loading, then return a read error": {
+			content:     "valheim-directory: [\n",
+			expectedErr: config.ErrFailedToReadConfig,
 		},
 	}
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			if err := test.setUp(); err != nil {
-				t.Errorf("unexpected error on test set-up, received error: %+v", err)
+			viper.Reset()
+			t.Cleanup(viper.Reset)
+			directory := t.TempDir()
+			path := filepath.Join(directory, config.WardenConfigFile)
+			if test.content != "" {
+				if err := os.WriteFile(path, []byte(test.content), 0o600); err != nil {
+					t.Fatal(err)
+				}
 			}
 
-			cfg, err := config.Load(testConfigPath)
-
-			if cfg != nil {
-				t.Errorf("expected a nil Config, received: %+v", cfg)
+			cfg, err := config.Load(directory)
+			if !errors.Is(err, test.expectedErr) {
+				t.Fatalf("expected error %v, received %v", test.expectedErr, err)
 			}
-			if !errors.Is(err, test.expected) {
-				t.Errorf("expected error: %+v, received: %+v", test.expected, err)
+			if test.expectedErr != nil {
+				if cfg != nil {
+					t.Errorf("expected nil config, received %+v", cfg)
+				}
+				return
+			}
+			if cfg == nil {
+				t.Fatal("expected a config, received nil")
+			}
+			if *cfg != test.expected {
+				t.Errorf("expected config %+v, received %+v", test.expected, *cfg)
 			}
 
-			t.Cleanup(func() {
-				resetTestConfig(t)
-			})
+			saved := viper.New()
+			saved.SetConfigFile(path)
+			if err := saved.ReadInConfig(); err != nil {
+				t.Fatal(err)
+			}
+			var persisted config.Config
+			if err := saved.Unmarshal(&persisted); err != nil {
+				t.Fatal(err)
+			}
+			if persisted != test.expected {
+				t.Errorf("expected persisted config %+v, received %+v", test.expected, persisted)
+			}
 		})
 	}
-}
-
-func createTestConfigFile(t *testing.T, content string) error {
-	resetTestConfig(t)
-
-	path := filepath.Join(testConfigPath, config.WardenConfigFile)
-
-	// Create the empty file
-	out, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-
-	source := strings.NewReader(content)
-
-	// Write the body to file
-	_, err = io.Copy(out, source)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func resetTestConfig(t *testing.T) {
-	viper.Reset()
-	path := filepath.Join(testConfigPath, config.WardenConfigFile)
-
-	if err := os.RemoveAll(path); err != nil {
-		t.Errorf("unable to clean-up test config file, error: %+v", err)
-	}
-}
-
-func doConfigsMatch(a, b config.Config) bool {
-	if a.ValheimDirectory != b.ValheimDirectory {
-		return false
-	}
-	if a.Platform != b.Platform {
-		return false
-	}
-	return true
 }

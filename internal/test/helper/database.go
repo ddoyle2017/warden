@@ -1,6 +1,7 @@
 package helper
 
 import (
+	"database/sql"
 	"errors"
 	"os"
 	"path/filepath"
@@ -18,17 +19,30 @@ type databaseHelper interface {
 }
 
 func (h *helper) CreateDatabase() repo.Database {
-	path := filepath.Join(h.dataFolder, h.databaseFile)
+	h.t.Helper()
+	path := filepath.Join(h.databaseFolder, h.databaseFile)
 
-	db, err := repo.OpenDatabase(path)
+	db, err := sql.Open("sqlite3", path)
 	if err != nil {
-		h.t.Errorf("unexpected error when creating test database, received: %+v", err)
+		h.t.Fatalf("unexpected error when creating test database, received: %+v", err)
+	}
+	h.databases = append(h.databases, db)
+	if err := db.Ping(); err != nil {
+		h.t.Fatalf("unexpected error when opening test database, received: %+v", err)
 	}
 	return db
 }
 
 func (h *helper) DeleteDatabase() {
-	err := os.Remove(filepath.Join(h.dataFolder, h.databaseFile))
+	h.t.Helper()
+	for _, db := range h.databases {
+		if err := db.Close(); err != nil {
+			h.t.Errorf("unexpected error when closing test database, received: %+v", err)
+		}
+	}
+	h.databases = nil
+
+	err := os.Remove(filepath.Join(h.databaseFolder, h.databaseFile))
 	if errors.Is(err, os.ErrNotExist) {
 		// Test database was already removed. This is fine, so we ignore the error and continue.
 		return
@@ -39,6 +53,7 @@ func (h *helper) DeleteDatabase() {
 }
 
 func (h *helper) SeedModsTable(mr repo.Mods, fr repo.Frameworks) []mod.Mod {
+	h.t.Helper()
 	h.SeedFrameworksTable(fr)
 
 	mods := []mod.Mod{
@@ -65,13 +80,14 @@ func (h *helper) SeedModsTable(mr repo.Mods, fr repo.Frameworks) []mod.Mod {
 	for _, m := range mods {
 		err := mr.InsertMod(m)
 		if err != nil {
-			h.t.Errorf("unexpected error when seeding test database, received: %+v", err)
+			h.t.Fatalf("unexpected error when seeding test database, received: %+v", err)
 		}
 	}
 	return mods
 }
 
 func (h *helper) SeedFrameworksTable(fr repo.Frameworks) []framework.Framework {
+	h.t.Helper()
 	frameworks := []framework.Framework{
 		{
 			ID:          1,
@@ -86,7 +102,7 @@ func (h *helper) SeedFrameworksTable(fr repo.Frameworks) []framework.Framework {
 	for _, f := range frameworks {
 		err := fr.InsertFramework(f)
 		if err != nil {
-			h.t.Errorf("unexpected error when seeding test database, received: %+v", err)
+			h.t.Fatalf("unexpected error when seeding test database, received: %+v", err)
 		}
 	}
 	return frameworks

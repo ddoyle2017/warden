@@ -11,19 +11,21 @@
 ## Overview
 ![overview-header](./images/mislands-gjall.jpeg)
 
-Warden features a simple command-line interface for managing mods on a Valheim dedicated server, hosted on Linux (Windows support coming soon<sup>TM</sup>!).
+Warden features a simple command-line interface for managing mods on a Valheim dedicated server. Linux is the primary target. macOS and Windows paths exist in the code, but complete support is not yet established.
 
-Mods are currently sourced from [Thunderstore.io](https://thunderstore.io/), with added support for [Nexus Mods](https://www.nexusmods.com/) planned for the near future<sup>TM</sup>. Warden also automatically resolves dependencies for mod installs and updates, including [BepInEx](https://github.com/BepInEx/BepInEx).
+Mods are currently sourced from [Thunderstore.io](https://thunderstore.io/). [Nexus Mods](https://www.nexusmods.com/) is not implemented. Warden installs the latest releases of direct mod dependencies and prompts to install [BepInEx](https://github.com/BepInEx/BepInEx) when its installation record is missing. Dependency versions are not pinned and dependency resolution is not recursive; see the [installation lifecycle](docs/install-lifecycle.md) for ordering and limitations.
 
 Warden stores data in 2 different files:
 - A YAML configuration file at `$HOME/.warden.yaml`.
 - A lightweight, database storage file at `$HOME/.warden.db`
 
 The YAML file stores the following configuration values for the app:
-- `valheim-directory` - Where the Valheim dedicated server is installed. By default, Warden uses the default location [SteamCMD](https://developer.valvesoftware.com/wiki/SteamCMD) installs Valheim servers into.
-- `mod-directory` - Where mods (also called 'plugins') are installed. This is expected to be a child folder of `valheim-directory`. By default, Warden uses `/BepinEx/plugins` which is the folder that BepInEx loads mods from when the server is started.
+- `valheim-directory` - Where the Valheim dedicated server is installed. Warden selects a platform-specific Steam installation path by default; set this to the actual server directory before managing mods.
+- `platform` - The operating system recorded when configuration is created (`linux`, `darwin`, or `windows`). This selects the vanilla server script.
 
-The DB file stores metadata about each mod managed by the app, including things like: author, version, where its installed, etc..
+Plugins are installed under `BepInEx/plugins` inside `valheim-directory`; there is no separate configurable `mod-directory`. `config set` currently accepts only `valheim-directory`.
+
+The DB file stores metadata about managed mods and frameworks, including author, version, and installation details. Metadata and files can diverge after a partial failure; `list` does not inspect the installed files.
 
 Warden was built with:
 - [Go](https://github.com/golang/go) - Everyone's favorite open-source programming language
@@ -45,20 +47,47 @@ Warden supports the following commands:
     - Updates the mod to latest version
     - `all`
         - A sub-command for updating *all* installed mods
+    - `bepinex`
+        - Updates BepInEx while moving existing plugins aside during replacement
 - `remove`
     - Removes the targetted mod
     - `all`
         - A sub-command for removing *every* installed mod. A clean slate :)
+    - `bepinex`
+        - Removes BepInEx and plugin files; currently leaves mod records in the database
 - `config`
     - Lists the current configuration values for Warden + where the config file is located
     - `get`
         - Fetch a specific configuration value
     - `set`
-        - Update a configuration value
+        - Update `valheim-directory`
+- `start`
+    - Runs the server startup script for `vanilla` or `modded`
+
+Example syntax, after setting the intended server directory:
+
+```sh
+warden config set valheim-directory /absolute/path/to/valheim
+warden add --namespace Azumatt --mod Where_You_At
+warden update --mod Where_You_At
+warden remove --namespace Azumatt --mod Where_You_At
+warden update all
+warden update bepinex
+warden start modded
+```
+
+These are real installation commands, not a smoke test. Back up an existing server before changing its mods. Even `--help` initializes Warden's configuration and database; use the [isolated CLI procedure](CONTRIBUTING.md#isolated-cli-smoke-check) for development.
 
 ## Installation
 ![installation-banner](./images/mistlands-exploration.png)
 Proper install process coming soon <sup>TM</sup>.
+
+For a local source build, follow [Contributing](CONTRIBUTING.md#prerequisites), then run `go build -o warden .`. The SQLite driver requires CGO and a C compiler. Run the local binary as `./warden`, or place it on your `PATH` to use the example commands as written.
+
+## Contributing
+
+See [Contributing](CONTRIBUTING.md) for setup, checks, and safe local execution.
+Agent guidance starts in [the repository instructions](.github/copilot-instructions.md), with path-specific coding rules and reusable command/lifecycle skills.
 
 ## License
 

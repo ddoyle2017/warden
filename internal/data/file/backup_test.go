@@ -3,6 +3,7 @@ package file_test
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"testing"
 	"warden/internal/data/file"
 	"warden/internal/test/helper"
@@ -33,7 +34,7 @@ func TestCreate_Happy(t *testing.T) {
 func TestCreate_Sad(t *testing.T) {
 	b := file.NewBackup()
 
-	err := b.Create("    dbalhid  dw")
+	err := b.Create(filepath.Join(t.TempDir(), "missing"))
 	if err == nil {
 		t.Errorf("unexpected a non-nil error, received nil")
 	}
@@ -159,43 +160,57 @@ func TestRestore_Happy(t *testing.T) {
 }
 
 func TestRestore_Sad(t *testing.T) {
-	th := helper.NewHelper(t)
-	th.SetUpServerFiles()
-
 	tests := map[string]struct {
-		setup       func(b file.Backup)
-		destination string
-		expected    error
+		createBackup       bool
+		invalidDestination bool
+		expected           error
 	}{
-		"return error if restore is called when there is no backup": {
-			setup:       func(b file.Backup) {},
-			destination: th.GetValheimDirectory(),
-			expected:    file.ErrBackupMissing,
+		"given no backup, when restoring, then return a missing backup error": {
+			expected: file.ErrBackupMissing,
 		},
-		"return error if restore destination is invalid": {
-			setup: func(b file.Backup) {
-				if err := b.Create(th.GetValheimDirectory()); err != nil {
-					t.Errorf("unexpected error when creating backup, received: %+v", err)
-				}
-			},
-			destination: "//dwa   32352.///dbiquwbdi   \\diqwbdiu dqwi",
-			expected:    file.ErrBackupRestoreFailed,
+		"given a file as the destination parent, when restoring, then retain the backup": {
+			createBackup:       true,
+			invalidDestination: true,
+			expected:           file.ErrBackupRestoreFailed,
 		},
 	}
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
+			th := helper.NewHelper(t)
+			th.SetUpServerFiles()
 			b := file.NewBackup()
-			tt.setup(b)
+			t.Cleanup(func() {
+				if b.Path() != nil {
+					if err := b.Remove(); err != nil {
+						t.Errorf("unable to clean up backup: %v", err)
+					}
+				}
+			})
+			if tt.createBackup {
+				if err := b.Create(th.GetValheimDirectory()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			destination := filepath.Join(t.TempDir(), "restore")
+			if tt.invalidDestination {
+				parent := filepath.Join(t.TempDir(), "file")
+				if err := os.WriteFile(parent, []byte("not a directory"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				destination = filepath.Join(parent, "restore")
+			}
 
-			err := b.Restore(tt.destination)
+			err := b.Restore(destination)
 			if !errors.Is(err, tt.expected) {
 				t.Errorf("expected error: %+v, received: %+v", tt.expected, err)
 			}
+			if tt.createBackup {
+				if b.Path() == nil {
+					t.Fatal("expected failed restore to retain the backup")
+				}
+				th.VerifyBackup(th.GetValheimDirectory(), *b.Path())
+			}
 		})
 	}
-
-	t.Cleanup(func() {
-		th.RemoveServerFiles()
-	})
 }
