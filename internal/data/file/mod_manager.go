@@ -24,6 +24,10 @@ type modManager interface {
 
 	// Deletes the parent mod folder and all of its contents, then recreates an empty one.
 	RemoveAllMods() error
+
+	// Stages removal while retaining the original files until Commit or Rollback.
+	StageModRemoval(fullName string) (ModRemoval, error)
+	StageAllModsRemoval() (ModRemoval, error)
 }
 
 func (m *manager) InstallMod(url, fullName string) (string, error) {
@@ -65,49 +69,40 @@ func (m *manager) InstallMod(url, fullName string) (string, error) {
 }
 
 func (m *manager) RemoveMod(fullName string) error {
-	modPath := filepath.Join(m.modDirectory, fullName)
-
-	if _, err := os.Lstat(modPath); errors.Is(err, os.ErrNotExist) {
-		return nil
-	} else if err != nil {
+	removal, err := m.StageModRemoval(fullName)
+	if err != nil {
+		return err
+	}
+	if err := removal.Commit(); err != nil {
 		return fmt.Errorf("%w: %w", ErrModDeleteFailed, err)
 	}
-	if err := m.backup.Create(m.modDirectory); err != nil {
-		return fmt.Errorf("%w: %w", ErrModDeleteFailed, err)
-	}
-	err := os.RemoveAll(modPath)
-
-	// If error is thrown because the file does not exist, we ignore. For
-	// any other error, return that the delete failed.
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		m.backup.Restore(m.modDirectory)
-		return ErrModDeleteFailed
-	}
-	m.backup.Remove()
 	return nil
 }
 
 func (m *manager) RemoveAllMods() error {
-	if err := os.MkdirAll(m.modDirectory, os.ModePerm); err != nil {
-		return fmt.Errorf("%w: %w", ErrDirectoryCreateFailed, err)
+	removal, err := m.StageAllModsRemoval()
+	if err != nil {
+		return err
 	}
-	if err := m.backup.Create(m.modDirectory); err != nil {
+	if err := removal.Commit(); err != nil {
 		return fmt.Errorf("%w: %w", ErrDeleteAllModsFailed, err)
 	}
-
-	// Delete the parent folder for all mods and everything inside
-	err := os.RemoveAll(m.modDirectory)
-	if err != nil {
-		m.backup.Restore(m.modDirectory)
-		return ErrDeleteAllModsFailed
-	}
-
-	// Recreate parent folder for all mods
-	err = os.MkdirAll(m.modDirectory, os.ModePerm)
-	if err != nil {
-		m.backup.Restore(m.modDirectory)
-		return ErrDirectoryCreateFailed
-	}
-	m.backup.Remove()
 	return nil
+}
+
+func (m *manager) StageModRemoval(fullName string) (ModRemoval, error) {
+	target := filepath.Join(m.modDirectory, fullName)
+	if _, err := os.Lstat(target); errors.Is(err, os.ErrNotExist) {
+		return &modRemoval{}, nil
+	} else if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrModDeleteFailed, err)
+	}
+	return m.stageModRemoval(target, false, ErrModDeleteFailed)
+}
+
+func (m *manager) StageAllModsRemoval() (ModRemoval, error) {
+	if err := os.MkdirAll(m.modDirectory, os.ModePerm); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrDirectoryCreateFailed, err)
+	}
+	return m.stageModRemoval(m.modDirectory, true, ErrDeleteAllModsFailed)
 }

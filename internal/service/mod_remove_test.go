@@ -27,8 +27,8 @@ func TestRemoveMod_Happy(t *testing.T) {
 		},
 	}
 	fm := &mock.Manager{
-		RemoveModFunc: func(fullName string) error {
-			return nil
+		StageModRemovalFunc: func(fullName string) (file.ModRemoval, error) {
+			return &mock.ModRemoval{CommitFunc: func() error { return nil }}, nil
 		},
 	}
 
@@ -99,6 +99,11 @@ func TestRemoveMod_Sad(t *testing.T) {
 					return repo.ErrModDeleteFailed
 				},
 			},
+			fm: &mock.Manager{
+				StageModRemovalFunc: func(fullName string) (file.ModRemoval, error) {
+					return &mock.ModRemoval{RollbackFunc: func() error { return nil }}, nil
+				},
+			},
 			rd:       strings.NewReader("Y"),
 			expected: service.ErrUnableToRemoveMod,
 		},
@@ -116,8 +121,8 @@ func TestRemoveMod_Sad(t *testing.T) {
 				},
 			},
 			fm: &mock.Manager{
-				RemoveModFunc: func(fullName string) error {
-					return file.ErrModDeleteFailed
+				StageModRemovalFunc: func(fullName string) (file.ModRemoval, error) {
+					return nil, file.ErrModDeleteFailed
 				},
 			},
 			rd:       strings.NewReader("Y"),
@@ -147,8 +152,8 @@ func TestRemoveAllMods_Happy(t *testing.T) {
 		},
 	}
 	fm := &mock.Manager{
-		RemoveAllModsFunc: func() error {
-			return nil
+		StageAllModsRemovalFunc: func() (file.ModRemoval, error) {
+			return &mock.ModRemoval{CommitFunc: func() error { return nil }}, nil
 		},
 	}
 
@@ -193,8 +198,8 @@ func TestRemoveAllMods_Sad(t *testing.T) {
 				},
 			},
 			fm: &mock.Manager{
-				RemoveAllModsFunc: func() error {
-					return nil
+				StageAllModsRemovalFunc: func() (file.ModRemoval, error) {
+					return &mock.ModRemoval{RollbackFunc: func() error { return nil }}, nil
 				},
 			},
 			rd:       strings.NewReader("YES I AM"),
@@ -207,8 +212,8 @@ func TestRemoveAllMods_Sad(t *testing.T) {
 				},
 			},
 			fm: &mock.Manager{
-				RemoveAllModsFunc: func() error {
-					return file.ErrDeleteAllModsFailed
+				StageAllModsRemovalFunc: func() (file.ModRemoval, error) {
+					return nil, file.ErrDeleteAllModsFailed
 				},
 			},
 			rd:       strings.NewReader("YES I AM"),

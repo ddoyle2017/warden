@@ -42,8 +42,8 @@ Earlier completed steps can remain in effect if a later step fails.
 | Add a mod | The command first attempts BepInEx installation when its record is missing. If that returns no error, the mod service checks for an existing mod, fetches the latest release, installs files, upserts the record, and then installs direct dependencies. |
 | Update a mod | Fetch the installed record and latest release. If the version compares newer and the user confirms, remove the old release directory, install the new files, upsert the record, and process dependencies. |
 | Update all mods | Confirm once, then process recorded mods sequentially. A failure stops the loop; earlier successful updates are not undone. This is not a framework update. |
-| Remove a mod | Confirm, delete its record, then remove its versioned directory. A file-removal failure can leave unrecorded files. |
-| Remove all mods | Require the stronger confirmation, then attempt both record deletion and plugin-directory removal, even if record deletion fails. The file manager recreates an empty plugin directory. |
+| Remove a mod | Confirm, take a complete backup and stage its versioned directory outside the plugin tree, delete its record, then discard staged files and the backup. |
+| Remove all mods | Require the stronger confirmation, back up and stage the plugin directory, recreate an empty plugin directory, delete the records, then discard staged files and the backup. |
 | Install BepInEx | Download and unpack the framework into the server directory, move the archive wrapper's contents into place, then insert the framework record. |
 | Update BepInEx | Move plugins to temporary storage, remove and install framework files, move plugins back, then update the framework record. |
 | Remove BepInEx | Remove the framework's known files, including the plugin directory, then delete its framework record. The current path does not also delete mod records. |
@@ -71,14 +71,29 @@ An empty source directory is valid for a backup; a missing source is an error.
 Mod installation and removal of all mods create a missing plugins directory
 before taking a backup. Removing an absent mod remains a no-op.
 
-Restoration still removes the destination before moving backed-up files, and
-those moves do not support cross-filesystem transfer. Framework updates still
-reuse one backup object across nested operations, so a later successful backup
-can replace the snapshot needed by the outer update. Some restoration and
-post-operation cleanup errors are still ignored. Framework updates also replace
-existing BepInEx configuration rather than preserving it. These limitations
-mean temporary backups do not establish successful rollback or preservation of
-the caller's original state.
+Mod removal retains original files in staging beside the plugin directory until
+record deletion succeeds. Backup or staging failure stops before record deletion.
+Staging uses a rename; a cross-filesystem rename fails rather than falling back
+to destructive copying. If record deletion returns an error, the service attempts
+to rename the staged files back. A conflicting destination is not overwritten;
+the error identifies the retained staging path for recovery. A repository error
+does not prove that its write was unapplied, so inspect recorded state as well.
+
+After successful record deletion, removal is committed and cleanup is
+irreversible. Cleanup failures identify leftover paths but do not make those
+potentially partial contents usable recovery snapshots. File-only removal callers
+can distinguish this committed outcome through `ModRemovalCleanupError`; mod
+updates report it and continue installing the replacement rather than stopping
+after the old files have already been removed.
+
+The general backup restore helper still removes the destination before moving
+backed-up files, and those moves do not support cross-filesystem transfer.
+Framework updates still reuse one backup object across nested operations, so a
+later successful backup can replace the snapshot needed by the outer update.
+Installation and framework paths still ignore some restoration and cleanup
+errors. Framework updates also replace existing BepInEx configuration rather
+than preserving it. Neither temporary backups nor staged removal establish
+crash-safe filesystem/database atomicity.
 
 When changing these paths, define the observable filesystem and database state
 for success, cancellation, and each failure being handled. Verify those states,

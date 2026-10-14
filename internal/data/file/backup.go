@@ -31,11 +31,12 @@ type Backup interface {
 }
 
 type backup struct {
-	location *string
+	location         *string
+	removeIncomplete func(string) error
 }
 
 func NewBackup() Backup {
-	return &backup{}
+	return &backup{removeIncomplete: os.RemoveAll}
 }
 
 func (b *backup) Create(source string) error {
@@ -65,7 +66,7 @@ func (b *backup) Create(source string) error {
 	})
 	if err != nil {
 		err = fmt.Errorf("%w: %w", ErrBackupCreateFailed, err)
-		if cleanupErr := os.RemoveAll(tmp); cleanupErr != nil {
+		if cleanupErr := b.removeIncomplete(tmp); cleanupErr != nil {
 			return errors.Join(err, fmt.Errorf("%w at %q: %w", ErrBackupDeleteFailed, tmp, cleanupErr))
 		}
 		return err
