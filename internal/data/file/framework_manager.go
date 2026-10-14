@@ -3,6 +3,7 @@ package file
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"warden/internal/api"
@@ -41,10 +42,9 @@ func (m *manager) InstallBepInEx(url, fullName string) (string, error) {
 		return "", fmt.Errorf("%w: %w", ErrFrameworkInstallFailed, err)
 	}
 
-	// Get the data
 	resp, err := m.client.Get(url)
 	if err != nil {
-		return "", api.ErrHTTPClient
+		return "", fmt.Errorf("%w: %w", api.ErrHTTPClient, err)
 	}
 	defer resp.Body.Close()
 
@@ -52,32 +52,34 @@ func (m *manager) InstallBepInEx(url, fullName string) (string, error) {
 		return "", fmt.Errorf("%w: %w", ErrFrameworkInstallFailed, err)
 	}
 
-	// Create the zip archive
-	zipPath := filepath.Join(m.valheimDirectory, fullName+".zip")
-	if err := createFile(zipPath, resp.Body); err != nil {
-		m.backup.Restore(m.valheimDirectory)
-		return "", err
+	if err := m.installBepInExFiles(resp.Body, fullName); err != nil {
+		return "", errors.Join(err, m.restoreServerBackup())
 	}
-
-	// Extract zip files into Valheim server folder
-	if err := Unzip(zipPath, m.valheimDirectory); err != nil {
-		m.backup.Restore(m.valheimDirectory)
-		return "", err
+	if err := m.backup.Remove(); err != nil {
+		return "", fmt.Errorf("%w: framework installed; cleanup failed: %w", ErrFrameworkInstallFailed, err)
 	}
-
-	// Remove zip file after finishing extractio
-	if err = os.Remove(zipPath); err != nil {
-		m.backup.Restore(m.valheimDirectory)
-		return "", ErrZipDeleteFailed
-	}
-
-	// Move BepInEx files to Valheim installation directory and remove top level folder
-	if err := m.moveBepInExFiles(); err != nil {
-		m.backup.Restore(m.valheimDirectory)
-		return "", ErrFrameworkInstallFailed
-	}
-	m.backup.Remove()
 	return m.valheimDirectory, nil
+}
+
+// The caller owns backup creation, restoration, and cleanup.
+func (m *manager) installBepInExFiles(body io.Reader, fullName string) error {
+	zipPath := filepath.Join(m.valheimDirectory, fullName+".zip")
+	if err := createFile(zipPath, body); err != nil {
+		return err
+	}
+
+	if err := Unzip(zipPath, m.valheimDirectory); err != nil {
+		return err
+	}
+
+	if err := os.Remove(zipPath); err != nil {
+		return fmt.Errorf("%w: %w", ErrZipDeleteFailed, err)
+	}
+
+	if err := m.moveBepInExFiles(); err != nil {
+		return fmt.Errorf("%w: %w", ErrFrameworkInstallFailed, err)
+	}
+	return nil
 }
 
 func (m *manager) UpdateBepInEx(url, fullName string) error {
@@ -117,14 +119,19 @@ func (m *manager) updateBepInEx(url, fullName string, copyPlugins func(string, s
 	}
 
 	fail := func(cause error) error {
-		restoreErr := m.backup.Restore(m.valheimDirectory)
+		restoreErr := m.restoreServerBackup()
 		return fmt.Errorf("%w: %w; plugin snapshot retained at %q",
 			ErrFrameworkUpdateFailed, errors.Join(cause, restoreErr), tmp)
 	}
-	if err := m.RemoveBepInEx(); err != nil {
+	if err := m.removeBepInExFiles(os.RemoveAll); err != nil {
 		return fail(err)
 	}
-	if _, err := m.InstallBepInEx(url, fullName); err != nil {
+	resp, err := m.client.Get(url)
+	if err != nil {
+		return fail(fmt.Errorf("%w: %w", api.ErrHTTPClient, err))
+	}
+	defer resp.Body.Close()
+	if err := m.installBepInExFiles(resp.Body, fullName); err != nil {
 		return fail(err)
 	}
 	transferred, cleanupErr := copyStagedPlugins(tmp, m.modDirectory, copyPlugins, removeStaging)
@@ -135,11 +142,7 @@ func (m *manager) updateBepInEx(url, fullName string, copyPlugins func(string, s
 	if err := removeStaging(tmp); err != nil {
 		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("%w: remove plugin snapshot %q: %w", ErrBackupDeleteFailed, tmp, err))
 	}
-	if path := m.backup.Path(); path != nil {
-		if err := m.backup.Remove(); err != nil {
-			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("remove backup %q: %w", *path, err))
-		}
-	}
+	cleanupErr = errors.Join(cleanupErr, m.backup.Remove())
 	if cleanupErr != nil {
 		return fmt.Errorf("%w: %w", ErrFrameworkUpdateFailed, &FrameworkMutationCleanupError{Err: cleanupErr})
 	}
@@ -169,9 +172,27 @@ func copyStagedPlugins(source, destination string, copyPlugins func(string, stri
 }
 
 func (m *manager) RemoveBepInEx() error {
+	return m.removeBepInEx(os.RemoveAll)
+}
+
+func (m *manager) removeBepInEx(removeFiles func(string) error) error {
 	if err := preflightRestore(m.valheimDirectory); err != nil {
 		return fmt.Errorf("%w: %w", ErrFrameworkDeleteFailed, err)
 	}
+	if err := m.backup.Create(m.valheimDirectory); err != nil {
+		return fmt.Errorf("%w: %w", ErrFrameworkDeleteFailed, err)
+	}
+	if err := m.removeBepInExFiles(removeFiles); err != nil {
+		return errors.Join(err, m.restoreServerBackup())
+	}
+	if err := m.backup.Remove(); err != nil {
+		return fmt.Errorf("%w: framework removed; cleanup failed: %w", ErrFrameworkDeleteFailed, err)
+	}
+	return nil
+}
+
+// The caller owns backup creation, restoration, and cleanup.
+func (m *manager) removeBepInExFiles(removeFiles func(string) error) error {
 	files := []string{
 		filepath.Join(m.valheimDirectory, "BepInEx"),                 // core BepInEx files
 		filepath.Join(m.valheimDirectory, "doorstop_libs"),           // dynamic libraries
@@ -185,19 +206,21 @@ func (m *manager) RemoveBepInEx() error {
 		filepath.Join(m.valheimDirectory, "CHANGELOG.md"),            // BepInEx markdown change log
 		filepath.Join(m.valheimDirectory, "changelog.txt"),           // BepInEx plain text change log
 	}
-	if err := m.backup.Create(m.valheimDirectory); err != nil {
-		return fmt.Errorf("%w: %w", ErrFrameworkDeleteFailed, err)
-	}
-
 	for _, f := range files {
-		err := os.RemoveAll(f)
+		err := removeFiles(f)
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			m.backup.Restore(m.valheimDirectory)
-			return ErrFrameworkDeleteFailed
+			return fmt.Errorf("%w: remove %q: %w", ErrFrameworkDeleteFailed, f, err)
 		}
 	}
-	m.backup.Remove()
 	return nil
+}
+
+func (m *manager) restoreServerBackup() error {
+	err := m.backup.Restore(m.valheimDirectory)
+	if path := m.backup.Path(); err != nil && path != nil {
+		return fmt.Errorf("%w; backup retained at %q", err, *path)
+	}
+	return err
 }
 
 func (m *manager) moveBepInExFiles() error {

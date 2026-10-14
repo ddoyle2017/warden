@@ -20,7 +20,8 @@ type Backup interface {
 	// any previous backup.
 	Create(source string) error
 
-	// Removes the current backup directory + files
+	// Consumes the active backup before deleting its files. Cleanup failures
+	// report leftovers, not a retryable snapshot.
 	Remove() error
 
 	// Restores a complete copy before consuming the backup. Failures before
@@ -260,13 +261,18 @@ func directoryContains(parent, child string) (bool, error) {
 }
 
 func (b *backup) Remove() error {
+	return b.remove(os.RemoveAll)
+}
+
+func (b *backup) remove(removeAll func(string) error) error {
 	if b.location == nil {
 		return ErrBackupMissing
 	}
-	if err := os.RemoveAll(*b.location); err != nil {
-		return ErrBackupDeleteFailed
-	}
+	snapshot := *b.location
 	b.location = nil
+	if err := removeAll(snapshot); err != nil {
+		return fmt.Errorf("%w: remove consumed backup %q: %w", ErrBackupDeleteFailed, snapshot, err)
+	}
 	return nil
 }
 

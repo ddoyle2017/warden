@@ -44,10 +44,12 @@ func TestUpdateBepInExPluginStaging(t *testing.T) {
 	assertPluginDirectoryModes(t, control, map[string]os.FileMode{"moved": 0o775})
 
 	tests := map[string]struct {
-		missingPlugins bool
-		emptyPlugins   bool
-		invalidArchive bool
-		expected       error
+		missingPlugins    bool
+		emptyPlugins      bool
+		downloadFailure   bool
+		invalidArchive    bool
+		incompleteArchive bool
+		expected          error
 	}{
 		"given installed plugins, when updating, then retain their bytes and modes alongside bundled plugins": {},
 		"given an empty plugins directory, when updating, then install bundled plugins": {
@@ -56,8 +58,14 @@ func TestUpdateBepInExPluginStaging(t *testing.T) {
 		"given no plugins directory, when staging fails, then leave the server and complete backup intact": {
 			missingPlugins: true, expected: os.ErrNotExist,
 		},
-		"given an invalid archive, when framework restoration runs, then retain the independent plugin snapshot": {
+		"given a download failure after removal, when updating, then restore the original server": {
+			downloadFailure: true, expected: api.ErrHTTPClient,
+		},
+		"given an invalid archive, when updating, then restore the original server and retain the plugin snapshot": {
 			invalidArchive: true, expected: file.ErrZipReadFailed,
+		},
+		"given an archive without the framework wrapper, when installation fails, then restore the original server": {
+			incompleteArchive: true, expected: file.ErrFrameworkInstallFailed,
 		},
 	}
 	for name, tt := range tests {
@@ -66,7 +74,12 @@ func TestUpdateBepInExPluginStaging(t *testing.T) {
 			server := filepath.Join(parent, "server")
 			th := helper.NewHelper(t, helper.WithValheimFolder(server))
 			t.Setenv("TMPDIR", backups)
-			files := map[string]string{"server-data": "unrelated bytes", "BepInEx/core/old": "old framework"}
+			files := map[string]string{
+				"server-data":               "unrelated bytes",
+				"BepInEx/core/old":          "old framework",
+				"BepInEx/config/custom.cfg": "user configuration",
+				"doorstop_config.ini":       "old loader configuration",
+			}
 			plugins := map[string]string{"a-plugin": "plugin bytes", "nested/deeper/config": "plugin configuration"}
 			directoryModes := map[string]os.FileMode{"nested": 0o775, "nested/deeper": 0o775, "empty": 0o775}
 			if tt.emptyPlugins {
@@ -124,8 +137,34 @@ func TestUpdateBepInExPluginStaging(t *testing.T) {
 				assertPluginFiles(t, th, stages[0], plugins)
 				assertPluginDirectoryModes(t, stages[0], map[string]os.FileMode{".": 0o700})
 				assertPluginDirectoryModes(t, stages[0], directoryModes)
+				if _, err := os.Stat(filepath.Join(server, "BepInEx")); !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("download did not follow framework removal: %v", err)
+				}
+				snapshots, err := filepath.Glob(filepath.Join(backups, "warden-backup*"))
+				if err != nil || len(snapshots) != 1 {
+					t.Fatalf("expected the original server snapshot during replacement: %v, %v", snapshots, err)
+				}
+				assertPluginFiles(t, th, snapshots[0], files)
+				if tt.downloadFailure {
+					return nil, http.ErrContentLength
+				}
 				if tt.invalidArchive {
 					return &http.Response{Body: io.NopCloser(strings.NewReader("invalid archive"))}, nil
+				}
+				if tt.incompleteArchive {
+					var archive bytes.Buffer
+					writer := zip.NewWriter(&archive)
+					entry, err := writer.Create("replacement-only")
+					if err != nil {
+						t.Fatal(err)
+					}
+					if _, err := io.WriteString(entry, "incomplete replacement"); err != nil {
+						t.Fatal(err)
+					}
+					if err := writer.Close(); err != nil {
+						t.Fatal(err)
+					}
+					return &http.Response{Body: io.NopCloser(bytes.NewReader(archive.Bytes()))}, nil
 				}
 				archive, err := os.ReadFile(filepath.Join(th.GetDataDirectory(), helper.TestBepInExFullName+file.ZipFileExtension))
 				if err != nil {
@@ -175,17 +214,21 @@ func TestUpdateBepInExPluginStaging(t *testing.T) {
 			if requests != 1 {
 				t.Errorf("expected one fixture download, got %d", requests)
 			}
+			if entries, err := os.ReadDir(backups); err != nil || len(entries) != 0 {
+				t.Errorf("completed update or rollback orphaned server backups: %v, %v", entries, err)
+			}
 			pluginRoot := filepath.Join(server, "BepInEx", "plugins")
-			if tt.invalidArchive {
+			if tt.expected != nil {
 				if len(stages) != 1 {
 					t.Fatalf("failed update lost its plugin snapshot: %v", stages)
 				}
 				if !strings.Contains(err.Error(), stages[0]) {
 					t.Errorf("update hid the plugin recovery path: %v", err)
 				}
-				if _, err := os.Stat(filepath.Join(server, helper.TestBepInExFullName+file.ZipFileExtension)); !errors.Is(err, os.ErrNotExist) {
-					t.Errorf("framework restoration left the failed archive: %v", err)
+				if errors.Is(err, file.ErrBackupMissing) {
+					t.Errorf("nested framework work consumed the update backup: %v", err)
 				}
+				assertPluginFiles(t, th, server, files)
 				pluginRoot = stages[0]
 			} else {
 				if len(stages) != 0 {
@@ -214,10 +257,20 @@ func TestUpdateBepInExPartialPluginTransfer(t *testing.T) {
 	parent := t.TempDir()
 	server := filepath.Join(parent, "server")
 	th := helper.NewHelper(t, helper.WithValheimFolder(server))
-	t.Setenv("TMPDIR", t.TempDir())
+	backups := t.TempDir()
+	t.Setenv("TMPDIR", backups)
 	plugins := map[string]string{"a-plugin": "first plugin", "z-plugin/original": "last plugin"}
+	files := map[string]string{
+		"BepInEx/core/runtime":      "old framework",
+		"BepInEx/config/custom.cfg": "user configuration",
+		"doorstop_config.ini":       "old loader configuration",
+		"server-data":               "unrelated bytes",
+	}
 	for name, contents := range plugins {
-		path := filepath.Join(server, "BepInEx", "plugins", name)
+		files[filepath.Join("BepInEx", "plugins", name)] = contents
+	}
+	for name, contents := range files {
+		path := filepath.Join(server, name)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -264,9 +317,10 @@ func TestUpdateBepInExPartialPluginTransfer(t *testing.T) {
 		t.Errorf("update error omits the plugin recovery path: %v", err)
 	}
 	assertPluginFiles(t, th, stages[0], plugins)
-	assertPluginFiles(t, th, filepath.Join(server, "BepInEx", "plugins"), map[string]string{
-		"a-plugin": "first plugin", "z-plugin/bundled": "new bundled plugin",
-	})
+	assertPluginFiles(t, th, server, files)
+	if entries, err := os.ReadDir(backups); err != nil || len(entries) != 0 {
+		t.Errorf("rollback orphaned server backups: %v, %v", entries, err)
+	}
 }
 
 func assertPluginFiles(t *testing.T, th helper.Helper, root string, want map[string]string) {
