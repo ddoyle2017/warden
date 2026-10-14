@@ -16,10 +16,15 @@ import (
 
 func TestInstallBepInEx_Happy(t *testing.T) {
 	th := helper.NewHelper(t)
+	t.Setenv("TMPDIR", t.TempDir())
+	sentinel := filepath.Join(th.GetValheimDirectory(), "server-data")
+	if err := os.WriteFile(sentinel, []byte("unrelated server bytes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	archive, err := os.Open(filepath.Join(th.GetDataDirectory(), helper.TestBepInExFullName+file.ZipFileExtension))
 	if err != nil {
-		t.Errorf("unexpected error reading BepInEx zip file, received err: %+v", err)
+		t.Fatalf("unexpected error reading BepInEx zip file, received err: %+v", err)
 	}
 	client := mock.HTTPClient{
 		GetFunc: func(_ string) (*http.Response, error) {
@@ -33,10 +38,16 @@ func TestInstallBepInEx_Happy(t *testing.T) {
 
 	path, err := m.InstallBepInEx(helper.TestDownloadURL, helper.TestBepInExFullName)
 	if err != nil {
-		t.Errorf("expected a nil error, received: %+v", err)
+		t.Fatalf("expected a nil error, received: %+v", err)
 	}
 	if path != th.GetValheimDirectory() {
-		t.Errorf("expected path: %s, received: %s", th.GetValheimDirectory(), path)
+		t.Fatalf("expected path: %s, received: %s", th.GetValheimDirectory(), path)
+	}
+	if data, err := os.ReadFile(filepath.Join(path, "BepInEx", "core", "BepInEx.dll")); err != nil || len(data) == 0 {
+		t.Errorf("framework files were not installed: %v", err)
+	}
+	if data, err := os.ReadFile(sentinel); err != nil || string(data) != "unrelated server bytes" {
+		t.Errorf("installation changed unrelated files: %q, %v", data, err)
 	}
 
 	t.Cleanup(func() {

@@ -60,12 +60,25 @@ A negative answer returns nil, and exhausted input can also return nil without
 a mutation. Callers must not interpret every nil error as proof that an
 installation, update, or removal occurred.
 
-The file manager creates temporary backups and attempts restoration on several
-failure paths. Its backup object tracks a single location, and framework
-updates invoke nested operations that also use backups. Some backup, restore,
-and cleanup errors are currently ignored. Consequently, the presence of backup
-code does not establish successful rollback or preservation of the caller's
-original snapshot.
+The file manager makes a backup available for restoration only after the
+complete copy succeeds. After a failed copy, it attempts to remove the temporary
+directory and returns any cleanup error alongside the creation error. A failed
+attempt leaves any previous valid snapshot active. Mod and framework operations
+stop if a required backup cannot be created rather than continuing with an
+incomplete snapshot.
+
+An empty source directory is valid for a backup; a missing source is an error.
+Mod installation and removal of all mods create a missing plugins directory
+before taking a backup. Removing an absent mod remains a no-op.
+
+Restoration still removes the destination before moving backed-up files, and
+those moves do not support cross-filesystem transfer. Framework updates still
+reuse one backup object across nested operations, so a later successful backup
+can replace the snapshot needed by the outer update. Some restoration and
+post-operation cleanup errors are still ignored. Framework updates also replace
+existing BepInEx configuration rather than preserving it. These limitations
+mean temporary backups do not establish successful rollback or preservation of
+the caller's original state.
 
 When changing these paths, define the observable filesystem and database state
 for success, cancellation, and each failure being handled. Verify those states,

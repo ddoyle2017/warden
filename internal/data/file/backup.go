@@ -2,6 +2,7 @@ package file
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -15,7 +16,8 @@ var (
 
 // Backup provides an interface for all file backup related operations
 type Backup interface {
-	// Creates a copy of the source directory and files, then stores it as a backup
+	// Creates a complete snapshot of the source directory. A failed call retains
+	// any previous backup.
 	Create(source string) error
 
 	// Removes the current backup directory + files
@@ -39,35 +41,38 @@ func NewBackup() Backup {
 func (b *backup) Create(source string) error {
 	tmp, err := os.MkdirTemp("", "warden-backup")
 	if err != nil {
-		return ErrBackupCreateFailed
+		return fmt.Errorf("%w: %w", ErrBackupCreateFailed, err)
 	}
-	b.location = &tmp
 
-	return filepath.Walk(source, func(path string, info os.FileInfo, err error) error {
+	err = filepath.Walk(source, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			return ErrBackupCreateFailed
+			return err
 		}
 
-		// Create the destination path
 		relPath, err := filepath.Rel(source, path)
 		if err != nil {
-			return ErrBackupCreateFailed
+			return err
 		}
 		dstPath := filepath.Join(tmp, relPath)
 
 		if info.IsDir() {
-			// Create the directory in the destination path
-			if err := os.MkdirAll(dstPath, info.Mode()); err != nil {
-				return ErrBackupCreateFailed
-			}
-		} else {
-			// Copy the file to the destination path
-			if err := copyFile(path, dstPath); err != nil {
-				return ErrBackupCreateFailed
-			}
+			return os.MkdirAll(dstPath, info.Mode())
+		}
+		if err := copyFile(path, dstPath); err != nil {
+			return fmt.Errorf("copy %q: %w", path, err)
 		}
 		return nil
 	})
+	if err != nil {
+		err = fmt.Errorf("%w: %w", ErrBackupCreateFailed, err)
+		if cleanupErr := os.RemoveAll(tmp); cleanupErr != nil {
+			return errors.Join(err, fmt.Errorf("%w at %q: %w", ErrBackupDeleteFailed, tmp, cleanupErr))
+		}
+		return err
+	}
+
+	b.location = &tmp
+	return nil
 }
 
 func (b *backup) Restore(destination string) error {

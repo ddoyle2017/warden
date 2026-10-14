@@ -2,6 +2,7 @@ package file
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"warden/internal/api"
@@ -33,7 +34,12 @@ func (m *manager) InstallMod(url, fullName string) (string, error) {
 	}
 	defer resp.Body.Close()
 
-	m.backup.Create(m.modDirectory)
+	if err := os.MkdirAll(m.modDirectory, os.ModePerm); err != nil {
+		return "", fmt.Errorf("%w: %w", ErrDirectoryCreateFailed, err)
+	}
+	if err := m.backup.Create(m.modDirectory); err != nil {
+		return "", err
+	}
 
 	// Create the zip archive
 	zipPath := filepath.Join(m.modDirectory, fullName+".zip")
@@ -61,7 +67,14 @@ func (m *manager) InstallMod(url, fullName string) (string, error) {
 func (m *manager) RemoveMod(fullName string) error {
 	modPath := filepath.Join(m.modDirectory, fullName)
 
-	m.backup.Create(m.modDirectory)
+	if _, err := os.Lstat(modPath); errors.Is(err, os.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("%w: %w", ErrModDeleteFailed, err)
+	}
+	if err := m.backup.Create(m.modDirectory); err != nil {
+		return fmt.Errorf("%w: %w", ErrModDeleteFailed, err)
+	}
 	err := os.RemoveAll(modPath)
 
 	// If error is thrown because the file does not exist, we ignore. For
@@ -75,7 +88,12 @@ func (m *manager) RemoveMod(fullName string) error {
 }
 
 func (m *manager) RemoveAllMods() error {
-	m.backup.Create(m.modDirectory)
+	if err := os.MkdirAll(m.modDirectory, os.ModePerm); err != nil {
+		return fmt.Errorf("%w: %w", ErrDirectoryCreateFailed, err)
+	}
+	if err := m.backup.Create(m.modDirectory); err != nil {
+		return fmt.Errorf("%w: %w", ErrDeleteAllModsFailed, err)
+	}
 
 	// Delete the parent folder for all mods and everything inside
 	err := os.RemoveAll(m.modDirectory)

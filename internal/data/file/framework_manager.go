@@ -2,6 +2,7 @@ package file
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"warden/internal/api"
@@ -28,7 +29,9 @@ func (m *manager) InstallBepInEx(url, fullName string) (string, error) {
 	}
 	defer resp.Body.Close()
 
-	m.backup.Create(m.valheimDirectory)
+	if err := m.backup.Create(m.valheimDirectory); err != nil {
+		return "", fmt.Errorf("%w: %w", ErrFrameworkInstallFailed, err)
+	}
 
 	// Create the zip archive
 	zipPath := filepath.Join(m.valheimDirectory, fullName+".zip")
@@ -59,7 +62,9 @@ func (m *manager) InstallBepInEx(url, fullName string) (string, error) {
 }
 
 func (m *manager) UpdateBepInEx(url, fullName string) error {
-	m.backup.Create(m.valheimDirectory)
+	if err := m.backup.Create(m.valheimDirectory); err != nil {
+		return fmt.Errorf("%w: %w", ErrFrameworkUpdateFailed, err)
+	}
 
 	// Move BepInEx mods to /tmp
 	tmp, err := os.MkdirTemp("", "warden")
@@ -107,7 +112,9 @@ func (m *manager) RemoveBepInEx() error {
 		filepath.Join(m.valheimDirectory, "CHANGELOG.md"),            // BepInEx markdown change log
 		filepath.Join(m.valheimDirectory, "changelog.txt"),           // BepInEx plain text change log
 	}
-	m.backup.Create(m.valheimDirectory)
+	if err := m.backup.Create(m.valheimDirectory); err != nil {
+		return fmt.Errorf("%w: %w", ErrFrameworkDeleteFailed, err)
+	}
 
 	for _, f := range files {
 		err := os.RemoveAll(f)
