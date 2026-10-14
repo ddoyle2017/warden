@@ -61,6 +61,21 @@ removal, the update attempts to delete that obsolete record. Failure to write
 replacement metadata after successful file installation does not trigger that
 cleanup.
 
+## Archive extraction
+
+Mod and framework extraction creates missing parent directories, including
+when an archive omits directory entries. It rejects absolute paths, relative
+paths escaping the destination, and existing symlinks that resolve outside the
+destination or cannot be resolved. A symlinked destination is resolved first;
+symlinks within it are allowed only when their targets remain inside that
+resolved directory.
+
+Extraction stops and returns an error on path, directory creation, entry read,
+checksum, file write, or close failures. Earlier entries and partially written
+files can remain; extraction itself does not roll them back. The path checks
+assume the destination tree is not modified concurrently and are not a
+filesystem sandbox.
+
 ## Confirmations and backups
 
 Confirmation inputs are case-sensitive. Ordinary prompts accept `Y` or `n`;

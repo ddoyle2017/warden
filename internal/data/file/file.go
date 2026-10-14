@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const (
@@ -25,59 +26,113 @@ var (
 	ErrZipReadFailed         = errors.New("unable to read zip archive")
 )
 
-// Unzip is a helper function that takes a path to a zip file (source) and extracts all of its
-// contents into a destination folder.
-func Unzip(source, destination string) error {
-	// Create the destination directory for all files
-	err := os.MkdirAll(destination, os.ModePerm)
+// Unzip extracts an archive within the resolved destination directory.
+// Extraction can leave partial files on error; the destination tree must not
+// be changed concurrently.
+func Unzip(source, destination string) (err error) {
+	if err := os.MkdirAll(destination, os.ModePerm); err != nil {
+		return fmt.Errorf("%w: %w", ErrDirectoryCreateFailed, err)
+	}
+	root, err := filepath.EvalSymlinks(destination)
 	if err != nil {
-		return ErrDirectoryCreateFailed
+		return fmt.Errorf("%w: %w", ErrDirectoryOpenFailed, err)
+	}
+	root, err = filepath.Abs(root)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrDirectoryOpenFailed, err)
 	}
 
-	// Open zip archive for reading
 	archive, err := zip.OpenReader(source)
-	if err != nil {
-		return ErrZipReadFailed
-	}
-	defer archive.Close()
-
-	// Loop through each file inside of the zip
-	for _, f := range archive.File {
-		filePath := filepath.Join(destination, f.Name)
-
-		// Check if the file is a directory and create one if it is
-		if f.FileInfo().IsDir() {
-			if err := os.MkdirAll(filePath, os.ModePerm); err != nil {
-				return ErrDirectoryCreateFailed
+	// OpenReader can return an archive alongside zip.ErrInsecurePath.
+	if archive != nil {
+		defer func() {
+			if closeErr := archive.Close(); closeErr != nil {
+				err = errors.Join(err, fmt.Errorf("close zip archive %q: %w", source, closeErr))
 			}
+		}()
+	}
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrZipReadFailed, err)
+	}
+
+	for _, f := range archive.File {
+		filePath, err := extractionPath(root, f.Name)
+		if err != nil {
+			return err
+		}
+
+		dir := filepath.Dir(filePath)
+		if f.FileInfo().IsDir() {
+			dir = filePath
+		}
+		if err := os.MkdirAll(dir, os.ModePerm); err != nil {
+			return fmt.Errorf("%w: %w", ErrDirectoryCreateFailed, err)
+		}
+		if f.FileInfo().IsDir() {
 			continue
 		}
 
-		// Open the file in the zip and copy its contents to the destination file
 		srcFile, err := f.Open()
 		if err != nil {
-			return ErrFileOpenFailed
+			return fmt.Errorf("%w: zip entry %q: %w", ErrFileOpenFailed, f.Name, err)
 		}
-		defer srcFile.Close()
-
-		createFile(filePath, srcFile)
+		writeErr := createFile(filePath, srcFile)
+		closeErr := srcFile.Close()
+		if err := errors.Join(writeErr, closeErr); err != nil {
+			return fmt.Errorf("extract zip entry %q: %w", f.Name, err)
+		}
 	}
 	return nil
 }
 
-// createFile is a helper function that creates a new file and writes data from io.Reader into it
-func createFile(filePath string, fileSource io.Reader) error {
-	// Create the empty file
+func extractionPath(root, name string) (string, error) {
+	name = filepath.FromSlash(name)
+	if !filepath.IsLocal(name) {
+		return "", fmt.Errorf("%w: %q", zip.ErrInsecurePath, name)
+	}
+
+	path := root
+	for _, part := range strings.Split(filepath.Clean(name), string(filepath.Separator)) {
+		path = filepath.Join(path, part)
+		info, err := os.Lstat(path)
+		if errors.Is(err, os.ErrNotExist) {
+			break
+		}
+		if err != nil {
+			return "", fmt.Errorf("inspect zip path %q: %w", name, err)
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			resolved, err := filepath.EvalSymlinks(path)
+			if err != nil {
+				return "", fmt.Errorf("%w: resolve %q: %w", zip.ErrInsecurePath, name, err)
+			}
+			relative, err := filepath.Rel(root, resolved)
+			if err != nil {
+				return "", fmt.Errorf("%w: resolve %q: %w", zip.ErrInsecurePath, name, err)
+			}
+			if !filepath.IsLocal(relative) {
+				return "", fmt.Errorf("%w: %q", zip.ErrInsecurePath, name)
+			}
+		} else if !info.IsDir() {
+			break
+		}
+	}
+	return filepath.Join(root, name), nil
+}
+
+func createFile(filePath string, fileSource io.Reader) (err error) {
 	out, err := os.Create(filePath)
 	if err != nil {
-		return ErrFileCreateFailed
+		return fmt.Errorf("%w: %w", ErrFileCreateFailed, err)
 	}
-	defer out.Close()
+	defer func() {
+		if closeErr := out.Close(); closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("%w: close %q: %w", ErrFileWriteFailed, filePath, closeErr))
+		}
+	}()
 
-	// Write the body to file
-	_, err = io.Copy(out, fileSource)
-	if err != nil {
-		return ErrFileWriteFailed
+	if _, err := io.Copy(out, fileSource); err != nil {
+		return fmt.Errorf("%w: %w", ErrFileWriteFailed, err)
 	}
 	return nil
 }
