@@ -86,7 +86,7 @@ func createFile(filePath string, fileSource io.Reader) error {
 func moveFiles(source, destination string) error {
 	entries, err := os.ReadDir(source)
 	if err != nil {
-		return ErrDirectoryOpenFailed
+		return fmt.Errorf("%w: %w", ErrDirectoryOpenFailed, err)
 	}
 
 	for _, e := range entries {
@@ -94,7 +94,7 @@ func moveFiles(source, destination string) error {
 		dest := filepath.Join(destination, e.Name())
 
 		if err := os.Rename(src, dest); err != nil {
-			return ErrFileRenameFailed
+			return fmt.Errorf("%w: %w", ErrFileRenameFailed, err)
 		}
 	}
 	return nil

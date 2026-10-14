@@ -66,43 +66,88 @@ func (m *manager) InstallBepInEx(url, fullName string) (string, error) {
 }
 
 func (m *manager) UpdateBepInEx(url, fullName string) error {
+	return m.updateBepInEx(url, fullName, copyDirectory, os.RemoveAll)
+}
+
+func (m *manager) updateBepInEx(url, fullName string, copyPlugins func(string, string) error, removeStaging func(string) error) error {
 	if err := preflightRestore(m.valheimDirectory); err != nil {
 		return fmt.Errorf("%w: %w", ErrFrameworkUpdateFailed, err)
+	}
+	server, err := filepath.Abs(m.valheimDirectory)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrFrameworkUpdateFailed, err)
+	}
+	if server == filepath.Dir(server) {
+		return fmt.Errorf("%w: cannot stage plugins outside filesystem root %q", ErrFrameworkUpdateFailed, server)
 	}
 	if err := m.backup.Create(m.valheimDirectory); err != nil {
 		return fmt.Errorf("%w: %w", ErrFrameworkUpdateFailed, err)
 	}
-
-	// Move BepInEx mods to /tmp
-	tmp, err := os.MkdirTemp("", "warden")
+	server, err = filepath.EvalSymlinks(server)
 	if err != nil {
-		m.backup.Restore(m.valheimDirectory)
-		return ErrFrameworkUpdateFailed
+		return fmt.Errorf("%w: %w; backup retained at %q", ErrFrameworkUpdateFailed, err, *m.backup.Path())
 	}
-	defer os.RemoveAll(tmp)
-
-	if err := moveFiles(m.modDirectory, tmp); err != nil {
-		m.backup.Restore(m.valheimDirectory)
-		return ErrFrameworkUpdateFailed
+	// A sibling survives both framework removal and whole-server restoration.
+	tmp, err := os.MkdirTemp(filepath.Dir(server), ".warden-plugins-")
+	if err != nil {
+		return fmt.Errorf("%w: stage plugins: %w; backup retained at %q", ErrFrameworkUpdateFailed, err, *m.backup.Path())
 	}
 
-	// Update BepInEx
+	if err := copyPlugins(m.modDirectory, tmp); err != nil {
+		cause := fmt.Errorf("%w: stage plugins: %w; backup retained at %q", ErrFrameworkUpdateFailed, err, *m.backup.Path())
+		if cleanupErr := removeStaging(tmp); cleanupErr != nil {
+			return errors.Join(cause, fmt.Errorf("%w: remove plugin staging %q: %w", ErrBackupDeleteFailed, tmp, cleanupErr))
+		}
+		return cause
+	}
+
+	fail := func(cause error) error {
+		restoreErr := m.backup.Restore(m.valheimDirectory)
+		return fmt.Errorf("%w: %w; plugin snapshot retained at %q",
+			ErrFrameworkUpdateFailed, errors.Join(cause, restoreErr), tmp)
+	}
 	if err := m.RemoveBepInEx(); err != nil {
-		m.backup.Restore(m.valheimDirectory)
-		return ErrFrameworkUpdateFailed
+		return fail(err)
 	}
 	if _, err := m.InstallBepInEx(url, fullName); err != nil {
-		m.backup.Restore(m.valheimDirectory)
-		return ErrFrameworkUpdateFailed
+		return fail(err)
+	}
+	transferred, cleanupErr := copyStagedPlugins(tmp, m.modDirectory, copyPlugins, removeStaging)
+	if !transferred {
+		return fail(cleanupErr)
 	}
 
-	// Move mods back to BepInEx mods folder
-	if err := moveFiles(tmp, m.modDirectory); err != nil {
-		m.backup.Restore(m.valheimDirectory)
-		return ErrFrameworkUpdateFailed
+	if err := removeStaging(tmp); err != nil {
+		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("%w: remove plugin snapshot %q: %w", ErrBackupDeleteFailed, tmp, err))
 	}
-	m.backup.Remove()
+	if path := m.backup.Path(); path != nil {
+		if err := m.backup.Remove(); err != nil {
+			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("remove backup %q: %w", *path, err))
+		}
+	}
+	if cleanupErr != nil {
+		return fmt.Errorf("%w: framework and plugins installed; cleanup failed: %w", ErrFrameworkUpdateFailed, cleanupErr)
+	}
 	return nil
+}
+
+func copyStagedPlugins(source, destination string, copyPlugins func(string, string) error, removeStaging func(string) error) (transferred bool, err error) {
+	local, err := os.MkdirTemp(destination, ".warden-plugins-")
+	if err != nil {
+		return false, fmt.Errorf("%w: prepare plugin transfer: %w", ErrDirectoryCreateFailed, err)
+	}
+	defer func() {
+		if cleanupErr := removeStaging(local); cleanupErr != nil {
+			err = errors.Join(err, fmt.Errorf("%w: remove plugin transfer %q: %w", ErrBackupDeleteFailed, local, cleanupErr))
+		}
+	}()
+	if err := copyPlugins(source, local); err != nil {
+		return false, err
+	}
+	if err := moveFiles(local, destination); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (m *manager) RemoveBepInEx() error {
