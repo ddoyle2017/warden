@@ -22,6 +22,118 @@ type frameworkBackup struct {
 func (b *frameworkBackup) Restore(destination string) error { return b.restore(destination) }
 func (b *frameworkBackup) Remove() error                    { return b.remove() }
 
+func TestUpdateBepInExPartialRemoval(t *testing.T) {
+	for name, restoreFails := range map[string]bool{
+		"given partial framework removal, when updating fails, then restore the original server without downloading":     false,
+		"given partial removal and failed restoration, when updating fails, then retain the original recovery snapshots": true,
+	} {
+		t.Run(name, func(t *testing.T) {
+			parent, backups := restoreTempDir(t), t.TempDir()
+			server := filepath.Join(parent, "server")
+			t.Setenv("TMPDIR", backups)
+			saved := map[string]string{
+				"BepInEx/core/runtime":          "original framework",
+				"BepInEx/config/user.cfg":       "user configuration",
+				"BepInEx/plugins/user":          "original plugin",
+				"BepInEx/plugins/nested/config": "plugin configuration",
+				"doorstop_libs/runtime":         "original loader",
+				"doorstop_config.ini":           "loader configuration",
+				"server-data":                   "unrelated bytes",
+			}
+			partial := map[string]string{
+				"doorstop_libs/runtime": "original loader",
+				"doorstop_config.ini":   "loader configuration",
+				"server-data":           "unrelated bytes",
+			}
+			writeRestoreTree(t, server, saved)
+			b := NewBackup().(*backup)
+			requests := 0
+			m := NewManager(&pluginHTTPClient{GetFunc: func(string) (*http.Response, error) {
+				requests++
+				return nil, errors.New("unexpected download")
+			}}, server).(*manager)
+			removeErr, restoreErr := errors.New("framework removal interrupted"), errors.New("restoration interrupted")
+			var snapshot, plugins string
+			m.backup = &frameworkBackup{
+				Backup: b, remove: b.Remove,
+				restore: func(destination string) error {
+					if destination != server || b.Path() == nil || *b.Path() != snapshot {
+						t.Fatal("update did not retain its original server snapshot for restoration")
+					}
+					assertRestoreTree(t, server, partial)
+					return b.restore(destination, restoreOperations{
+						copy: func(source, target string) error {
+							if source != snapshot {
+								t.Fatalf("restoring %q instead of the original snapshot %q", source, snapshot)
+							}
+							assertRestoreTree(t, source, saved)
+							if restoreFails {
+								return restoreErr
+							}
+							return copyDirectory(source, target)
+						},
+						rename:    os.Rename,
+						removeAll: os.RemoveAll,
+					})
+				},
+			}
+			removed := false
+			err := m.updateBepInEx("fixture", "framework", func(source, target string) error {
+				if b.Path() == nil || source != m.modDirectory || filepath.Dir(target) != parent {
+					t.Fatal("plugin staging did not follow the original server backup")
+				}
+				snapshot, plugins = *b.Path(), target
+				assertRestoreTree(t, snapshot, saved)
+				return copyDirectory(source, target)
+			}, os.RemoveAll, func(path string) error {
+				if err := os.RemoveAll(path); err != nil {
+					t.Fatal(err)
+				}
+				if path == filepath.Join(server, "BepInEx") {
+					removed = true
+					assertRestoreTree(t, server, partial)
+					return removeErr
+				}
+				return nil
+			})
+			for _, expected := range []error{ErrFrameworkUpdateFailed, ErrFrameworkDeleteFailed, removeErr} {
+				if !errors.Is(err, expected) {
+					t.Fatalf("error omits %v: %v", expected, err)
+				}
+			}
+			if !removed || requests != 0 {
+				t.Fatalf("expected partial removal without a download: removed=%t, requests=%d", removed, requests)
+			}
+			if plugins == "" || !strings.Contains(err.Error(), plugins) {
+				t.Fatalf("update error omits the independent plugin snapshot: %v", err)
+			}
+			assertRestoreTree(t, plugins, map[string]string{"user": "original plugin", "nested/config": "plugin configuration"})
+			if restoreFails {
+				if !errors.Is(err, ErrBackupRestoreFailed) || !errors.Is(err, restoreErr) {
+					t.Fatalf("restoration failure was lost: %v", err)
+				}
+				if b.Path() == nil || *b.Path() != snapshot || !strings.Contains(err.Error(), snapshot) {
+					t.Fatalf("failed restoration lost the original backup or its recovery path: %v", err)
+				}
+				assertRestoreTree(t, server, partial)
+				assertRestoreTree(t, snapshot, saved)
+				if err := b.Restore(server); err != nil {
+					t.Fatalf("retrying the original backup failed: %v", err)
+				}
+			} else if errors.Is(err, ErrBackupRestoreFailed) || errors.Is(err, ErrBackupMissing) {
+				t.Fatalf("partial removal did not restore successfully: %v", err)
+			}
+			assertRestoreTree(t, server, saved)
+			if b.Path() != nil {
+				t.Error("successful restoration did not consume its server snapshot")
+			}
+			if entries, err := os.ReadDir(backups); err != nil || len(entries) != 0 {
+				t.Errorf("restoration orphaned server backups: %v, %v", entries, err)
+			}
+		})
+	}
+}
+
 func TestUpdateBepInExRecoveryErrors(t *testing.T) {
 	for name, cleanupFailure := range map[string]bool{
 		"given failed restoration, when a download fails after removal, then report the original retryable snapshot": false,
@@ -82,7 +194,7 @@ func TestUpdateBepInExRecoveryErrors(t *testing.T) {
 				snapshot, plugins = *b.Path(), target
 				assertRestoreTree(t, snapshot, saved)
 				return copyDirectory(source, target)
-			}, os.RemoveAll)
+			}, os.RemoveAll, os.RemoveAll)
 			for _, expected := range []error{ErrFrameworkUpdateFailed, api.ErrHTTPClient, http.ErrContentLength, fault} {
 				if !errors.Is(err, expected) {
 					t.Errorf("error omits %v: %v", expected, err)
@@ -193,7 +305,7 @@ func TestFrameworkFinalizationErrors(t *testing.T) {
 						return fault
 					}
 					return os.RemoveAll(path)
-				})
+				}, os.RemoveAll)
 				want["BepInEx/plugins/user"] = "original plugin"
 			case "install":
 				path, installErr := m.InstallBepInEx("fixture", "framework")

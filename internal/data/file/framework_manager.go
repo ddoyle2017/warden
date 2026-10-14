@@ -83,10 +83,10 @@ func (m *manager) installBepInExFiles(body io.Reader, fullName string) error {
 }
 
 func (m *manager) UpdateBepInEx(url, fullName string) error {
-	return m.updateBepInEx(url, fullName, copyDirectory, os.RemoveAll)
+	return m.updateBepInEx(url, fullName, copyDirectory, os.RemoveAll, os.RemoveAll)
 }
 
-func (m *manager) updateBepInEx(url, fullName string, copyPlugins func(string, string) error, removeStaging func(string) error) error {
+func (m *manager) updateBepInEx(url, fullName string, copyPlugins func(string, string) error, removeStaging, removeFrameworkFiles func(string) error) error {
 	if err := preflightRestore(m.valheimDirectory); err != nil {
 		return fmt.Errorf("%w: %w", ErrFrameworkUpdateFailed, err)
 	}
@@ -123,7 +123,7 @@ func (m *manager) updateBepInEx(url, fullName string, copyPlugins func(string, s
 		return fmt.Errorf("%w: %w; plugin snapshot retained at %q",
 			ErrFrameworkUpdateFailed, errors.Join(cause, restoreErr), tmp)
 	}
-	if err := m.removeBepInExFiles(os.RemoveAll); err != nil {
+	if err := m.removeBepInExFiles(removeFrameworkFiles); err != nil {
 		return fail(err)
 	}
 	resp, err := m.client.Get(url)

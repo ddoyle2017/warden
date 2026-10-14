@@ -133,7 +133,7 @@ func TestUpdateBepInExCleanupFailures(t *testing.T) {
 					t.Fatalf("unexpected cleanup path %q", path)
 				}
 				return os.RemoveAll(path)
-			})
+			}, os.RemoveAll)
 			if !errors.Is(err, ErrBackupDeleteFailed) ||
 				errors.Is(err, localErr) != tt.local || errors.Is(err, snapshotErr) != tt.snapshot {
 				t.Fatalf("cleanup errors did not retain their causes: %v", err)
@@ -233,7 +233,7 @@ func TestUpdatePluginPreparationFailure(t *testing.T) {
 					return cleanupErr
 				}
 				return os.RemoveAll(path)
-			})
+			}, os.RemoveAll)
 			if !errors.Is(err, ErrFrameworkUpdateFailed) || !errors.Is(err, copyErr) {
 				t.Fatalf("expected staging failure, got %v", err)
 			}
