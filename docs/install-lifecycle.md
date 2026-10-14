@@ -117,6 +117,14 @@ destination that can be renamed. A mount point that cannot be renamed fails
 without deleting its live contents. The rename/recovery sequence is not
 crash-atomic and does not guard against concurrent filesystem changes.
 
+Framework installation, update, and removal check the restore target before
+changing live files; mod installation checks its plugins target. Run these
+operations from outside the tree they would restore. A rejected target returns
+a preflight error without downloading, creating a backup, or mutating files.
+Staged mod removal does not use general backup restoration and remains available
+from inside the plugins directory: its rollback renames the original files back.
+These checks do not guarantee that later I/O or cleanup will succeed.
+
 Framework updates still move plugins to system-temporary storage using
 rename-only transfers, so plugin staging can fail across filesystems. Updates
 also reuse one server backup object across nested operations, so a later

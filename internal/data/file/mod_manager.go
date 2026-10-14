@@ -31,6 +31,10 @@ type modManager interface {
 }
 
 func (m *manager) InstallMod(url, fullName string) (string, error) {
+	if err := preflightRestore(m.modDirectory); err != nil {
+		return "", err
+	}
+
 	// Get the data
 	resp, err := m.client.Get(url)
 	if err != nil {

@@ -465,6 +465,13 @@ func TestRestoreUnsafeDestinations(t *testing.T) {
 				t.Fatal("invalid destination changed the active backup")
 			}
 			th.VerifyBackup(th.GetValheimDirectory(), snapshot)
+			entries, err := os.ReadDir(snapshot)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(entries) != 1 || entries[0].Name() != "saved" || entries[0].IsDir() {
+				t.Errorf("invalid restoration created snapshot directories: %v", entries)
+			}
 			after, err := th.GetFileList(root)
 			if err != nil {
 				t.Fatal(err)

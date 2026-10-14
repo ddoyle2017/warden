@@ -120,14 +120,20 @@ func copyDirectory(source, destination string) error {
 	})
 }
 
-func copyFile(source, destination string) (err error) {
+func copyFile(source, destination string) error {
+	return copyFileWithDestination(source, destination, func(path string) (io.WriteCloser, error) {
+		return os.Create(path)
+	})
+}
+
+func copyFileWithDestination(source, destination string, createDestination func(string) (io.WriteCloser, error)) (err error) {
 	src, err := os.Open(source)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrFileOpenFailed, err)
 	}
 	defer src.Close()
 
-	dst, err := os.Create(destination)
+	dst, err := createDestination(destination)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrFileCreateFailed, err)
 	}
@@ -145,5 +151,5 @@ func copyFile(source, destination string) (err error) {
 	if err != nil {
 		return err
 	}
-	return os.Chmod(dst.Name(), info.Mode())
+	return os.Chmod(destination, info.Mode())
 }

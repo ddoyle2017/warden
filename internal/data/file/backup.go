@@ -41,12 +41,16 @@ func NewBackup() Backup {
 }
 
 func (b *backup) Create(source string) error {
+	return b.create(source, copyDirectory)
+}
+
+func (b *backup) create(source string, copySnapshot func(string, string) error) error {
 	tmp, err := os.MkdirTemp("", "warden-backup")
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrBackupCreateFailed, err)
 	}
 
-	if err := copyDirectory(source, tmp); err != nil {
+	if err := copySnapshot(source, tmp); err != nil {
 		err = fmt.Errorf("%w: %w", ErrBackupCreateFailed, err)
 		if cleanupErr := b.removeIncomplete(tmp); cleanupErr != nil {
 			return errors.Join(err, fmt.Errorf("%w at %q: %w", ErrBackupDeleteFailed, tmp, cleanupErr))
@@ -144,6 +148,38 @@ func (b *backup) restore(destination string, ops restoreOperations) (err error) 
 }
 
 func restoreDestination(snapshot, destination string) (string, error) {
+	destination, err := restoreTarget(destination)
+	if err != nil {
+		return "", err
+	}
+	source, err := filepath.Abs(snapshot)
+	if err != nil {
+		return "", err
+	}
+	source, err = filepath.EvalSymlinks(source)
+	if err != nil {
+		return "", err
+	}
+	for _, paths := range [][2]string{{source, destination}, {destination, source}} {
+		overlap, err := directoryContains(paths[0], paths[1])
+		if err != nil {
+			return "", err
+		}
+		if overlap {
+			return "", fmt.Errorf("restore destination %q overlaps backup %q", destination, source)
+		}
+	}
+	return destination, nil
+}
+
+func preflightRestore(destination string) error {
+	if _, err := restoreTarget(destination); err != nil {
+		return fmt.Errorf("%w: restore preflight: %w", ErrBackupRestoreFailed, err)
+	}
+	return nil
+}
+
+func restoreTarget(destination string) (string, error) {
 	clean := filepath.Clean(destination)
 	if destination == "" || clean == "." || clean == ".." {
 		return "", fmt.Errorf("unsafe restore destination %q", destination)
@@ -180,23 +216,6 @@ func restoreDestination(snapshot, destination string) (string, error) {
 	destination = filepath.Join(resolved, suffix)
 	if destination == filepath.Dir(destination) {
 		return "", fmt.Errorf("cannot restore over filesystem root %q", destination)
-	}
-	source, err := filepath.Abs(snapshot)
-	if err != nil {
-		return "", err
-	}
-	source, err = filepath.EvalSymlinks(source)
-	if err != nil {
-		return "", err
-	}
-	for _, paths := range [][2]string{{source, destination}, {destination, source}} {
-		overlap, err := directoryContains(paths[0], paths[1])
-		if err != nil {
-			return "", err
-		}
-		if overlap {
-			return "", fmt.Errorf("restore destination %q overlaps backup %q", destination, source)
-		}
 	}
 	cwd, err := os.Getwd()
 	if err != nil {

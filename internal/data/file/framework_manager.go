@@ -22,6 +22,10 @@ type frameworkManager interface {
 }
 
 func (m *manager) InstallBepInEx(url, fullName string) (string, error) {
+	if err := preflightRestore(m.valheimDirectory); err != nil {
+		return "", fmt.Errorf("%w: %w", ErrFrameworkInstallFailed, err)
+	}
+
 	// Get the data
 	resp, err := m.client.Get(url)
 	if err != nil {
@@ -62,6 +66,9 @@ func (m *manager) InstallBepInEx(url, fullName string) (string, error) {
 }
 
 func (m *manager) UpdateBepInEx(url, fullName string) error {
+	if err := preflightRestore(m.valheimDirectory); err != nil {
+		return fmt.Errorf("%w: %w", ErrFrameworkUpdateFailed, err)
+	}
 	if err := m.backup.Create(m.valheimDirectory); err != nil {
 		return fmt.Errorf("%w: %w", ErrFrameworkUpdateFailed, err)
 	}
@@ -99,6 +106,9 @@ func (m *manager) UpdateBepInEx(url, fullName string) error {
 }
 
 func (m *manager) RemoveBepInEx() error {
+	if err := preflightRestore(m.valheimDirectory); err != nil {
+		return fmt.Errorf("%w: %w", ErrFrameworkDeleteFailed, err)
+	}
 	files := []string{
 		filepath.Join(m.valheimDirectory, "BepInEx"),                 // core BepInEx files
 		filepath.Join(m.valheimDirectory, "doorstop_libs"),           // dynamic libraries
