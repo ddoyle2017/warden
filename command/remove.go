@@ -75,7 +75,10 @@ func newRemoveBepInEx(fs service.Framework) *cobra.Command {
 
 func parseRemoveError(err error) {
 	var committedModCleanup *file.ModRemovalCleanupError
-	if errors.As(err, &committedModCleanup) {
+	var completed *file.FrameworkMutationCleanupError
+	if errors.As(err, &completed) {
+		fmt.Printf("... %v ...\n", err)
+	} else if errors.As(err, &committedModCleanup) {
 		fmt.Printf("... warning: %v ...\n", committedModCleanup)
 	} else if errors.Is(err, service.ErrUnableToRemoveMod) {
 		fmt.Printf("... %v ...\n", err)

@@ -56,7 +56,7 @@ func (m *manager) InstallBepInEx(url, fullName string) (string, error) {
 		return "", errors.Join(err, m.restoreServerBackup())
 	}
 	if err := m.backup.Remove(); err != nil {
-		return "", fmt.Errorf("%w: framework installed; cleanup failed: %w", ErrFrameworkInstallFailed, err)
+		return "", fmt.Errorf("%w: %w", ErrFrameworkInstallFailed, &FrameworkMutationCleanupError{Err: err})
 	}
 	return m.valheimDirectory, nil
 }
@@ -186,7 +186,7 @@ func (m *manager) removeBepInEx(removeFiles func(string) error) error {
 		return errors.Join(err, m.restoreServerBackup())
 	}
 	if err := m.backup.Remove(); err != nil {
-		return fmt.Errorf("%w: framework removed; cleanup failed: %w", ErrFrameworkDeleteFailed, err)
+		return fmt.Errorf("%w: %w", ErrFrameworkDeleteFailed, &FrameworkMutationCleanupError{Err: err})
 	}
 	return nil
 }

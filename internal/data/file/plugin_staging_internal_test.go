@@ -82,14 +82,18 @@ func TestUpdateBepInExCleanupFailures(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for name, tt := range map[string]struct{ local, snapshot bool }{
+	for name, tt := range map[string]struct{ local, snapshot, partialSnapshot bool }{
 		"given local cleanup fails, when publication completes, then retain installed files without rollback": {local: true},
 		"given snapshot cleanup fails, when publication completes, then retain its complete recovery copy":    {snapshot: true},
 		"given both cleanups fail, when publication completes, then report both causes and retained paths":    {local: true, snapshot: true},
+		"given partial snapshot cleanup, when publication completes, then retain installed files and report remaining artifacts": {
+			snapshot: true, partialSnapshot: true,
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			server := filepath.Join(restoreTempDir(t), "server")
-			t.Setenv("TMPDIR", t.TempDir())
+			backups := t.TempDir()
+			t.Setenv("TMPDIR", backups)
 			plugins := map[string]string{"a-plugin": "saved plugin", "nested/config": "saved configuration"}
 			writeRestoreTree(t, server, map[string]string{
 				"BepInEx/plugins/a-plugin":      plugins["a-plugin"],
@@ -127,6 +131,11 @@ func TestUpdateBepInExCleanupFailures(t *testing.T) {
 					}
 				case snapshot:
 					if tt.snapshot {
+						if tt.partialSnapshot {
+							if err := os.Remove(filepath.Join(path, "a-plugin")); err != nil {
+								t.Fatal(err)
+							}
+						}
 						return snapshotErr
 					}
 				default:
@@ -169,7 +178,17 @@ func TestUpdateBepInExCleanupFailures(t *testing.T) {
 				assertRestoreTree(t, local, map[string]string{})
 			}
 			if tt.snapshot {
-				assertRestoreTree(t, snapshot, plugins)
+				leftovers := plugins
+				if tt.partialSnapshot {
+					leftovers = map[string]string{"nested/config": plugins["nested/config"]}
+				}
+				assertRestoreTree(t, snapshot, leftovers)
+			}
+			if backup.Path() != nil {
+				t.Error("completed update retained an active server backup")
+			}
+			if entries, err := os.ReadDir(backups); err != nil || len(entries) != 0 {
+				t.Errorf("completed update orphaned server backups: %v, %v", entries, err)
 			}
 		})
 	}

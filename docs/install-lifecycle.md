@@ -155,12 +155,14 @@ plugin replacement is complete, the update finalizes its server snapshot even
 if plugin cleanup fails. Cleanup errors identify leftover artifacts without
 advertising consumed server snapshots as valid recovery sources.
 
-Completed framework updates with cleanup failures return
-`FrameworkMutationCleanupError`. The service still records the installed release
-and retains the cleanup diagnostics; if saving the record also fails, it reports
-both errors. The update command displays these completed-update diagnostics,
-including retained paths. A cleanup error after an incomplete or rolled-back
-update does not mark completion and must not advance its framework record.
+Completed framework installation, update, or removal with cleanup failures
+returns `FrameworkMutationCleanupError`. The service still saves or deletes the
+matching framework record and retains the cleanup diagnostics; if the record
+write also fails, it reports both errors. The add, update, and remove commands
+display these completed-mutation diagnostics, including artifact paths. An add
+stops on a bootstrap diagnostic, but its recorded framework is reused on retry.
+A cleanup error after an incomplete or rolled-back operation does not mark
+completion and must not change its framework record.
 
 Successful framework updates still replace existing BepInEx configuration
 rather than preserving it. Some service callers still discard underlying

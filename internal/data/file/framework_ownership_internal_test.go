@@ -100,6 +100,10 @@ func TestUpdateBepInExPartialRemoval(t *testing.T) {
 				if !errors.Is(err, expected) {
 					t.Fatalf("error omits %v: %v", expected, err)
 				}
+				var completed *FrameworkMutationCleanupError
+				if errors.As(err, &completed) {
+					t.Fatalf("partial removal was reported as a completed update: %v", err)
+				}
 			}
 			if !removed || requests != 0 {
 				t.Fatalf("expected partial removal without a download: removed=%t, requests=%d", removed, requests)
@@ -198,6 +202,10 @@ func TestUpdateBepInExRecoveryErrors(t *testing.T) {
 			for _, expected := range []error{ErrFrameworkUpdateFailed, api.ErrHTTPClient, http.ErrContentLength, fault} {
 				if !errors.Is(err, expected) {
 					t.Errorf("error omits %v: %v", expected, err)
+				}
+				var completed *FrameworkMutationCleanupError
+				if errors.As(err, &completed) {
+					t.Errorf("restoration outcome was reported as a completed update: %v", err)
 				}
 			}
 			for _, path := range []string{snapshot, plugins} {
@@ -328,6 +336,10 @@ func TestFrameworkFinalizationErrors(t *testing.T) {
 			if !errors.Is(err, tt.expected) || !errors.Is(err, ErrBackupDeleteFailed) || !errors.Is(err, fault) {
 				t.Fatalf("cleanup error was lost: %v", err)
 			}
+			var completed *FrameworkMutationCleanupError
+			if !errors.As(err, &completed) {
+				t.Fatalf("completed framework operation lost its cleanup classification: %v", err)
+			}
 			if artifact == "" || !strings.Contains(err.Error(), artifact) {
 				t.Errorf("cleanup error omits leftover path %q: %v", artifact, err)
 			}
@@ -409,12 +421,70 @@ func TestStandaloneFrameworkRollback(t *testing.T) {
 			if errors.Is(err, ErrBackupMissing) || errors.Is(err, ErrBackupRestoreFailed) || m.backup.Path() != nil {
 				t.Errorf("standalone rollback failed or retained its snapshot: %v", err)
 			}
+			var completed *FrameworkMutationCleanupError
+			if errors.As(err, &completed) {
+				t.Errorf("rolled-back framework operation was reported as completed: %v", err)
+			}
 			assertRestoreTree(t, server, saved)
 			if entries, err := os.ReadDir(backups); err != nil || len(entries) != 0 {
 				t.Errorf("standalone rollback orphaned snapshots: %v, %v", entries, err)
 			}
 		})
 	}
+}
+
+func TestInstallBepInExRollbackCleanup(t *testing.T) {
+	server := filepath.Join(restoreTempDir(t), "server")
+	t.Setenv("TMPDIR", t.TempDir())
+	saved := map[string]string{
+		"BepInEx/core/runtime":    "original framework",
+		"BepInEx/config/user.cfg": "user configuration",
+		"server-data":             "unrelated bytes",
+	}
+	writeRestoreTree(t, server, saved)
+	m := NewManager(&pluginHTTPClient{GetFunc: func(string) (*http.Response, error) {
+		return &http.Response{Body: io.NopCloser(strings.NewReader("invalid archive"))}, nil
+	}}, server).(*manager)
+	b := m.backup.(*backup)
+	cleanupErr := errors.New("rollback cleanup interrupted")
+	var snapshot string
+	m.backup = &frameworkBackup{
+		Backup: b, remove: b.Remove,
+		restore: func(destination string) error {
+			snapshot = *b.Path()
+			return b.restore(destination, restoreOperations{
+				copy: copyDirectory, rename: os.Rename,
+				removeAll: func(path string) error {
+					if path == snapshot {
+						if err := os.Remove(filepath.Join(path, "server-data")); err != nil {
+							t.Fatal(err)
+						}
+						return cleanupErr
+					}
+					return os.RemoveAll(path)
+				},
+			})
+		},
+	}
+	path, err := m.InstallBepInEx("fixture", "framework")
+	if path != "" || !errors.Is(err, ErrZipReadFailed) || !errors.Is(err, ErrBackupDeleteFailed) || !errors.Is(err, cleanupErr) {
+		t.Fatalf("installation or rollback diagnostic lost: path=%q, error=%v", path, err)
+	}
+	var completed *FrameworkMutationCleanupError
+	if errors.As(err, &completed) {
+		t.Fatalf("completed rollback was classified as completed installation: %v", err)
+	}
+	if snapshot == "" || !strings.Contains(err.Error(), snapshot) || b.Path() != nil {
+		t.Fatalf("consumed snapshot state or path is incorrect: %v", err)
+	}
+	if err := b.Restore(server); !errors.Is(err, ErrBackupMissing) {
+		t.Fatalf("partially deleted rollback snapshot remained restorable: %v", err)
+	}
+	assertRestoreTree(t, server, saved)
+	assertRestoreTree(t, snapshot, map[string]string{
+		"BepInEx/core/runtime":    "original framework",
+		"BepInEx/config/user.cfg": "user configuration",
+	})
 }
 
 func frameworkReplacementArchive(t *testing.T) []byte {
