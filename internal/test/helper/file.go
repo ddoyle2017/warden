@@ -20,16 +20,18 @@ type fileHelper interface {
 }
 
 func (h *helper) SetUpServerFiles() {
+	h.t.Helper()
 	source := filepath.Join(h.dataFolder, TestModFullName+".zip")
 	destination := filepath.Join(h.valheimFolder, file.BepInExPluginDirectory, TestModFullName)
 
 	err := file.Unzip(source, destination)
 	if err != nil {
-		h.t.Errorf("unexpected error creating test files, received error: %+v", err)
+		h.t.Fatalf("unexpected error creating test files, received error: %+v", err)
 	}
 }
 
 func (h *helper) RemoveServerFiles() {
+	h.t.Helper()
 	err := os.RemoveAll(h.valheimFolder)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		h.t.Errorf("unexpected error when cleaning-up test files, received: %+v", err)
@@ -40,14 +42,15 @@ func (h *helper) RemoveServerFiles() {
 }
 
 func (h *helper) VerifyBackup(original, backup string) {
+	h.t.Helper()
 	of, err := h.GetFileList(original)
 	if err != nil {
-		h.t.Errorf("unable to fetch original files, received err: %+v", err)
+		h.t.Fatalf("unable to fetch original files, received err: %+v", err)
 	}
 
 	bf, err := h.GetFileList(backup)
 	if err != nil {
-		h.t.Errorf("unable to fetch backup files, received err: %+v", err)
+		h.t.Fatalf("unable to fetch backup files, received err: %+v", err)
 	}
 
 	if !h.AreFileListsEqual(of, bf) {

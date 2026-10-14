@@ -41,34 +41,33 @@ func TestListMods_Happy(t *testing.T) {
 }
 
 func TestListMods_Sad(t *testing.T) {
-	th := helper.NewHelper(t)
-
 	tests := map[string]struct {
-		setUp func() repo.Database
+		setUp func(t *testing.T) repo.Database
 	}{
-		"return error if database doesn't exist": {
-			setUp: func() repo.Database {
+		"given a closed database, when listing mods, then return an error": {
+			setUp: func(t *testing.T) repo.Database {
+				th := helper.NewHelper(t)
 				db := th.CreateDatabase()
 				th.DeleteDatabase()
 				return db
 			},
 		},
-		"return error if mods table doesn't exist": {
-			setUp: func() repo.Database {
-				return th.CreateDatabase()
+		"given no mods table, when listing mods, then return an error": {
+			setUp: func(t *testing.T) repo.Database {
+				return helper.NewHelper(t).CreateDatabase()
 			},
 		},
 	}
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			db := test.setUp()
+			db := test.setUp(t)
 
 			mr := repo.NewModsRepo(db)
 
 			mods, err := mr.ListMods()
-			if err == nil {
-				t.Error("expected a non-nil error, received nil")
+			if !errors.Is(err, repo.ErrModListFailed) {
+				t.Errorf("expected error %v, received %v", repo.ErrModListFailed, err)
 			}
 			if len(mods) != 0 {
 				t.Errorf("expected an empty list of mods, received: %+v", mods)
@@ -76,9 +75,6 @@ func TestListMods_Sad(t *testing.T) {
 		})
 	}
 
-	t.Cleanup(func() {
-		th.DeleteDatabase()
-	})
 }
 
 func TestGetMod_Happy(t *testing.T) {
@@ -176,239 +172,156 @@ func TestInsertMod_Happy(t *testing.T) {
 }
 
 func TestInsertMod_Sad(t *testing.T) {
-	tests := map[string]struct {
-		db          repo.Database
-		expectedErr error
-	}{
-		"returns error when unable to prepare an INSERT SQL statement": {
-			db: &mock.Database{
-				PrepareFunc: func(_ string) (*sql.Stmt, error) {
-					return nil, errors.New("invalid SQL")
-				},
-			},
-			expectedErr: repo.ErrInvalidStatement,
-		},
-	}
+	t.Run("given no mods table, when inserting, then return an invalid statement error", func(t *testing.T) {
+		db := helper.NewHelper(t).CreateDatabase()
+		mr := repo.NewModsRepo(db)
 
-	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			mr := repo.NewModsRepo(test.db)
-
-			err := mr.InsertMod(mod.Mod{})
-			if !errors.Is(err, test.expectedErr) {
-				t.Errorf("expected error: %+v, received: %+v", test.expectedErr, err)
-			}
-		})
-	}
+		if err := mr.InsertMod(mod.Mod{}); !errors.Is(err, repo.ErrInvalidStatement) {
+			t.Errorf("expected error %v, received %v", repo.ErrInvalidStatement, err)
+		}
+	})
 }
 
 func TestUpdateMod_Happy(t *testing.T) {
-	th := helper.NewHelper(t)
-
-	db := th.CreateDatabase()
-	repo.CreateModsTable(db)
-	repo.CreateFrameworksTable(db)
-
-	mr := repo.NewModsRepo(db)
-	fr := repo.NewFrameworksRepo(db)
-
-	currentMods := th.SeedModsTable(mr, fr)
 	newVersion := "102.23.78"
-
 	tests := map[string]struct {
-		m        mod.Mod
-		expected []mod.Mod
+		id              int
+		expectedVersion string
 	}{
-		"if mod isn't found, update nothing and return successful": {
-			m: mod.Mod{
-				ID:      12738923789127,
-				Version: "0.0.2",
-			},
-			expected: currentMods,
+		"given an unknown mod ID, when updating, then leave installed mods unchanged": {
+			id: 999,
 		},
-		"if mod is found, apply updates and return successful": {
-			m: mod.Mod{
-				ID:        1,
-				Namespace: "Azumatt",
-				Name:      "Sleepover",
-				Version:   newVersion,
-			},
-			expected: []mod.Mod{
-				{
-					ID:          1,
-					FrameworkID: 1,
-					Namespace:   "Azumatt",
-					Name:        "Sleepover",
-					Version:     newVersion,
-				},
-				{
-					ID:          2,
-					FrameworkID: 1,
-					Namespace:   "Azumatt",
-					Name:        "Where_You_At"},
-				{
-					ID:          3,
-					FrameworkID: 1,
-					Namespace:   "Azumatt",
-					Name:        "AzuClock",
-				},
-			},
+		"given an installed mod, when updating, then persist its new version": {
+			id:              1,
+			expectedVersion: newVersion,
 		},
 	}
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			err := mr.UpdateMod(test.m)
+			th := helper.NewHelper(t)
+			db := th.CreateDatabase()
+			repo.CreateModsTable(db)
+			repo.CreateFrameworksTable(db)
+			mr := repo.NewModsRepo(db)
+			current := th.SeedModsTable(mr, repo.NewFrameworksRepo(db))
+			update := current[0]
+			update.ID = test.id
+			update.Version = newVersion
+			expected := slices.Clone(current)
+			expected[0].Version = test.expectedVersion
+
+			err := mr.UpdateMod(update)
 			if err != nil {
-				t.Errorf("expected a nil error, received: %+v", err)
+				t.Fatalf("expected a nil error, received: %+v", err)
 			}
 
 			mods, err := mr.ListMods()
 			if err != nil {
-				t.Errorf("expected a nil error, received: %+v", err)
+				t.Fatalf("expected a nil error, received: %+v", err)
 			}
 
-			areModsEqual := slices.EqualFunc(mods, test.expected, func(m1, m2 mod.Mod) bool {
+			areModsEqual := slices.EqualFunc(mods, expected, func(m1, m2 mod.Mod) bool {
 				return m1.Equals(&m2)
 			})
 			if !areModsEqual {
-				t.Errorf("expected an updated mods list of: %+v, received: %+v", test.expected, mods)
+				t.Errorf("expected an updated mods list of: %+v, received: %+v", expected, mods)
 			}
 		})
 	}
-
-	t.Cleanup(func() {
-		th.DeleteDatabase()
-	})
 }
 
 func TestUpdateMod_Sad(t *testing.T) {
-	tests := map[string]struct {
-		db          repo.Database
-		expectedErr error
-	}{
-		"returns error when unable to prepare an UPDATE SQL statement": {
-			db: &mock.Database{
-				PrepareFunc: func(_ string) (*sql.Stmt, error) {
-					return nil, errors.New("invalid SQL")
-				},
-			},
-			expectedErr: repo.ErrInvalidStatement,
-		},
-	}
+	t.Run("given no mods table, when updating, then return an invalid statement error", func(t *testing.T) {
+		db := helper.NewHelper(t).CreateDatabase()
+		mr := repo.NewModsRepo(db)
 
-	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			mr := repo.NewModsRepo(test.db)
-
-			err := mr.UpdateMod(mod.Mod{})
-			if !errors.Is(err, test.expectedErr) {
-				t.Errorf("expected error: %+v, received: %+v", test.expectedErr, err)
-			}
-		})
-	}
+		if err := mr.UpdateMod(mod.Mod{}); !errors.Is(err, repo.ErrInvalidStatement) {
+			t.Errorf("expected error %v, received %v", repo.ErrInvalidStatement, err)
+		}
+	})
 }
 
 func TestDeleteMod_Happy(t *testing.T) {
-	th := helper.NewHelper(t)
-
-	db := th.CreateDatabase()
-	repo.CreateModsTable(db)
-	repo.CreateFrameworksTable(db)
-
-	mr := repo.NewModsRepo(db)
-	fr := repo.NewFrameworksRepo(db)
-
-	currentMods := th.SeedModsTable(mr, fr)
-	last := len(currentMods) - 1
-
 	tests := map[string]struct {
-		modName   string
-		namespace string
-		expected  []mod.Mod
+		modName       string
+		namespace     string
+		expectedCount int
 	}{
-		"if mod isn't found, delete nothing and return successful": {
-			modName:   "some fake mod name",
-			namespace: "some fake mod author",
-			expected:  currentMods,
+		"given an unknown mod, when deleting, then leave installed mods unchanged": {
+			modName:       "some fake mod name",
+			namespace:     "some fake mod author",
+			expectedCount: 3,
 		},
-		"if mod is found, delete it and return successful": {
-			modName:   currentMods[last].Name,
-			namespace: currentMods[last].Namespace,
-			expected: []mod.Mod{
-				{
-					ID:          1,
-					FrameworkID: 1,
-					Namespace:   "Azumatt",
-					Name:        "Sleepover",
-				},
-				{
-					ID:          2,
-					FrameworkID: 1,
-					Namespace:   "Azumatt",
-					Name:        "Where_You_At",
-				},
-			},
+		"given an installed mod, when deleting, then remove only that mod": {
+			modName:       "AzuClock",
+			namespace:     "Azumatt",
+			expectedCount: 2,
 		},
 	}
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
+			th := helper.NewHelper(t)
+			db := th.CreateDatabase()
+			repo.CreateModsTable(db)
+			repo.CreateFrameworksTable(db)
+			mr := repo.NewModsRepo(db)
+			current := th.SeedModsTable(mr, repo.NewFrameworksRepo(db))
+			expected := current[:test.expectedCount]
+
 			err := mr.DeleteMod(test.modName, test.namespace)
 			if err != nil {
-				t.Errorf("expected a nil error, received: %+v", err)
+				t.Fatalf("expected a nil error, received: %+v", err)
 			}
 
 			mods, err := mr.ListMods()
 			if err != nil {
-				t.Errorf("expected a nil error, received: %+v", err)
+				t.Fatalf("expected a nil error, received: %+v", err)
 			}
 
-			areModsEqual := slices.EqualFunc(mods, test.expected, func(m1, m2 mod.Mod) bool {
+			areModsEqual := slices.EqualFunc(mods, expected, func(m1, m2 mod.Mod) bool {
 				return m1.Equals(&m2)
 			})
 			if !areModsEqual {
-				t.Errorf("expected an updated mods list of: %+v, received: %+v", test.expected, mods)
+				t.Errorf("expected an updated mods list of: %+v, received: %+v", expected, mods)
 			}
 		})
 	}
-
-	t.Cleanup(func() {
-		th.DeleteDatabase()
-	})
 }
 
 func TestDeleteMod_Sad(t *testing.T) {
-	tests := map[string]struct {
-		db          repo.Database
-		expectedErr error
-	}{
-		"returns error when unable to prepare a DELETE SQL statement": {
-			db: &mock.Database{
-				PrepareFunc: func(_ string) (*sql.Stmt, error) {
-					return nil, errors.New("invalid SQL")
-				},
-			},
-			expectedErr: repo.ErrInvalidStatement,
-		},
-	}
+	t.Run("given no mods table, when deleting, then return an invalid statement error", func(t *testing.T) {
+		db := helper.NewHelper(t).CreateDatabase()
+		mr := repo.NewModsRepo(db)
 
-	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			mr := repo.NewModsRepo(test.db)
-
-			err := mr.DeleteMod("Sleepover", "Azumatt")
-			if !errors.Is(err, test.expectedErr) {
-				t.Errorf("expected error: %+v, received: %+v", test.expectedErr, err)
-			}
-		})
-	}
+		if err := mr.DeleteMod("Sleepover", "Azumatt"); !errors.Is(err, repo.ErrInvalidStatement) {
+			t.Errorf("expected error %v, received %v", repo.ErrInvalidStatement, err)
+		}
+	})
 }
 
 func TestDeleteAllMods_Happy(t *testing.T) {
-	th := helper.NewHelper(t)
+	t.Run("given installed mods, when deleting all, then empty the table without dropping it", func(t *testing.T) {
+		th := helper.NewHelper(t)
+		db := th.CreateDatabase()
+		repo.CreateModsTable(db)
+		repo.CreateFrameworksTable(db)
+		mr := repo.NewModsRepo(db)
+		installed := th.SeedModsTable(mr, repo.NewFrameworksRepo(db))
 
-	t.Cleanup(func() {
-		th.DeleteDatabase()
+		if err := mr.DeleteAllMods(); err != nil {
+			t.Fatal(err)
+		}
+		mods, err := mr.ListMods()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(mods) != 0 {
+			t.Errorf("expected no installed mods, received %+v", mods)
+		}
+		if err := mr.InsertMod(installed[0]); err != nil {
+			t.Fatalf("expected mods table to remain writable: %v", err)
+		}
 	})
 }

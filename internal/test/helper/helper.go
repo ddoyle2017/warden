@@ -1,6 +1,9 @@
 package helper
 
-import "testing"
+import (
+	"database/sql"
+	"testing"
+)
 
 const (
 	TestModFullName     = "Azumatt-Where_You_At-1.0.9"
@@ -18,26 +21,32 @@ type Helper interface {
 }
 
 type helper struct {
-	t             *testing.T
-	dataFolder    string
-	valheimFolder string
-	databaseFile  string
-	configFile    string
+	t              *testing.T
+	dataFolder     string
+	valheimFolder  string
+	databaseFolder string
+	databaseFile   string
+	configFile     string
+	databases      []*sql.DB
 }
 
 type Option func(h *helper)
 
 func NewHelper(t *testing.T, opts ...Option) Helper {
+	t.Helper()
+
 	h := &helper{
-		t:             t,
-		dataFolder:    "../../test/data",
-		valheimFolder: "../../test/file",
-		databaseFile:  "warden-test.db",
-		configFile:    "warden-test.yaml",
+		t:              t,
+		dataFolder:     "../../test/data",
+		valheimFolder:  t.TempDir(),
+		databaseFolder: t.TempDir(),
+		databaseFile:   "warden-test.db",
+		configFile:     "warden-test.yaml",
 	}
 	for _, o := range opts {
 		o(h)
 	}
+	t.Cleanup(h.DeleteDatabase)
 	return h
 }
 
