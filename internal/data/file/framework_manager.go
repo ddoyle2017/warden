@@ -165,27 +165,45 @@ func preserveBepInExConfig(source, destination string) error {
 		return fmt.Errorf("configuration source %q is not a directory", source)
 	}
 
-	// Restrict existing packaged directories before copying private configuration.
-	if err := filepath.Walk(source, func(path string, info os.FileInfo, err error) error {
+	return filepath.Walk(source, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
-		}
-		if !info.IsDir() {
-			return nil
 		}
 		relative, err := filepath.Rel(source, path)
 		if err != nil {
 			return err
 		}
 		target := filepath.Join(destination, relative)
-		if err := os.MkdirAll(target, info.Mode()); err != nil {
-			return err
+		if info.IsDir() {
+			if err := os.MkdirAll(target, info.Mode()); err != nil {
+				return err
+			}
+			return os.Chmod(target, info.Mode())
 		}
-		return os.Chmod(target, info.Mode())
-	}); err != nil {
-		return err
+		return copyBepInExConfigFile(path, target, copyFile)
+	})
+}
+
+func copyBepInExConfigFile(source, destination string, copyConfig func(string, string) error) (err error) {
+	staging, err := os.MkdirTemp(filepath.Dir(destination), ".warden-config-")
+	if err != nil {
+		return fmt.Errorf("%w: stage configuration %q: %w", ErrDirectoryCreateFailed, destination, err)
 	}
-	return copyDirectory(source, destination)
+	defer func() {
+		if cleanupErr := os.RemoveAll(staging); cleanupErr != nil {
+			err = errors.Join(err, fmt.Errorf("%w: remove configuration staging %q: %w", ErrBackupDeleteFailed, staging, cleanupErr))
+		}
+	}()
+
+	// A private new inode prevents existing readers of defaults from seeing user bytes.
+	replacement := filepath.Join(staging, "replacement")
+	if err := copyConfig(source, replacement); err != nil {
+		return fmt.Errorf("copy configuration %q: %w", source, err)
+	}
+	if err := os.Rename(replacement, destination); err != nil {
+		return fmt.Errorf("%w: publish configuration %q: %w", ErrFileRenameFailed, destination, err)
+	}
+	return nil
 }
 
 func copyStagedPlugins(source, destination string, copyPlugins func(string, string) error, removeStaging func(string) error) (transferred bool, err error) {

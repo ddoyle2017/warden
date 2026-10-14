@@ -441,10 +441,19 @@ func TestUpdateBepInExConfiguration(t *testing.T) {
 			}
 			if tt.conflict {
 				var pathErr *os.PathError
-				if !errors.Is(err, file.ErrFrameworkUpdateFailed) || !errors.As(err, &pathErr) {
+				var linkErr *os.LinkError
+				if !errors.Is(err, file.ErrFrameworkUpdateFailed) {
 					t.Fatalf("expected a configuration conflict causing update failure, got %v", err)
 				}
-				if !strings.Contains(pathErr.Path, string(filepath.Separator)+"config") {
+				var conflictPath string
+				if errors.As(err, &pathErr) {
+					conflictPath = pathErr.Path
+				} else if errors.As(err, &linkErr) {
+					conflictPath = linkErr.New
+				} else {
+					t.Fatalf("expected a filesystem conflict, got %v", err)
+				}
+				if !strings.Contains(conflictPath, string(filepath.Separator)+"config") {
 					t.Errorf("failure did not originate in configuration preservation: %v", err)
 				}
 				assertPluginFiles(t, th, server, original)
