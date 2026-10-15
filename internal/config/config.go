@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 
+	"github.com/mitchellh/go-homedir"
 	"github.com/spf13/viper"
 )
 
@@ -43,30 +44,45 @@ type Config struct {
 // Load creates a new instance of Config, based on a configuration YAML file at the given
 // path. If one doesn't exist, a new file is created with default values
 func Load(path string) (*Config, error) {
+	return load(path, homedir.Expand)
+}
+
+func load(path string, expandHome func(string) (string, error)) (*Config, error) {
 	viper.AddConfigPath(path)
 	viper.SetConfigName(configName)
 	viper.SetConfigType(configType)
 
 	err := viper.ReadInConfig()
-	os := runtime.GOOS
-
-	cfg := &Config{
-		ValheimDirectory: GetInstallPath(os),
-		Platform:         os,
+	missingConfig := errors.As(err, &viper.ConfigFileNotFoundError{})
+	if err != nil && !missingConfig {
+		return nil, ErrFailedToReadConfig
 	}
 
-	// If config doesn't exist, create the file and add default values
-	if errors.As(err, &viper.ConfigFileNotFoundError{}) {
+	viper.SetDefault("platform", runtime.GOOS)
+	cfg := &Config{}
+	if err := viper.Unmarshal(cfg); err != nil {
+		return nil, ErrFailedToReadConfig
+	}
+
+	if !viper.IsSet("valheim-directory") {
+		directory := GetInstallPath(cfg.Platform)
+		if cfg.Platform == Linux {
+			directory, err = expandHome(directory)
+			if err != nil {
+				return nil, fmt.Errorf("%w: resolve Linux default valheim-directory: %w", ErrFailedToReadConfig, err)
+			}
+			if !filepath.IsAbs(directory) {
+				return nil, fmt.Errorf("%w: Linux default valheim-directory %q is not absolute", ErrFailedToReadConfig, directory)
+			}
+		}
+		cfg.ValheimDirectory = directory
+		viper.SetDefault("valheim-directory", directory)
+	}
+
+	if missingConfig {
 		if err := createConfigFile(cfg, path); err != nil {
 			return nil, err
 		}
-	} else if err != nil {
-		return nil, ErrFailedToReadConfig
-	}
-
-	// Load in settings from YAML file into Config struct
-	if err := viper.Unmarshal(cfg); err != nil {
-		return nil, ErrFailedToReadConfig
 	}
 	return cfg, nil
 }
@@ -83,6 +99,7 @@ func createConfigFile(cfg *Config, path string) error {
 	return nil
 }
 
+// GetInstallPath returns the platform's default path template. Load resolves the Linux home prefix.
 func GetInstallPath(os string) string {
 	if os == Windows {
 		return DefaultSteamWindowsInstallPath
