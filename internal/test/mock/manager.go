@@ -5,15 +5,16 @@ import "warden/internal/data/file"
 // Manager implements the file.Manager interface and exposes anonymous member functions for mocking
 // file.Manager behavior
 type Manager struct {
-	ValidateModInstallFunc  func() error
-	InstallModFunc          func(url, fullName string) (string, error)
-	RemoveModFunc           func(fullName string) error
-	RemoveAllModsFunc       func() error
-	StageModRemovalFunc     func(fullName string) (file.ModRemoval, error)
-	StageAllModsRemovalFunc func() (file.ModRemoval, error)
-	InstallBepInExFunc      func(url, fullName string) (string, error)
-	UpdateBepInExFunc       func(url, fullName string) error
-	RemoveBepInExFunc       func() error
+	ValidateModInstallFunc     func() error
+	InstallModFunc             func(url, fullName string) (string, error)
+	RemoveModFunc              func(fullName string) error
+	RemoveAllModsFunc          func() error
+	StageModRemovalFunc        func(fullName string) (file.ModRemoval, error)
+	StageAllModsRemovalFunc    func() (file.ModRemoval, error)
+	InstallBepInExFunc         func(url, fullName string) (string, error)
+	UpdateBepInExFunc          func(url, fullName string) error
+	RemoveBepInExFunc          func() error
+	BepInExPluginDirectoryFunc func() string
 }
 
 func (m *Manager) ValidateModInstall() error {
@@ -50,4 +51,8 @@ func (m *Manager) UpdateBepInEx(url, fullName string) error {
 
 func (m *Manager) RemoveBepInEx() error {
 	return m.RemoveBepInExFunc()
+}
+
+func (m *Manager) BepInExPluginDirectory() string {
+	return m.BepInExPluginDirectoryFunc()
 }

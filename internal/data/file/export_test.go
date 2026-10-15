@@ -9,3 +9,13 @@ func NewBackupWithIncompleteCleanup(cleanup func(string) error) Backup {
 func SetModRemovalCleanup(removal ModRemoval, cleanup func(string) error) {
 	removal.(*modRemoval).removeStaged = cleanup
 }
+
+func RemoveBepInExWithOperations(m Manager, b Backup, removeFiles func(string) error) error {
+	manager := m.(*manager)
+	manager.backup = b
+	return manager.removeBepInEx(removeFiles)
+}
+
+func RemoveBackupWithCleanup(b Backup, cleanup func(string) error) error {
+	return b.(*backup).remove(cleanup)
+}

@@ -20,11 +20,15 @@ type frameworkManager interface {
 
 	// Removes all BepInEx files
 	RemoveBepInEx() error
+
+	// Identifies the plugin tree removed with BepInEx.
+	BepInExPluginDirectory() string
 }
 
 // FrameworkMutationCleanupError reports cleanup failure after the requested
 // framework file operation completes, not an intermediate step or rollback.
-// Callers must not roll back that change.
+// File managers return it directly; a nested marker does not establish completion
+// of the enclosing operation. Callers must not roll back a completed change.
 type FrameworkMutationCleanupError struct {
 	Err error
 }
@@ -56,7 +60,7 @@ func (m *manager) InstallBepInEx(url, fullName string) (string, error) {
 		return "", errors.Join(err, m.restoreServerBackup())
 	}
 	if err := m.backup.Remove(); err != nil {
-		return "", fmt.Errorf("%w: %w", ErrFrameworkInstallFailed, &FrameworkMutationCleanupError{Err: err})
+		return "", &FrameworkMutationCleanupError{Err: fmt.Errorf("%w: %w", ErrFrameworkInstallFailed, err)}
 	}
 	return m.valheimDirectory, nil
 }
@@ -148,7 +152,7 @@ func (m *manager) updateBepInEx(url, fullName string, copyPlugins func(string, s
 	}
 	cleanupErr = errors.Join(cleanupErr, m.backup.Remove())
 	if cleanupErr != nil {
-		return fmt.Errorf("%w: %w", ErrFrameworkUpdateFailed, &FrameworkMutationCleanupError{Err: cleanupErr})
+		return &FrameworkMutationCleanupError{Err: fmt.Errorf("%w: %w", ErrFrameworkUpdateFailed, cleanupErr)}
 	}
 	return nil
 }
@@ -253,6 +257,10 @@ func (m *manager) RemoveBepInEx() error {
 	return m.removeBepInEx(os.RemoveAll)
 }
 
+func (m *manager) BepInExPluginDirectory() string {
+	return m.modDirectory
+}
+
 func (m *manager) removeBepInEx(removeFiles func(string) error) error {
 	if err := preflightRestore(m.valheimDirectory); err != nil {
 		return fmt.Errorf("%w: %w", ErrFrameworkDeleteFailed, err)
@@ -264,7 +272,7 @@ func (m *manager) removeBepInEx(removeFiles func(string) error) error {
 		return errors.Join(err, m.restoreServerBackup())
 	}
 	if err := m.backup.Remove(); err != nil {
-		return fmt.Errorf("%w: %w", ErrFrameworkDeleteFailed, &FrameworkMutationCleanupError{Err: err})
+		return &FrameworkMutationCleanupError{Err: fmt.Errorf("%w: %w", ErrFrameworkDeleteFailed, err)}
 	}
 	return nil
 }

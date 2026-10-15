@@ -72,8 +72,7 @@ func (fs *frameworkService) InstallBepInEx() error {
 	_, err = fs.fm.InstallBepInEx(pkg.Latest.DownloadURL, pkg.Latest.FullName)
 	if err != nil {
 		installErr = fmt.Errorf("%w: %w", ErrUnableToInstallFramework, err)
-		var completed *file.FrameworkMutationCleanupError
-		if !errors.As(err, &completed) {
+		if _, completed := err.(*file.FrameworkMutationCleanupError); !completed {
 			return installErr
 		}
 	}
@@ -131,8 +130,7 @@ func (fs *frameworkService) UpdateBepInEx() error {
 		var updateErr error
 		if err := fs.fm.UpdateBepInEx(pkg.Latest.DownloadURL, pkg.Latest.FullName); err != nil {
 			updateErr = fmt.Errorf("%w: %w", ErrUnableToUpdateFramework, err)
-			var completed *file.FrameworkMutationCleanupError
-			if !errors.As(err, &completed) {
+			if _, completed := err.(*file.FrameworkMutationCleanupError); !completed {
 				return updateErr
 			}
 		}
@@ -170,13 +168,12 @@ func (fs *frameworkService) RemoveBepInEx() error {
 	var removeErr error
 	if err := fs.fm.RemoveBepInEx(); err != nil {
 		removeErr = fmt.Errorf("%w: %w", ErrUnableToRemoveFramework, err)
-		var completed *file.FrameworkMutationCleanupError
-		if !errors.As(err, &completed) {
+		if _, completed := err.(*file.FrameworkMutationCleanupError); !completed {
 			return removeErr
 		}
 	}
-	if err := fs.fr.DeleteFramework(framework.BepInEx); err != nil {
-		return errors.Join(removeErr, fmt.Errorf("%w: %w", ErrUnableToRemoveFramework, err))
+	if err := fs.fr.DeleteFramework(framework.BepInEx, fs.fm.BepInExPluginDirectory()); err != nil {
+		return errors.Join(removeErr, fmt.Errorf("%w: framework files were removed, but metadata deletion failed; verify database state before retrying: %w", ErrUnableToRemoveFramework, err))
 	}
 	return removeErr
 }

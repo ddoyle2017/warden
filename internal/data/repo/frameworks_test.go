@@ -206,13 +206,14 @@ func TestDeleteFramework_Happy(t *testing.T) {
 			th := helper.NewHelper(t)
 			db := th.CreateDatabase()
 			repo.CreateFrameworksTable(db)
+			repo.CreateModsTable(db)
 			fr := repo.NewFrameworksRepo(db)
 			if tt.installed {
 				th.SeedFrameworksTable(fr)
 			}
 			fr = repo.NewFrameworksRepo(transactionOnlyDatabase(t, db))
 
-			if err := fr.DeleteFramework(framework.BepInEx); err != nil {
+			if err := fr.DeleteFramework(framework.BepInEx, t.TempDir()); err != nil {
 				t.Fatalf("expected a nil error, received: %+v", err)
 			}
 
@@ -228,7 +229,7 @@ func TestDeleteFramework_Sad(t *testing.T) {
 		db := helper.NewHelper(t).CreateDatabase()
 		fr := repo.NewFrameworksRepo(db)
 
-		if err := fr.DeleteFramework(framework.BepInEx); !errors.Is(err, repo.ErrInvalidStatement) {
+		if err := fr.DeleteFramework(framework.BepInEx, t.TempDir()); !errors.Is(err, repo.ErrInvalidStatement) {
 			t.Errorf("expected error: %+v, received: %+v", repo.ErrInvalidStatement, err)
 		}
 	})

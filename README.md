@@ -54,7 +54,7 @@ Warden supports the following commands:
     - `all`
         - A sub-command for removing *every* installed mod. A clean slate :)
     - `bepinex`
-        - Removes BepInEx and plugin files; currently leaves mod records in the database
+        - Removes BepInEx, its plugin files, and matching installation records
 - `config`
     - Lists the current configuration values for Warden + where the config file is located
     - `get`

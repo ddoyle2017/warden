@@ -84,7 +84,7 @@ Earlier completed steps can remain in effect if a later step fails.
 | Remove all mods | Require the stronger confirmation, back up and stage the plugin directory, recreate an empty plugin directory, delete the records, then discard staged files and the backup. |
 | Install BepInEx | Download and unpack the framework into the server directory, move the archive wrapper's contents into place, then insert the framework record. |
 | Update BepInEx | Take one original-server snapshot, copy plugins to a temporary sibling of the server directory, remove and install framework files, preserve existing configuration over packaged defaults, transfer plugin copies through destination-local staging, finalize the server snapshot, then update the framework record. |
-| Remove BepInEx | Remove the framework's known files, including the plugin directory, then delete its framework record. The current path does not also delete mod records. |
+| Remove BepInEx | Remove the framework's known files, including the plugin directory, then delete matching plugin records and the framework record in one database transaction. |
 
 Installing a root mod can succeed before a dependency fails. Updating a mod
 removes its old files before the new installation succeeds. These are not
@@ -98,6 +98,27 @@ refusal leaves its files and record unchanged. If replacement files fail after
 removal, the update attempts to delete that obsolete record. Failure to write
 replacement metadata after successful file installation does not trigger that
 cleanup.
+
+Framework removal identifies plugin records by their stored installation paths
+within the configured `BepInEx/plugins` tree, not by `FrameworkID`. This covers
+new and legacy records whose framework association is zero or stale without a
+schema migration, association backfill, or foreign-key setting change. Records
+with empty paths or paths outside that tree are retained rather than assumed to
+belong to the removed framework. Other framework records are not deleted.
+
+Path comparisons normalize relative paths and `.`/`..` components but do not
+resolve filesystem aliases. Warden has one configured server directory and no
+per-server database identity; this reconciliation does not add multi-server or
+path-alias tracking. Use a stable absolute server path and inspect both files
+and metadata when changing it or the working directory used with relative paths.
+
+Incomplete or rolled-back framework removal leaves metadata unchanged.
+Completed file removal still reconciles metadata when backup cleanup fails.
+If metadata deletion fails, the service reports that the files were removed
+and asks the user to verify database state before retrying. Plugin and framework
+deletions share a transaction, and errors retain the write, commit, or rollback
+cause. A failed call is not proof that no metadata changed. The consumed server
+backup is not used to undo a completed removal after a database failure.
 
 ## Archive extraction
 
@@ -241,13 +262,17 @@ artifacts without advertising consumed server snapshots as valid recovery
 sources.
 
 Completed framework installation, update, or removal with cleanup failures
-returns `FrameworkMutationCleanupError`. The service still saves or deletes the
-matching framework record and retains the cleanup diagnostics; if the record
-write also fails, it reports both errors. The add, update, and remove commands
-display these completed-mutation diagnostics, including artifact paths. An add
+returns `FrameworkMutationCleanupError` directly from the file manager.
+The service still saves or deletes the matching framework record, reconciles
+removed plugin records, and retains the cleanup diagnostics; if a record write
+also fails, it reports both errors. A marker nested in another error is retained
+as a cause, not treated as proof that the enclosing operation completed.
+The add, update, and remove commands display completed-mutation diagnostics,
+including artifact paths. Framework removal also displays metadata-failure
+details and database-verification guidance without a cleanup marker. An add
 stops on a bootstrap diagnostic, but its recorded framework is reused on retry.
-A cleanup error after an incomplete or rolled-back operation does not mark
-completion and must not change its framework record.
+A cleanup error after an incomplete or rolled-back operation does not authorize
+metadata changes.
 
 Some service callers still discard underlying file-layer error details,
 including recovery paths. Filesystem recovery does not roll back database
