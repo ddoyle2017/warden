@@ -81,23 +81,7 @@ func (r *mods) GetMod(name string) (mod.Mod, error) {
 func (r *mods) InsertMod(m mod.Mod) error {
 	sql := `INSERT INTO mods(name, namespace, filePath, version, websiteUrl, description, frameworkId) VALUES (?, ?, ?, ?, ?, ?, ?)`
 
-	tx, err := r.db.Begin()
-	if err != nil {
-		return ErrTransactionFailed
-	}
-	statement, err := tx.Prepare(sql)
-	if err != nil {
-		tx.Rollback()
-		return ErrInvalidStatement
-	}
-	defer statement.Close()
-
-	_, err = statement.Exec(m.Name, m.Namespace, m.FilePath, m.Version, m.WebsiteURL, m.Description, m.FrameworkID)
-	if err != nil {
-		tx.Rollback()
-		return ErrModInsertFailed
-	}
-	return tx.Commit()
+	return executeWrite(r.db, sql, ErrModInsertFailed, m.Name, m.Namespace, m.FilePath, m.Version, m.WebsiteURL, m.Description, m.FrameworkID)
 }
 
 func (r *mods) UpdateMod(m mod.Mod) error {
@@ -105,24 +89,7 @@ func (r *mods) UpdateMod(m mod.Mod) error {
 			SET name = ?, namespace = ?, filePath = ?, version = ?, websiteUrl = ?, description = ?
 			WHERE id = ?`
 
-	tx, err := r.db.Begin()
-	if err != nil {
-		return ErrTransactionFailed
-	}
-
-	statement, err := r.db.Prepare(sql)
-	if err != nil {
-		tx.Rollback()
-		return ErrInvalidStatement
-	}
-	defer statement.Close()
-
-	_, err = statement.Exec(m.Name, m.Namespace, m.FilePath, m.Version, m.WebsiteURL, m.Description, m.ID)
-	if err != nil {
-		tx.Rollback()
-		return ErrModUpdateFailed
-	}
-	return tx.Commit()
+	return executeWrite(r.db, sql, ErrModUpdateFailed, m.Name, m.Namespace, m.FilePath, m.Version, m.WebsiteURL, m.Description, m.ID)
 }
 
 func (r *mods) UpsertMod(m mod.Mod) error {
@@ -141,24 +108,7 @@ func (r *mods) UpsertMod(m mod.Mod) error {
 func (r *mods) DeleteMod(modName, namespace string) error {
 	sql := `DELETE FROM mods WHERE name = ? AND namespace = ?`
 
-	tx, err := r.db.Begin()
-	if err != nil {
-		return ErrTransactionFailed
-	}
-
-	statement, err := r.db.Prepare(sql)
-	if err != nil {
-		tx.Rollback()
-		return ErrInvalidStatement
-	}
-	defer statement.Close()
-
-	_, err = statement.Exec(modName, namespace)
-	if err != nil {
-		tx.Rollback()
-		return ErrModDeleteFailed
-	}
-	return tx.Commit()
+	return executeWrite(r.db, sql, ErrModDeleteFailed, modName, namespace)
 }
 
 func (r *mods) DeleteAllMods() error {
@@ -166,24 +116,7 @@ func (r *mods) DeleteAllMods() error {
 	// on their next command
 	sql := `DELETE FROM mods WHERE id IS NOT NULL`
 
-	tx, err := r.db.Begin()
-	if err != nil {
-		return ErrTransactionFailed
-	}
-
-	statement, err := r.db.Prepare(sql)
-	if err != nil {
-		tx.Rollback()
-		return ErrInvalidStatement
-	}
-	defer statement.Close()
-
-	_, err = statement.Exec()
-	if err != nil {
-		tx.Rollback()
-		return ErrModDeleteAllFailed
-	}
-	return tx.Commit()
+	return executeWrite(r.db, sql, ErrModDeleteAllFailed)
 }
 
 func mapRowsToMod(rows *sql.Rows) ([]mod.Mod, error) {
