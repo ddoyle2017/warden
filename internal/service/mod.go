@@ -119,7 +119,7 @@ func (ms *modService) UpdateMod(name string) error {
 			if ms.in.Text() == yes {
 				err = ms.updateMod(current.FullName(), pkg.Latest)
 				if err != nil {
-					return ErrUnableToUpdateMod
+					return fmt.Errorf("%w: %w", ErrUnableToUpdateMod, err)
 				}
 				err = ms.addDependencies(pkg.Latest.Dependencies)
 				if err != nil {
@@ -164,7 +164,7 @@ func (ms *modService) UpdateAllMods() error {
 				if m.Version < pkg.Latest.VersionNumber {
 					err = ms.updateMod(m.FullName(), pkg.Latest)
 					if err != nil {
-						return ErrUnableToUpdateMod
+						return fmt.Errorf("%w: %w", ErrUnableToUpdateMod, err)
 					}
 					err = ms.addDependencies(pkg.Latest.Dependencies)
 					if err != nil {
@@ -289,19 +289,24 @@ func (ms *modService) updateMod(fullname string, latest thunderstore.Release) er
 		}
 		fmt.Printf("... %v ...\n", cleanupErr)
 	}
-	// Install the newest version and update DB record
-	return ms.installMod(latest)
+	// This path removed the prior release and owns cleanup of its obsolete record.
+	path, err := ms.fm.InstallMod(latest.DownloadURL, latest.FullName)
+	if err != nil {
+		return errors.Join(err, ms.r.DeleteMod(latest.Name, latest.Namespace))
+	}
+	return ms.recordMod(latest, path)
 }
 
 func (ms *modService) installMod(release thunderstore.Release) error {
 	// Download and install the mod files
 	path, err := ms.fm.InstallMod(release.DownloadURL, release.FullName)
 	if err != nil {
-		ms.r.DeleteMod(release.Name, release.Namespace)
 		return err
 	}
+	return ms.recordMod(release, path)
+}
 
-	// Record mod in DB
+func (ms *modService) recordMod(release thunderstore.Release, path string) error {
 	m := mod.Mod{
 		Name:         release.Name,
 		Namespace:    release.Namespace,

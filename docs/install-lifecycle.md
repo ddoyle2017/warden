@@ -52,6 +52,13 @@ Installing a root mod can succeed before a dependency fails. Updating a mod
 removes its old files before the new installation succeeds. These are not
 all-or-nothing operations.
 
+Initial and dependency installations write records only after file installation
+succeeds. A failed file-install step does not delete pre-existing records, so a
+dependency backup failure preserves its earlier record and files. Explicit
+updates have already removed the old release: if replacement files fail, the
+update attempts to delete that obsolete record. Failure to write replacement
+metadata after successful file installation does not trigger that cleanup.
+
 ## Confirmations and backups
 
 Confirmation inputs are case-sensitive. Ordinary prompts accept `Y` or `n`;
@@ -85,6 +92,11 @@ potentially partial contents usable recovery snapshots. File-only removal caller
 can distinguish this committed outcome through `ModRemovalCleanupError`; mod
 updates report it and continue installing the replacement rather than stopping
 after the old files have already been removed.
+
+Single/all mod removal commands display the wrapped recovery details, including
+retained paths and instructions to verify database state. A committed cleanup
+error is shown as a completed removal with a cleanup warning, not as a failed
+removal.
 
 The general backup restore helper still removes the destination before moving
 backed-up files, and those moves do not support cross-filesystem transfer.
