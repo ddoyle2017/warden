@@ -68,7 +68,10 @@ func newUpdateBepInEx(fs service.Framework) *cobra.Command {
 
 func parseUpdateError(err error) {
 	var completed *file.FrameworkMutationCleanupError
-	if errors.As(err, &completed) || errors.Is(err, service.ErrUnableToInstallFramework) || errors.Is(err, service.ErrConfirmationInput) {
+	if errors.As(err, &completed) ||
+		errors.Is(err, service.ErrUnableToInstallFramework) ||
+		errors.Is(err, service.ErrConfirmationInput) ||
+		errors.Is(err, service.ErrInvalidReleaseVersion) {
 		fmt.Printf("... %v ...\n", err)
 	} else if errors.Is(err, service.ErrModNotInstalled) {
 		fmt.Println("... mod not installed, update stopped ...")

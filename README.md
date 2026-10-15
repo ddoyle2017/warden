@@ -44,7 +44,7 @@ Warden supports the following commands:
 - `add`
     - Downloads and installs the specified mod
 - `update`
-    - Updates the mod to latest version
+    - Updates the mod when a newer release is available; see the [version policy](docs/install-lifecycle.md#release-version-ordering)
     - `all`
         - A sub-command for updating *all* installed mods
     - `bepinex`

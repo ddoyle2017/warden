@@ -29,8 +29,29 @@ Dependency strings include namespace, name, and version. Current dependency
 handling fetches the latest release for each direct dependency, rather than
 honoring the version in that string or recursively traversing the dependency
 graph. BepInEx is skipped by the mod dependency loop and handled separately.
-Version comparisons currently use string ordering, not semantic-version
-ordering. Treat changes to these behaviors as explicit product decisions.
+
+## Release version ordering
+
+Single-mod, all-mod, and BepInEx updates compare the recorded version with
+Thunderstore's latest release using [Semantic Versioning 2.0.0](https://semver.org/).
+Warden requires the full, unprefixed `MAJOR.MINOR.PATCH` form documented for
+[Thunderstore packages](https://wiki.thunderstore.io/mods/creating-a-package#version-number).
+Components compare numerically, so `1.10.0` is newer than `1.9.0`. An equal or
+older available release does not trigger an update.
+
+SemVer prerelease and build suffixes are supported: `1.0.0-beta.10` is newer
+than `1.0.0-beta.9` but older than `1.0.0`. Build metadata does not affect
+precedence, so `1.0.0+build.1` and `1.0.0+build.2` compare equal. The complete
+original version and release name are retained when installing and recording
+an update.
+
+Empty or malformed versions, a `v` prefix, abbreviated or four-component
+versions, and leading zeroes in core or numeric prerelease components are
+rejected. An invalid installed or latest version returns an error identifying
+the package and offending value before changing that package's files or record.
+Bulk updates still run sequentially: an invalid version stops the loop without
+undoing earlier successful updates. This comparison policy does not change
+dependency selection or add a prerelease channel filter.
 
 ## Operation ordering
 

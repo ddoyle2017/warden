@@ -112,7 +112,11 @@ func (fs *frameworkService) UpdateBepInEx() error {
 		return ErrUnableToUpdateFramework
 	}
 
-	if pkg.Latest.VersionNumber > current.Version {
+	newer, err := hasNewerRelease(current.Version, pkg.Latest.VersionNumber)
+	if err != nil {
+		return fmt.Errorf("%w: %s/%s: %w", ErrUnableToUpdateFramework, current.Namespace, current.Name, err)
+	}
+	if newer {
 		fmt.Printf("... a new version of BepInEx was found (%s) ...\n", pkg.Latest.VersionNumber)
 		fmt.Printf("did you want to update BepInEx? %s\n", yesOrNo)
 

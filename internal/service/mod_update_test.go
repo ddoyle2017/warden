@@ -24,9 +24,11 @@ func TestUpdateMod_Happy(t *testing.T) {
 		rd      io.Reader
 		current mod.Mod
 		latest  thunderstore.Release
+		updated bool
 	}{
 		"return successful when mod is updated": {
-			rd: strings.NewReader("Y"),
+			rd:      strings.NewReader("Y"),
+			updated: true,
 			current: mod.Mod{
 				Name:         name,
 				Namespace:    namespace,
@@ -64,26 +66,32 @@ func TestUpdateMod_Happy(t *testing.T) {
 			},
 		},
 		"return successful if user aborts update": {
-			rd: strings.NewReader("n"),
+			rd:      strings.NewReader("n"),
+			current: mod.Mod{Name: name, Namespace: namespace, Version: "0.0.1"},
+			latest:  thunderstore.Release{Name: name, Namespace: namespace, VersionNumber: "0.0.2"},
 		},
 	}
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
+			fileCalls, recordWrites := 0, 0
 			r := mock.ModsRepo{
 				GetModFunc: func(name string) (mod.Mod, error) {
 					return test.current, nil
 				},
 				UpsertModFunc: func(m mod.Mod) error {
+					recordWrites++
 					return nil
 				},
 			}
 			fm := mock.Manager{
 				ValidateModInstallFunc: func() error { return nil },
 				RemoveModFunc: func(fullName string) error {
+					fileCalls++
 					return nil
 				},
 				InstallModFunc: func(url, fullName string) (string, error) {
+					fileCalls++
 					return "/some/file/path", nil
 				},
 			}
@@ -94,12 +102,18 @@ func TestUpdateMod_Happy(t *testing.T) {
 					}, nil
 				},
 			}
-			rd := strings.NewReader("Y")
-			ms := service.NewModService(&r, &fm, &ts, rd)
+			ms := service.NewModService(&r, &fm, &ts, test.rd)
 
 			err := ms.UpdateMod("Sleepover")
 			if err != nil {
 				t.Errorf("expected a nil error, received: %+v", err)
+			}
+			wantFileCalls, wantRecordWrites := 0, 0
+			if test.updated {
+				wantFileCalls, wantRecordWrites = 2, 1
+			}
+			if fileCalls != wantFileCalls || recordWrites != wantRecordWrites {
+				t.Errorf("file calls/record writes = %d/%d, want %d/%d", fileCalls, recordWrites, wantFileCalls, wantRecordWrites)
 			}
 		})
 	}
