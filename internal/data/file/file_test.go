@@ -74,6 +74,11 @@ func TestUnzipRelativeDestination(t *testing.T) {
 		return
 	}
 
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatalf("locate test executable: %v", err)
+	}
+
 	tests := map[string]struct {
 		symlinkPWD  bool
 		destination string
@@ -118,7 +123,7 @@ func TestUnzipRelativeDestination(t *testing.T) {
 			}
 
 			// Isolate cwd changes from other tests while preserving a shell's logical PWD.
-			cmd := exec.Command(os.Args[0], "-test.run=^TestUnzipRelativeDestination$")
+			cmd := exec.Command(executable, "-test.run=^TestUnzipRelativeDestination$")
 			cmd.Dir = work
 			cmd.Env = append(os.Environ(), "PWD="+pwd, rootEnv+"="+root, destinationEnv+"="+tt.destination)
 			if output, err := cmd.CombinedOutput(); err != nil {
