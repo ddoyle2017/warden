@@ -67,10 +67,10 @@ func TestPreserveBepInExConfigRetainedReader(t *testing.T) {
 
 func TestCopyBepInExConfigFilePublication(t *testing.T) {
 	tests := map[string]struct {
-		existing          bool
-		interrupt         bool
-		completionFailure bool
-		mode              os.FileMode
+		existing     bool
+		interrupt    bool
+		closeFailure bool
+		mode         os.FileMode
 	}{
 		"given a private configuration and public default, when copying, then publish only the completed private replacement": {
 			existing: true, mode: 0o600,
@@ -87,8 +87,8 @@ func TestCopyBepInExConfigFilePublication(t *testing.T) {
 		"given no packaged default, when copying is interrupted, then publish no partial file": {
 			interrupt: true, mode: 0o600,
 		},
-		"given complete bytes and a reported copy completion failure, when returning, then retain the default and discard the replacement": {
-			existing: true, completionFailure: true, mode: 0o600,
+		"given complete bytes and a destination close failure, when returning, then retain the default and discard the replacement": {
+			existing: true, closeFailure: true, mode: 0o600,
 		},
 	}
 	for name, tt := range tests {
@@ -113,7 +113,7 @@ func TestCopyBepInExConfigFilePublication(t *testing.T) {
 			}
 			fault := errors.New("configuration copy failed")
 			var staging string
-			copies := 0
+			copies, closes := 0, 0
 			err := copyBepInExConfigFile(source, target, func(from, prepared string) error {
 				copies++
 				staging = filepath.Dir(prepared)
@@ -142,16 +142,24 @@ func TestCopyBepInExConfigFilePublication(t *testing.T) {
 					checkBoundary()
 					return fmt.Errorf("%w: %w", ErrFileCopyFailed, fault)
 				}
+				if tt.closeFailure {
+					err := copyFileWithDestination(from, prepared, func(path string) (io.WriteCloser, error) {
+						dst, err := os.Create(path)
+						if err != nil {
+							return nil, err
+						}
+						return &completionFailureFile{file: dst, closeErr: fault, closes: &closes}, nil
+					})
+					checkBoundary()
+					return err
+				}
 				if err := copyFile(from, prepared); err != nil {
 					return err
 				}
 				checkBoundary()
-				if tt.completionFailure {
-					return fmt.Errorf("%w: %w", ErrFileCopyFailed, fault)
-				}
 				return nil
 			})
-			if tt.interrupt || tt.completionFailure {
+			if tt.interrupt || tt.closeFailure {
 				if !errors.Is(err, ErrFileCopyFailed) || !errors.Is(err, fault) {
 					t.Fatalf("copy failure lost its cause: %v", err)
 				}
@@ -169,9 +177,51 @@ func TestCopyBepInExConfigFilePublication(t *testing.T) {
 			if copies != 1 {
 				t.Errorf("expected one configuration copy, got %d", copies)
 			}
+			if tt.closeFailure && closes != 1 {
+				t.Errorf("destination close calls = %d, want 1", closes)
+			}
 			if _, err := os.Stat(staging); !errors.Is(err, os.ErrNotExist) {
 				t.Errorf("configuration staging was not removed: %v", err)
 			}
 		})
+	}
+}
+
+func TestPreserveBepInExConfigDirectoryModes(t *testing.T) {
+	source, destination := t.TempDir(), t.TempDir()
+	modes := map[string]os.FileMode{".": 0o750, "nested": 0o555, "empty": 0o500}
+	t.Cleanup(func() {
+		for _, root := range []string{source, destination} {
+			for _, name := range []string{".", "nested", "empty"} {
+				if err := os.Chmod(filepath.Join(root, name), 0o700); err != nil && !errors.Is(err, os.ErrNotExist) {
+					t.Errorf("restore fixture cleanup access: %v", err)
+				}
+			}
+		}
+	})
+	saved := map[string]string{"nested/user.cfg": "user settings"}
+	writeRestoreTree(t, source, saved)
+	writeRestoreTree(t, destination, map[string]string{"nested/new.cfg": "new defaults"})
+	if err := os.Mkdir(filepath.Join(source, "empty"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for name, mode := range modes {
+		if err := os.Chmod(filepath.Join(source, name), mode); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := preserveBepInExConfig(source, destination); err != nil {
+		t.Fatal(err)
+	}
+	assertRestoreTree(t, source, saved)
+	assertRestoreTree(t, destination, map[string]string{
+		"nested/user.cfg": "user settings",
+		"nested/new.cfg":  "new defaults",
+	})
+	for name, mode := range modes {
+		info, err := os.Stat(filepath.Join(destination, name))
+		if err != nil || !info.IsDir() || info.Mode().Perm() != mode {
+			t.Errorf("configuration directory %q = %v, %v; want %o", name, info, err, mode)
+		}
 	}
 }

@@ -145,15 +145,16 @@ private directory beside its destination and renamed into place only after the
 copy succeeds. Existing readers of a packaged default keep reading that default,
 not the preserved user bytes. Staging is removed after publication or failure;
 copy, publication, and staging-cleanup errors fail the update through its
-original-server recovery path.
+original-server recovery path. Configuration directory modes are restored after
+their children are published; temporary publication roots remain private.
 
 Existing files win byte-for-byte over packaged defaults at the same relative
 path; new, non-conflicting defaults remain. This includes `BepInEx.cfg`,
 mod-specific and nested configuration, and files without a `.cfg` extension.
 Missing or empty pre-update configuration is valid and leaves new defaults in
-place. Existing file permission bits are preserved, and configuration directory
-access is not broadened. Ownership and extended metadata are not preserved.
-Warden does not merge values or migrate settings.
+place. Existing file permissions and final configuration-directory modes are
+preserved. Ownership and extended metadata are not preserved. Warden does not
+merge values or migrate settings.
 This policy applies only to framework updates and that tree, not loader or
 startup files elsewhere in the server or Warden's home configuration/database.
 

@@ -165,7 +165,12 @@ func preserveBepInExConfig(source, destination string) error {
 		return fmt.Errorf("configuration source %q is not a directory", source)
 	}
 
-	return filepath.Walk(source, func(path string, info os.FileInfo, err error) error {
+	type directoryMode struct {
+		path string
+		mode os.FileMode
+	}
+	var directories []directoryMode
+	err = filepath.Walk(source, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -175,13 +180,29 @@ func preserveBepInExConfig(source, destination string) error {
 		}
 		target := filepath.Join(destination, relative)
 		if info.IsDir() {
-			if err := os.MkdirAll(target, info.Mode()); err != nil {
+			mode := info.Mode() | 0o700
+			if err := os.MkdirAll(target, mode); err != nil {
 				return err
 			}
-			return os.Chmod(target, info.Mode())
+			if err := os.Chmod(target, mode); err != nil {
+				return err
+			}
+			directories = append(directories, directoryMode{path: target, mode: info.Mode()})
+			return nil
 		}
 		return copyBepInExConfigFile(path, target, copyFile)
 	})
+	if err != nil {
+		return err
+	}
+	// Publish descendants before restoring restrictive configuration directory modes.
+	for i := len(directories) - 1; i >= 0; i-- {
+		directory := directories[i]
+		if err := os.Chmod(directory.path, directory.mode); err != nil {
+			return fmt.Errorf("%w: set configuration directory permissions %q: %w", ErrFileCopyFailed, directory.path, err)
+		}
+	}
+	return nil
 }
 
 func copyBepInExConfigFile(source, destination string, copyConfig func(string, string) error) (err error) {

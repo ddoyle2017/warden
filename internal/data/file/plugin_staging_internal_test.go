@@ -98,6 +98,7 @@ func TestUpdateBepInExCleanupFailures(t *testing.T) {
 			writeRestoreTree(t, server, map[string]string{
 				"BepInEx/plugins/a-plugin":      plugins["a-plugin"],
 				"BepInEx/plugins/nested/config": plugins["nested/config"],
+				"BepInEx/config/user.cfg":       "user framework configuration",
 				"BepInEx/core/old":              "old framework",
 				"server-data":                   "unrelated server bytes",
 			})
@@ -171,6 +172,7 @@ func TestUpdateBepInExCleanupFailures(t *testing.T) {
 				"BepInEx/plugins/a-plugin":      plugins["a-plugin"],
 				"BepInEx/plugins/nested/config": plugins["nested/config"],
 				"BepInEx/plugins/bundled":       "bundled plugin",
+				"BepInEx/config/user.cfg":       "user framework configuration",
 				"BepInEx/core/runtime":          "new framework",
 				"server-data":                   "unrelated server bytes",
 			})

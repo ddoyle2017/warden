@@ -445,6 +445,10 @@ func TestUpdateBepInExConfiguration(t *testing.T) {
 				if !errors.Is(err, file.ErrFrameworkUpdateFailed) {
 					t.Fatalf("expected a configuration conflict causing update failure, got %v", err)
 				}
+				var completed *file.FrameworkMutationCleanupError
+				if errors.As(err, &completed) {
+					t.Fatalf("configuration failure was marked as completed: %v", err)
+				}
 				var conflictPath string
 				if errors.As(err, &pathErr) {
 					conflictPath = pathErr.Path
