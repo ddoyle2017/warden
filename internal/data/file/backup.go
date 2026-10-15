@@ -16,8 +16,8 @@ var (
 
 // Backup provides an interface for all file backup related operations
 type Backup interface {
-	// Creates a complete snapshot of the source directory. A failed call retains
-	// any previous backup.
+	// Creates a complete snapshot and records the source root's permission mode.
+	// A failed call retains the previous snapshot and its recorded root mode.
 	Create(source string) error
 
 	// Consumes the active backup before deleting its files. Cleanup failures
@@ -26,6 +26,8 @@ type Backup interface {
 
 	// Restores a complete copy before consuming the backup. Failures before
 	// publication retain the snapshot; cleanup failures report leftover paths.
+	// Preserves existing destination permissions, or the saved source root's
+	// permissions when the destination is missing.
 	Restore(destination string) error
 
 	// Returns the location of the current backup
@@ -34,6 +36,7 @@ type Backup interface {
 
 type backup struct {
 	location         *string
+	rootMode         os.FileMode
 	removeIncomplete func(string) error
 }
 
@@ -46,6 +49,10 @@ func (b *backup) Create(source string) error {
 }
 
 func (b *backup) create(source string, copySnapshot func(string, string) error) error {
+	info, err := os.Lstat(source)
+	if err != nil {
+		return fmt.Errorf("%w: inspect source %q: %w", ErrBackupCreateFailed, source, err)
+	}
 	tmp, err := os.MkdirTemp("", "warden-backup")
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrBackupCreateFailed, err)
@@ -59,7 +66,7 @@ func (b *backup) create(source string, copySnapshot func(string, string) error) 
 		return err
 	}
 
-	b.location = &tmp
+	b.location, b.rootMode = &tmp, info.Mode()
 	return nil
 }
 
@@ -81,7 +88,7 @@ func (b *backup) restore(destination string, ops restoreOperations) (err error) 
 	if b.location == nil {
 		return ErrBackupMissing
 	}
-	snapshot := *b.location
+	snapshot, rootMode := *b.location, b.rootMode
 
 	destination, err = restoreDestination(snapshot, destination)
 	if err != nil {
@@ -91,6 +98,9 @@ func (b *backup) restore(destination string, ops restoreOperations) (err error) 
 	hadDestination := statErr == nil
 	if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
 		return fmt.Errorf("%w: inspect %q: %w", ErrBackupRestoreFailed, destination, statErr)
+	}
+	if hadDestination {
+		rootMode = info.Mode()
 	}
 	if err := os.MkdirAll(filepath.Dir(destination), os.ModePerm); err != nil {
 		return fmt.Errorf("%w: prepare parent of %q: %w", ErrBackupRestoreFailed, destination, err)
@@ -120,11 +130,9 @@ func (b *backup) restore(destination string, ops restoreOperations) (err error) 
 	if err := ops.copy(snapshot, replacement); err != nil {
 		return fmt.Errorf("%w: copy backup %q: %w", ErrBackupRestoreFailed, snapshot, err)
 	}
-	if hadDestination {
-		// Apply the live root's mode, not the private snapshot container's mode.
-		if err := os.Chmod(replacement, info.Mode()); err != nil {
-			return fmt.Errorf("%w: set replacement permissions for %q: %w", ErrBackupRestoreFailed, destination, err)
-		}
+	// The published root's permissions are independent of the private containers.
+	if err := os.Chmod(replacement, rootMode); err != nil {
+		return fmt.Errorf("%w: set replacement permissions for %q: %w", ErrBackupRestoreFailed, destination, err)
 	}
 
 	previous := filepath.Join(staging, "previous")
@@ -147,7 +155,7 @@ func (b *backup) restore(destination string, ops restoreOperations) (err error) 
 
 	published = true
 	// Cleanup can partially delete the snapshot, so it is no longer retryable.
-	b.location = nil
+	b.location, b.rootMode = nil, 0
 	if err := ops.removeAll(snapshot); err != nil {
 		return fmt.Errorf("%w: restored %q; remove consumed backup %q: %w", ErrBackupDeleteFailed, destination, snapshot, err)
 	}
@@ -275,7 +283,7 @@ func (b *backup) remove(removeAll func(string) error) error {
 		return ErrBackupMissing
 	}
 	snapshot := *b.location
-	b.location = nil
+	b.location, b.rootMode = nil, 0
 	if err := removeAll(snapshot); err != nil {
 		return fmt.Errorf("%w: remove consumed backup %q: %w", ErrBackupDeleteFailed, snapshot, err)
 	}

@@ -86,11 +86,12 @@ a mutation. Callers must not interpret every nil error as proof that an
 installation, update, or removal occurred.
 
 The file manager makes a backup available for restoration only after the
-complete copy succeeds. After a failed copy, it attempts to remove the temporary
-directory and returns any cleanup error alongside the creation error. A failed
-attempt leaves any previous valid snapshot active. Mod and framework operations
-stop if a required backup cannot be created rather than continuing with an
-incomplete snapshot.
+complete copy succeeds, retaining the source root's permission mode with that
+snapshot. After a failed copy, it attempts to remove the temporary directory and
+returns any cleanup error alongside the creation error. A failed attempt leaves
+both the previous valid snapshot and its root permission mode active. Mod and
+framework operations stop if a required backup cannot be created rather than
+continuing with an incomplete snapshot.
 
 An empty source directory is valid for a backup; a missing source is an error.
 Mod installation and removal of all mods create a missing plugins directory
@@ -126,9 +127,11 @@ removal.
 Restoration copies the snapshot into staging beside the destination before
 renaming any live files. The snapshot itself is never renamed across
 filesystems. For an existing destination, restoration captures its permission
-mode before preparation and applies that mode to the completed replacement
-inside private staging. The live root's mode, not the private backup container's
-mode or the process umask, determines the published root's permissions.
+mode before preparation; for a missing destination, it uses the source root's
+mode retained with the backup. The existing destination's mode takes precedence
+even when it is more restrictive than the source's. Restoration applies the
+selected mode to the completed replacement inside private staging, independently
+of the process umask and without changing the private containers' permissions.
 Permission inspection or application failure leaves live files and the active
 backup unchanged, as do other preparation failures. Publishing first moves the
 prior tree aside; if publishing fails, restoration moves that tree back.
@@ -143,9 +146,9 @@ not offered for another restore. The restored destination remains available.
 Missing destinations and parents are supported, but restoration rejects
 non-directory or symlink targets, filesystem roots, working-directory
 ancestors, and paths overlapping the backup, including resolved aliases.
-New roots without an existing mode use the usual directory-creation permissions
-subject to the umask. Preserving directory permission modes does not preserve
-ownership or extended metadata.
+Missing parent directories use the usual directory-creation permissions subject
+to the umask. Preserving directory permission modes does not preserve ownership
+or extended metadata.
 Restoration needs space and write access in the destination's parent and a
 destination that can be renamed. A mount point that cannot be renamed fails
 without deleting its live contents. The rename/recovery sequence is not

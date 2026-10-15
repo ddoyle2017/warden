@@ -46,7 +46,7 @@ func TestLiveRootPermissions(t *testing.T) {
 	assertPluginDirectoryModes(t, control, map[string]os.FileMode{".": defaultMode})
 
 	for _, mode := range []os.FileMode{0o700, 0o775, 0o755} {
-		for _, operation := range []string{"restore", "remove all mods", "roll back all mods"} {
+		for _, operation := range []string{"restore", "restore missing root", "restore missing root after failed backup", "remove all mods", "roll back all mods"} {
 			name := fmt.Sprintf("given a %04o live root, when %s, then preserve its mode and expected files", mode, operation)
 			t.Run(name, func(t *testing.T) {
 				th := helper.NewHelper(t)
@@ -72,8 +72,16 @@ func TestLiveRootPermissions(t *testing.T) {
 				}
 
 				var backup file.Backup
-				if operation == "restore" {
-					if err := os.Chmod(plugins, 0o750); err != nil {
+				missingRoot := operation == "restore missing root" || operation == "restore missing root after failed backup"
+				if operation == "restore" || missingRoot {
+					sourceMode := os.FileMode(0o750)
+					if missingRoot {
+						sourceMode = mode
+					}
+					if err := os.Chmod(plugins, sourceMode); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.Chmod(filepath.Join(plugins, "plugin.dll"), 0o644); err != nil {
 						t.Fatal(err)
 					}
 					backup = file.NewBackup()
@@ -82,6 +90,39 @@ func TestLiveRootPermissions(t *testing.T) {
 					}
 					assertPluginDirectoryModes(t, *backup.Path(), map[string]os.FileMode{".": 0o700})
 					assertPluginFiles(t, th, *backup.Path(), saved)
+					if operation == "restore missing root after failed backup" {
+						prior := *backup.Path()
+						rejected := filepath.Join(server, "rejected-source")
+						rejectedMode := os.FileMode(0o775)
+						if mode == rejectedMode {
+							rejectedMode = 0o700
+						}
+						if err := os.Mkdir(rejected, 0o700); err != nil {
+							t.Fatal(err)
+						}
+						if err := os.Chmod(rejected, rejectedMode); err != nil {
+							t.Fatal(err)
+						}
+						if err := os.WriteFile(filepath.Join(rejected, "a-copied"), []byte("rejected replacement bytes"), 0o600); err != nil {
+							t.Fatal(err)
+						}
+						if err := os.Symlink(filepath.Join(rejected, "missing"), filepath.Join(rejected, "b-dangling")); err != nil {
+							t.Fatal(err)
+						}
+						if err := backup.Create(rejected); !errors.Is(err, file.ErrBackupCreateFailed) || !errors.Is(err, file.ErrFileOpenFailed) {
+							t.Fatalf("expected the replacement backup copy to fail, got %v", err)
+						}
+						if backup.Path() == nil || *backup.Path() != prior {
+							t.Fatal("failed creation replaced the active backup")
+						}
+						assertPluginDirectoryModes(t, rejected, map[string]os.FileMode{".": rejectedMode})
+						assertFileContents(t, filepath.Join(rejected, "a-copied"), "rejected replacement bytes")
+						assertPluginDirectoryModes(t, prior, map[string]os.FileMode{".": 0o700})
+						assertPluginFiles(t, th, prior, saved)
+						if entries, err := os.ReadDir(backups); err != nil || len(entries) != 1 || entries[0].Name() != filepath.Base(prior) {
+							t.Fatalf("failed replacement did not retain only the original backup: %v, %v", entries, err)
+						}
+					}
 					for _, name := range []string{"plugin.dll", "live-only"} {
 						if err := os.WriteFile(filepath.Join(plugins, name), []byte("changed live bytes"), 0o600); err != nil {
 							t.Fatal(err)
@@ -92,10 +133,15 @@ func TestLiveRootPermissions(t *testing.T) {
 					t.Fatal(err)
 				}
 				assertPluginDirectoryModes(t, plugins, map[string]os.FileMode{".": mode})
+				if missingRoot {
+					if err := os.RemoveAll(plugins); err != nil {
+						t.Fatal(err)
+					}
+				}
 
 				manager := file.NewManager(&mock.HTTPClient{}, server)
 				switch operation {
-				case "restore":
+				case "restore", "restore missing root", "restore missing root after failed backup":
 					if err := backup.Restore(plugins); err != nil {
 						t.Fatal(err)
 					}
@@ -103,6 +149,9 @@ func TestLiveRootPermissions(t *testing.T) {
 						t.Error("successful restoration retained an active backup")
 					}
 					assertPluginFiles(t, th, plugins, saved)
+					if info, err := os.Stat(filepath.Join(plugins, "plugin.dll")); err != nil || info.Mode().Perm() != 0o644 {
+						t.Errorf("restoration changed the sentinel's permissions: %v, %v", info, err)
+					}
 				case "remove all mods":
 					if err := manager.RemoveAllMods(); err != nil {
 						t.Fatal(err)
