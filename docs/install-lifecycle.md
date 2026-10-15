@@ -98,10 +98,17 @@ before taking a backup. Removing an absent mod remains a no-op.
 
 Mod removal retains original files in staging beside the plugin directory until
 record deletion succeeds. Backup or staging failure stops before record deletion.
+Clearing all mods captures the existing plugin directory's permission mode and
+prepares an empty replacement with that mode before moving the live directory.
+Metadata or replacement-preparation failure leaves the live directory untouched.
+The replacement retains the captured mode regardless of the process umask;
+staging and backup containers remain private.
+
 Staging uses a rename; a cross-filesystem rename fails rather than falling back
 to destructive copying. If record deletion returns an error, the service attempts
 to rename the staged files back. A conflicting destination is not overwritten;
-the error identifies the retained staging path for recovery. A repository error
+this includes new files or directories inside the recreated plugins directory.
+The error identifies the retained staging path for recovery. A repository error
 does not prove that its write was unapplied, so inspect recorded state as well.
 
 After successful record deletion, removal is committed and cleanup is
@@ -118,11 +125,16 @@ removal.
 
 Restoration copies the snapshot into staging beside the destination before
 renaming any live files. The snapshot itself is never renamed across
-filesystems. A preparation failure leaves live files and the active backup
-unchanged. Publishing first moves the prior tree aside; if publishing fails,
-restoration moves that tree back. If recovery also fails, the error identifies
-the retained prior tree, prepared replacement, and original backup. Keep these
-paths until the intended tree has been recovered and inspected.
+filesystems. For an existing destination, restoration captures its permission
+mode before preparation and applies that mode to the completed replacement
+inside private staging. The live root's mode, not the private backup container's
+mode or the process umask, determines the published root's permissions.
+Permission inspection or application failure leaves live files and the active
+backup unchanged, as do other preparation failures. Publishing first moves the
+prior tree aside; if publishing fails, restoration moves that tree back.
+If recovery also fails, the error identifies the retained prior tree, prepared
+replacement, and original backup. Keep these paths until the intended tree has
+been recovered and inspected.
 
 Successful publication consumes the active backup before cleanup, even if
 cleanup fails. Explicit backup removal also consumes its handle before deleting
@@ -131,6 +143,9 @@ not offered for another restore. The restored destination remains available.
 Missing destinations and parents are supported, but restoration rejects
 non-directory or symlink targets, filesystem roots, working-directory
 ancestors, and paths overlapping the backup, including resolved aliases.
+New roots without an existing mode use the usual directory-creation permissions
+subject to the umask. Preserving directory permission modes does not preserve
+ownership or extended metadata.
 Restoration needs space and write access in the destination's parent and a
 destination that can be renamed. A mount point that cannot be renamed fails
 without deleting its live contents. The rename/recovery sequence is not

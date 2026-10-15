@@ -87,6 +87,11 @@ func (b *backup) restore(destination string, ops restoreOperations) (err error) 
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrBackupRestoreFailed, err)
 	}
+	info, statErr := os.Lstat(destination)
+	hadDestination := statErr == nil
+	if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
+		return fmt.Errorf("%w: inspect %q: %w", ErrBackupRestoreFailed, destination, statErr)
+	}
 	if err := os.MkdirAll(filepath.Dir(destination), os.ModePerm); err != nil {
 		return fmt.Errorf("%w: prepare parent of %q: %w", ErrBackupRestoreFailed, destination, err)
 	}
@@ -115,13 +120,14 @@ func (b *backup) restore(destination string, ops restoreOperations) (err error) 
 	if err := ops.copy(snapshot, replacement); err != nil {
 		return fmt.Errorf("%w: copy backup %q: %w", ErrBackupRestoreFailed, snapshot, err)
 	}
+	if hadDestination {
+		// Apply the live root's mode, not the private snapshot container's mode.
+		if err := os.Chmod(replacement, info.Mode()); err != nil {
+			return fmt.Errorf("%w: set replacement permissions for %q: %w", ErrBackupRestoreFailed, destination, err)
+		}
+	}
 
 	previous := filepath.Join(staging, "previous")
-	_, statErr := os.Lstat(destination)
-	hadDestination := statErr == nil
-	if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
-		return fmt.Errorf("%w: inspect %q: %w", ErrBackupRestoreFailed, destination, statErr)
-	}
 	if hadDestination {
 		if err := ops.rename(destination, previous); err != nil {
 			return fmt.Errorf("%w: retain prior tree %q: %w", ErrBackupRestoreFailed, destination, err)

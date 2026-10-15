@@ -13,6 +13,7 @@ import (
 func TestRestoreTransferFailures(t *testing.T) {
 	tests := map[string]struct {
 		copyFailure    bool
+		modeFailure    bool
 		retainFailure  bool
 		publishFailure bool
 		recoverFailure bool
@@ -24,6 +25,9 @@ func TestRestoreTransferFailures(t *testing.T) {
 		},
 		"given a copy and cleanup failure, when restoring, then report both errors and the partial copy": {
 			copyFailure: true, cleanupFailure: true,
+		},
+		"given a missing prepared root, when setting permissions fails, then retain the live tree and retryable backup": {
+			modeFailure: true,
 		},
 		"given a failed prior-tree rename, when restoring, then leave live files untouched": {
 			retainFailure: true,
@@ -48,6 +52,9 @@ func TestRestoreTransferFailures(t *testing.T) {
 			destination := filepath.Join(parent, "server")
 			if !tt.missing {
 				writeRestoreTree(t, destination, live)
+				if err := os.Chmod(destination, 0o775); err != nil {
+					t.Fatal(err)
+				}
 			}
 			b := NewBackup().(*backup)
 			if err := b.Create(source); err != nil {
@@ -59,6 +66,14 @@ func TestRestoreTransferFailures(t *testing.T) {
 			ops := restoreOperations{
 				copy: func(source, target string) error {
 					staging = filepath.Dir(target)
+					for _, path := range []string{snapshot, staging} {
+						if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o700 {
+							t.Fatalf("snapshot or staging container is not private: %v, %v", info, err)
+						}
+					}
+					if tt.modeFailure {
+						return os.Remove(target)
+					}
 					if tt.copyFailure {
 						if err := copyFile(filepath.Join(source, "a-plugin"), filepath.Join(target, "a-plugin")); err != nil {
 							t.Fatal(err)
@@ -68,8 +83,18 @@ func TestRestoreTransferFailures(t *testing.T) {
 					return copyDirectory(source, target)
 				},
 				rename: func(source, target string) error {
-					if tt.copyFailure {
-						t.Fatal("attempted publication after an incomplete copy")
+					if tt.copyFailure || tt.modeFailure {
+						t.Fatal("attempted publication after failed preparation")
+					}
+					for _, path := range []string{snapshot, staging} {
+						if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o700 {
+							t.Fatalf("publication broadened a private container: %v, %v", info, err)
+						}
+					}
+					if !tt.missing && filepath.Base(source) == "replacement" {
+						if info, err := os.Stat(source); err != nil || info.Mode().Perm() != 0o775 {
+							t.Errorf("replacement lacks the live root's mode before publication: %v, %v", info, err)
+						}
 					}
 					if (tt.retainFailure && source == destination) || (tt.publishFailure && filepath.Base(source) == "replacement") {
 						return &os.LinkError{Op: "rename", Old: source, New: target, Err: syscall.EXDEV}
@@ -94,6 +119,12 @@ func TestRestoreTransferFailures(t *testing.T) {
 			if tt.copyFailure && !errors.Is(err, copyErr) {
 				t.Errorf("copy error was lost: %v", err)
 			}
+			if tt.modeFailure {
+				var pathErr *os.PathError
+				if !errors.Is(err, os.ErrNotExist) || !errors.As(err, &pathErr) || pathErr.Op != "chmod" {
+					t.Errorf("expected a permission-application failure, got %v", err)
+				}
+			}
 			if (tt.retainFailure || tt.publishFailure) && !errors.Is(err, syscall.EXDEV) {
 				t.Errorf("rename error was lost: %v", err)
 			}
@@ -110,6 +141,9 @@ func TestRestoreTransferFailures(t *testing.T) {
 				}
 			} else {
 				assertRestoreTree(t, destination, live)
+				if info, err := os.Stat(destination); err != nil || info.Mode().Perm() != 0o775 {
+					t.Errorf("failed restoration changed the live root's mode: %v, %v", info, err)
+				}
 			}
 			if tt.recoverFailure {
 				previous, replacement := filepath.Join(staging, "previous"), filepath.Join(staging, "replacement")
@@ -140,6 +174,11 @@ func TestRestoreTransferFailures(t *testing.T) {
 				t.Fatalf("retry failed: %v", err)
 			}
 			assertRestoreTree(t, destination, saved)
+			if !tt.missing {
+				if info, err := os.Stat(destination); err != nil || info.Mode().Perm() != 0o775 {
+					t.Errorf("successful retry changed the live root's mode: %v, %v", info, err)
+				}
+			}
 			if b.Path() != nil {
 				t.Error("successful retry did not consume the backup")
 			}
