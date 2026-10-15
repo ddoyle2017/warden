@@ -3,6 +3,7 @@ package command
 import (
 	"errors"
 	"fmt"
+	"warden/internal/data/file"
 	"warden/internal/service"
 
 	"github.com/spf13/cobra"
@@ -38,7 +39,10 @@ func NewAddCommand(fs service.Framework, ms service.Mod) *cobra.Command {
 }
 
 func parseAddError(err error) {
-	if errors.Is(err, service.ErrModAlreadyInstalled) {
+	var completed *file.FrameworkMutationCleanupError
+	if errors.As(err, &completed) {
+		fmt.Printf("... %v ...\n", err)
+	} else if errors.Is(err, service.ErrModAlreadyInstalled) {
 		fmt.Println("... mod already installed ...")
 	} else if errors.Is(err, service.ErrModInstallFailed) {
 		fmt.Println("... unable to install mod ...")

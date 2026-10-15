@@ -2,6 +2,7 @@ package file
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"warden/internal/api"
@@ -9,6 +10,9 @@ import (
 
 // An interface for all mod file operations
 type modManager interface {
+	// Checks the installation target without changing files.
+	ValidateModInstall() error
+
 	// Downloads the targetted mod, unzips it, and adds it to the mod
 	// folder.
 	//
@@ -23,9 +27,21 @@ type modManager interface {
 
 	// Deletes the parent mod folder and all of its contents, then recreates an empty one.
 	RemoveAllMods() error
+
+	// Stages removal while retaining the original files until Commit or Rollback.
+	StageModRemoval(fullName string) (ModRemoval, error)
+	StageAllModsRemoval() (ModRemoval, error)
+}
+
+func (m *manager) ValidateModInstall() error {
+	return preflightRestore(m.modDirectory)
 }
 
 func (m *manager) InstallMod(url, fullName string) (string, error) {
+	if err := m.ValidateModInstall(); err != nil {
+		return "", err
+	}
+
 	// Get the data
 	resp, err := m.client.Get(url)
 	if err != nil {
@@ -33,7 +49,12 @@ func (m *manager) InstallMod(url, fullName string) (string, error) {
 	}
 	defer resp.Body.Close()
 
-	m.backup.Create(m.modDirectory)
+	if err := os.MkdirAll(m.modDirectory, os.ModePerm); err != nil {
+		return "", fmt.Errorf("%w: %w", ErrDirectoryCreateFailed, err)
+	}
+	if err := m.backup.Create(m.modDirectory); err != nil {
+		return "", err
+	}
 
 	// Create the zip archive
 	zipPath := filepath.Join(m.modDirectory, fullName+".zip")
@@ -59,37 +80,40 @@ func (m *manager) InstallMod(url, fullName string) (string, error) {
 }
 
 func (m *manager) RemoveMod(fullName string) error {
-	modPath := filepath.Join(m.modDirectory, fullName)
-
-	m.backup.Create(m.modDirectory)
-	err := os.RemoveAll(modPath)
-
-	// If error is thrown because the file does not exist, we ignore. For
-	// any other error, return that the delete failed.
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		m.backup.Restore(m.modDirectory)
-		return ErrModDeleteFailed
+	removal, err := m.StageModRemoval(fullName)
+	if err != nil {
+		return err
 	}
-	m.backup.Remove()
+	if err := removal.Commit(); err != nil {
+		return fmt.Errorf("%w: %w", ErrModDeleteFailed, err)
+	}
 	return nil
 }
 
 func (m *manager) RemoveAllMods() error {
-	m.backup.Create(m.modDirectory)
-
-	// Delete the parent folder for all mods and everything inside
-	err := os.RemoveAll(m.modDirectory)
+	removal, err := m.StageAllModsRemoval()
 	if err != nil {
-		m.backup.Restore(m.modDirectory)
-		return ErrDeleteAllModsFailed
+		return err
 	}
-
-	// Recreate parent folder for all mods
-	err = os.MkdirAll(m.modDirectory, os.ModePerm)
-	if err != nil {
-		m.backup.Restore(m.modDirectory)
-		return ErrDirectoryCreateFailed
+	if err := removal.Commit(); err != nil {
+		return fmt.Errorf("%w: %w", ErrDeleteAllModsFailed, err)
 	}
-	m.backup.Remove()
 	return nil
+}
+
+func (m *manager) StageModRemoval(fullName string) (ModRemoval, error) {
+	target := filepath.Join(m.modDirectory, fullName)
+	if _, err := os.Lstat(target); errors.Is(err, os.ErrNotExist) {
+		return &modRemoval{}, nil
+	} else if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrModDeleteFailed, err)
+	}
+	return m.stageModRemoval(target, false, ErrModDeleteFailed)
+}
+
+func (m *manager) StageAllModsRemoval() (ModRemoval, error) {
+	if err := os.MkdirAll(m.modDirectory, os.ModePerm); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrDirectoryCreateFailed, err)
+	}
+	return m.stageModRemoval(m.modDirectory, true, ErrDeleteAllModsFailed)
 }

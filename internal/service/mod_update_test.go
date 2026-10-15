@@ -79,6 +79,7 @@ func TestUpdateMod_Happy(t *testing.T) {
 				},
 			}
 			fm := mock.Manager{
+				ValidateModInstallFunc: func() error { return nil },
 				RemoveModFunc: func(fullName string) error {
 					return nil
 				},
@@ -194,6 +195,7 @@ func TestUpdateMod_Sad(t *testing.T) {
 				},
 			},
 			fm: &mock.Manager{
+				ValidateModInstallFunc: func() error { return nil },
 				RemoveModFunc: func(fullName string) error {
 					return file.ErrModDeleteFailed
 				},
@@ -225,6 +227,7 @@ func TestUpdateMod_Sad(t *testing.T) {
 				},
 			},
 			fm: &mock.Manager{
+				ValidateModInstallFunc: func() error { return nil },
 				RemoveModFunc: func(fullName string) error {
 					return nil
 				},
@@ -262,6 +265,7 @@ func TestUpdateAllMods_Happy(t *testing.T) {
 	depFullName := depNamespace + "-" + depName + "-" + depVersion
 
 	fm := &mock.Manager{
+		ValidateModInstallFunc: func() error { return nil },
 		RemoveModFunc: func(fullName string) error {
 			return nil
 		},
@@ -437,6 +441,7 @@ func TestUpdateAllMods_Sad(t *testing.T) {
 				},
 			},
 			fm: &mock.Manager{
+				ValidateModInstallFunc: func() error { return nil },
 				RemoveModFunc: func(fullName string) error {
 					return file.ErrModDeleteFailed
 				},
@@ -478,6 +483,7 @@ func TestUpdateAllMods_Sad(t *testing.T) {
 				},
 			},
 			fm: &mock.Manager{
+				ValidateModInstallFunc: func() error { return nil },
 				RemoveModFunc: func(fullName string) error {
 					return nil
 				},

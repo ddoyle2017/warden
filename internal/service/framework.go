@@ -63,9 +63,14 @@ func (fs *frameworkService) InstallBepInEx() error {
 				return ErrFrameworkNotFound
 			}
 
+			var installErr error
 			_, err = fs.fm.InstallBepInEx(pkg.Latest.DownloadURL, pkg.Latest.FullName)
 			if err != nil {
-				return ErrUnableToInstallFramework
+				installErr = fmt.Errorf("%w: %w", ErrUnableToInstallFramework, err)
+				var completed *file.FrameworkMutationCleanupError
+				if !errors.As(err, &completed) {
+					return installErr
+				}
 			}
 
 			f := framework.Framework{
@@ -77,7 +82,10 @@ func (fs *frameworkService) InstallBepInEx() error {
 			}
 			err = fs.fr.InsertFramework(f)
 			if err != nil {
-				return ErrUnableToInstallFramework
+				return errors.Join(installErr, fmt.Errorf("%w: %w", ErrUnableToInstallFramework, err))
+			}
+			if installErr != nil {
+				return installErr
 			}
 
 			fmt.Println("... successfully installed BepInEx ...")
@@ -118,8 +126,13 @@ func (fs *frameworkService) UpdateBepInEx() error {
 		tries := 0
 		for fs.in.Scan() && tries < 2 {
 			if fs.in.Text() == yes {
+				var updateErr error
 				if err := fs.fm.UpdateBepInEx(pkg.Latest.DownloadURL, pkg.Latest.FullName); err != nil {
-					return ErrUnableToUpdateFramework
+					updateErr = fmt.Errorf("%w: %w", ErrUnableToUpdateFramework, err)
+					var completed *file.FrameworkMutationCleanupError
+					if !errors.As(err, &completed) {
+						return updateErr
+					}
 				}
 
 				f := framework.Framework{
@@ -132,9 +145,9 @@ func (fs *frameworkService) UpdateBepInEx() error {
 				}
 				err = fs.fr.UpdateFramework(f)
 				if err != nil {
-					return ErrUnableToInstallFramework
+					return errors.Join(updateErr, fmt.Errorf("%w: %w", ErrUnableToInstallFramework, err))
 				}
-				return nil
+				return updateErr
 			} else if fs.in.Text() == no {
 				fmt.Println("... aborting ...")
 				return nil
@@ -157,13 +170,18 @@ func (fs *frameworkService) RemoveBepInEx() error {
 	tries := 0
 	for fs.in.Scan() && tries < 2 {
 		if fs.in.Text() == yesLong {
+			var removeErr error
 			if err := fs.fm.RemoveBepInEx(); err != nil {
-				return ErrUnableToRemoveFramework
+				removeErr = fmt.Errorf("%w: %w", ErrUnableToRemoveFramework, err)
+				var completed *file.FrameworkMutationCleanupError
+				if !errors.As(err, &completed) {
+					return removeErr
+				}
 			}
 			if err := fs.fr.DeleteFramework(framework.BepInEx); err != nil {
-				return ErrUnableToRemoveFramework
+				return errors.Join(removeErr, fmt.Errorf("%w: %w", ErrUnableToRemoveFramework, err))
 			}
-			return nil
+			return removeErr
 		} else if fs.in.Text() == noLong {
 			fmt.Println("... aborting ...")
 			return nil

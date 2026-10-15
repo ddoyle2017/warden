@@ -1,6 +1,8 @@
 package file_test
 
 import (
+	"archive/zip"
+	"bytes"
 	"errors"
 	"io"
 	"net/http"
@@ -15,41 +17,100 @@ import (
 )
 
 func TestInstallMod_Happy(t *testing.T) {
-	th := helper.NewHelper(t)
-
-	// Set-up
-	modDir := filepath.Join(th.GetValheimDirectory(), file.BepInExPluginDirectory)
-	if err := os.MkdirAll(modDir, os.ModePerm); err != nil {
-		t.Errorf("unexpected error setting up mods folder, received: %+v", err)
+	tests := map[string]bool{
+		"given no plugins directory, when installing the first mod, then create it and install the files": false,
+		"given an empty plugins directory, when installing the first mod, then install the files":         true,
 	}
 
-	installLocation := filepath.Join(modDir, helper.TestModFullName)
-	archive, err := os.Open(filepath.Join(th.GetDataDirectory(), helper.TestModFullName+file.ZipFileExtension))
-	if err != nil {
-		t.Errorf("unexpected error reading test zip file, received err: %+v", err)
-	}
+	for name, createDirectory := range tests {
+		t.Run(name, func(t *testing.T) {
+			th := helper.NewHelper(t)
+			t.Setenv("TMPDIR", t.TempDir())
+			modDir := filepath.Join(th.GetValheimDirectory(), file.BepInExPluginDirectory)
+			if createDirectory {
+				if err := os.MkdirAll(modDir, os.ModePerm); err != nil {
+					t.Fatal(err)
+				}
+			}
+			sentinel := filepath.Join(th.GetValheimDirectory(), "server-data")
+			if err := os.WriteFile(sentinel, []byte("unrelated server bytes"), 0o600); err != nil {
+				t.Fatal(err)
+			}
 
-	client := mock.HTTPClient{
-		GetFunc: func(_ string) (*http.Response, error) {
-			return &http.Response{
-				StatusCode: http.StatusOK,
-				Body:       archive,
-			}, nil
+			var archive bytes.Buffer
+			writer := zip.NewWriter(&archive)
+			entry, err := writer.Create("plugin.dll")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := entry.Write([]byte("new plugin\x00bytes")); err != nil {
+				t.Fatal(err)
+			}
+			if err := writer.Close(); err != nil {
+				t.Fatal(err)
+			}
+			client := &mock.HTTPClient{
+				GetFunc: func(_ string) (*http.Response, error) {
+					return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(&archive)}, nil
+				},
+			}
+
+			manager := file.NewManager(client, th.GetValheimDirectory())
+			path, err := manager.InstallMod(helper.TestDownloadURL, helper.TestModFullName)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if path != filepath.Join(modDir, helper.TestModFullName) {
+				t.Fatalf("unexpected installation path %q", path)
+			}
+			if data, err := os.ReadFile(filepath.Join(path, "plugin.dll")); err != nil || string(data) != "new plugin\x00bytes" {
+				t.Errorf("installed bytes do not match the archive: %q, %v", data, err)
+			}
+			if data, err := os.ReadFile(sentinel); err != nil || string(data) != "unrelated server bytes" {
+				t.Errorf("installation changed unrelated files: %q, %v", data, err)
+			}
+		})
+	}
+}
+
+func TestModRemovals_AbsentDirectory(t *testing.T) {
+	tests := map[string]struct {
+		run          func(file.Manager) error
+		wantEmptyDir bool
+	}{
+		"given no plugins directory, when removing a mod, then leave the server unchanged": {
+			run: func(m file.Manager) error { return m.RemoveMod(helper.TestModFullName) },
+		},
+		"given no plugins directory, when removing all mods, then create an empty plugins directory": {
+			run:          func(m file.Manager) error { return m.RemoveAllMods() },
+			wantEmptyDir: true,
 		},
 	}
-	manager := file.NewManager(&client, th.GetValheimDirectory())
-
-	path, err := manager.InstallMod(helper.TestDownloadURL, helper.TestModFullName)
-	if err != nil {
-		t.Errorf("expected a nil error, received: %+v", err)
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			th := helper.NewHelper(t)
+			t.Setenv("TMPDIR", t.TempDir())
+			sentinel := filepath.Join(th.GetValheimDirectory(), "server-data")
+			if err := os.WriteFile(sentinel, []byte("unrelated server bytes"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			m := file.NewManager(&mock.HTTPClient{}, th.GetValheimDirectory())
+			if err := tt.run(m); err != nil {
+				t.Fatal(err)
+			}
+			entries, err := os.ReadDir(filepath.Join(th.GetValheimDirectory(), file.BepInExPluginDirectory))
+			if tt.wantEmptyDir {
+				if err != nil || len(entries) != 0 {
+					t.Errorf("expected an empty plugins directory, got %v, %v", entries, err)
+				}
+			} else if !errors.Is(err, os.ErrNotExist) {
+				t.Errorf("expected plugins directory to remain absent, got %v", err)
+			}
+			if data, err := os.ReadFile(sentinel); err != nil || string(data) != "unrelated server bytes" {
+				t.Errorf("removal changed unrelated files: %q, %v", data, err)
+			}
+		})
 	}
-	if path != installLocation {
-		t.Errorf("expected mod to be installed at %s, but it was found at: %s", installLocation, path)
-	}
-
-	t.Cleanup(func() {
-		th.RemoveServerFiles()
-	})
 }
 
 func TestInstallMod_Sad(t *testing.T) {
@@ -103,63 +164,85 @@ func TestInstallMod_Sad(t *testing.T) {
 }
 
 func TestRemoveMod_Happy(t *testing.T) {
-	th := helper.NewHelper(t)
-	th.SetUpServerFiles()
-
-	tests := map[string]struct {
-		name string
-	}{
-		"if mod does not exist, delete nothing and return successful": {
-			name: "some-fake-mod-that-is-not-real_0.0.1",
-		},
-		"successfully removes target mod": {
-			name: helper.TestModFullName,
-		},
+	tests := map[string]string{
+		"given an absent target, when removing it, then preserve installed mods":   "some-fake-mod-that-is-not-real_0.0.1",
+		"given an installed target, when removing it, then finalize only that mod": helper.TestModFullName,
 	}
-
-	for name, test := range tests {
+	for name, fullName := range tests {
 		t.Run(name, func(t *testing.T) {
-			manager := file.NewManager(&mock.HTTPClient{}, th.GetValheimDirectory())
-
-			err := manager.RemoveMod(test.name)
+			th := helper.NewHelper(t)
+			th.SetUpServerFiles()
+			backups := t.TempDir()
+			t.Setenv("TMPDIR", backups)
+			plugins := filepath.Join(th.GetValheimDirectory(), file.BepInExPluginDirectory)
+			payload := filepath.Join(plugins, helper.TestModFullName, "WhereYouAt.dll")
+			original, err := os.ReadFile(payload)
 			if err != nil {
-				t.Errorf("expected nil error, received: %+v", err)
+				t.Fatal(err)
+			}
+			unrelated := filepath.Join(plugins, "unrelated.dll")
+			if err := os.WriteFile(unrelated, []byte("unrelated plugin bytes"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			manager := file.NewManager(&mock.HTTPClient{}, th.GetValheimDirectory())
+			if err := manager.RemoveMod(fullName); err != nil {
+				t.Fatal(err)
+			}
+			data, err := os.ReadFile(payload)
+			if fullName == helper.TestModFullName {
+				if !errors.Is(err, os.ErrNotExist) {
+					t.Errorf("removed mod remains installed: %v", err)
+				}
+			} else if err != nil || !bytes.Equal(data, original) {
+				t.Errorf("absent-target removal changed installed bytes: %v", err)
+			}
+			if data, err := os.ReadFile(unrelated); err != nil || string(data) != "unrelated plugin bytes" {
+				t.Errorf("removal changed unrelated plugin bytes: %q, %v", data, err)
+			}
+			if entries, err := os.ReadDir(backups); err != nil || len(entries) != 0 {
+				t.Errorf("file-only removal did not finalize its snapshot: %v, %v", entries, err)
+			}
+			if staged, err := filepath.Glob(filepath.Join(filepath.Dir(plugins), ".warden-removal-*")); err != nil || len(staged) != 0 {
+				t.Errorf("file-only removal left staging: %v, %v", staged, err)
 			}
 		})
 	}
-	t.Cleanup(func() {
-		th.RemoveServerFiles()
-	})
 }
 
 func TestRemoveAllMods_Happy(t *testing.T) {
-	th := helper.NewHelper(t)
-
-	tests := map[string]struct {
-		setUp func(t *testing.T)
-	}{
-		"if no mods are installed, clean directory and return successful": {
-			setUp: func(_ *testing.T) {},
-		},
-		"successfully removes all mods": {
-			setUp: func(t *testing.T) {
-				th.SetUpServerFiles()
-			},
-		},
+	tests := map[string]bool{
+		"given no installed mods, when removing all, then create an empty plugins directory": false,
+		"given installed mods, when removing all, then finalize their removal":               true,
 	}
-
-	for name, test := range tests {
+	for name, populated := range tests {
 		t.Run(name, func(t *testing.T) {
-			test.setUp(t)
+			th := helper.NewHelper(t)
+			if populated {
+				th.SetUpServerFiles()
+			}
+			backups := t.TempDir()
+			t.Setenv("TMPDIR", backups)
+			sentinel := filepath.Join(th.GetValheimDirectory(), "server-data")
+			if err := os.WriteFile(sentinel, []byte("unrelated server bytes"), 0o600); err != nil {
+				t.Fatal(err)
+			}
 			manager := file.NewManager(&mock.HTTPClient{}, th.GetValheimDirectory())
-
-			err := manager.RemoveAllMods()
-			if err != nil {
-				t.Errorf("expected nil error, received: %+v", err)
+			if err := manager.RemoveAllMods(); err != nil {
+				t.Fatal(err)
+			}
+			plugins := filepath.Join(th.GetValheimDirectory(), file.BepInExPluginDirectory)
+			if entries, err := os.ReadDir(plugins); err != nil || len(entries) != 0 {
+				t.Errorf("expected an empty plugins directory: %v, %v", entries, err)
+			}
+			if data, err := os.ReadFile(sentinel); err != nil || string(data) != "unrelated server bytes" {
+				t.Errorf("removal changed unrelated server bytes: %q, %v", data, err)
+			}
+			if entries, err := os.ReadDir(backups); err != nil || len(entries) != 0 {
+				t.Errorf("file-only removal did not finalize its snapshot: %v, %v", entries, err)
+			}
+			if staged, err := filepath.Glob(filepath.Join(filepath.Dir(plugins), ".warden-removal-*")); err != nil || len(staged) != 0 {
+				t.Errorf("file-only removal left staging: %v, %v", staged, err)
 			}
 		})
 	}
-	t.Cleanup(func() {
-		th.RemoveServerFiles()
-	})
 }

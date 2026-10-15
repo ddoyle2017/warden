@@ -22,8 +22,8 @@ two authors publishing a package with the same name.
 BepInEx is a framework, not an ordinary plugin. Its archive contains a wrapper
 directory whose contents are moved into the Valheim server directory. Ordinary
 mods are extracted into individual directories under `BepInEx/plugins`.
-Framework updates therefore need to preserve plugins while replacing framework
-files.
+Framework updates preserve plugins and user configuration while replacing
+framework files.
 
 Dependency strings include namespace, name, and version. Current dependency
 handling fetches the latest release for each direct dependency, rather than
@@ -40,17 +40,42 @@ Earlier completed steps can remain in effect if a later step fails.
 | Operation | Ordering and scope |
 | --- | --- |
 | Add a mod | The command first attempts BepInEx installation when its record is missing. If that returns no error, the mod service checks for an existing mod, fetches the latest release, installs files, upserts the record, and then installs direct dependencies. |
-| Update a mod | Fetch the installed record and latest release. If the version compares newer and the user confirms, remove the old release directory, install the new files, upsert the record, and process dependencies. |
+| Update a mod | Fetch the installed record and latest release. If the version compares newer and the user confirms, validate the installation target before removing the old release directory, then install the new files, upsert the record, and process dependencies. |
 | Update all mods | Confirm once, then process recorded mods sequentially. A failure stops the loop; earlier successful updates are not undone. This is not a framework update. |
-| Remove a mod | Confirm, delete its record, then remove its versioned directory. A file-removal failure can leave unrecorded files. |
-| Remove all mods | Require the stronger confirmation, then attempt both record deletion and plugin-directory removal, even if record deletion fails. The file manager recreates an empty plugin directory. |
+| Remove a mod | Confirm, take a complete backup and stage its versioned directory outside the plugin tree, delete its record, then discard staged files and the backup. |
+| Remove all mods | Require the stronger confirmation, back up and stage the plugin directory, recreate an empty plugin directory, delete the records, then discard staged files and the backup. |
 | Install BepInEx | Download and unpack the framework into the server directory, move the archive wrapper's contents into place, then insert the framework record. |
-| Update BepInEx | Move plugins to temporary storage, remove and install framework files, move plugins back, then update the framework record. |
+| Update BepInEx | Take one original-server snapshot, copy plugins to a temporary sibling of the server directory, remove and install framework files, preserve existing configuration over packaged defaults, transfer plugin copies through destination-local staging, finalize the server snapshot, then update the framework record. |
 | Remove BepInEx | Remove the framework's known files, including the plugin directory, then delete its framework record. The current path does not also delete mod records. |
 
 Installing a root mod can succeed before a dependency fails. Updating a mod
 removes its old files before the new installation succeeds. These are not
 all-or-nothing operations.
+
+Initial and dependency installations write records only after file installation
+succeeds. A failed file-install step does not delete pre-existing records, so a
+dependency backup failure preserves its earlier record and files. Single/all
+updates validate the installation target before removing each old release; a
+refusal leaves its files and record unchanged. If replacement files fail after
+removal, the update attempts to delete that obsolete record. Failure to write
+replacement metadata after successful file installation does not trigger that
+cleanup.
+
+## Archive extraction
+
+Mod and framework extraction creates missing parent directories, including
+when an archive omits directory entries. It rejects absolute paths, relative
+paths escaping the destination, and existing symlinks that resolve outside the
+destination or cannot be resolved. A symlinked destination is resolved first;
+symlinks within it are allowed only when their targets remain inside that
+resolved directory. Relative destinations retain their physical filesystem
+meaning, including parent components, even when the shell's `PWD` is a symlink.
+
+Extraction stops and returns an error on path, directory creation, entry read,
+checksum, file write, or close failures. Earlier entries and partially written
+files can remain; extraction itself does not roll them back. The path checks
+assume the destination tree is not modified concurrently and are not a
+filesystem sandbox.
 
 ## Confirmations and backups
 
@@ -60,12 +85,126 @@ A negative answer returns nil, and exhausted input can also return nil without
 a mutation. Callers must not interpret every nil error as proof that an
 installation, update, or removal occurred.
 
-The file manager creates temporary backups and attempts restoration on several
-failure paths. Its backup object tracks a single location, and framework
-updates invoke nested operations that also use backups. Some backup, restore,
-and cleanup errors are currently ignored. Consequently, the presence of backup
-code does not establish successful rollback or preservation of the caller's
-original snapshot.
+The file manager makes a backup available for restoration only after the
+complete copy succeeds. After a failed copy, it attempts to remove the temporary
+directory and returns any cleanup error alongside the creation error. A failed
+attempt leaves any previous valid snapshot active. Mod and framework operations
+stop if a required backup cannot be created rather than continuing with an
+incomplete snapshot.
+
+An empty source directory is valid for a backup; a missing source is an error.
+Mod installation and removal of all mods create a missing plugins directory
+before taking a backup. Removing an absent mod remains a no-op.
+
+Mod removal retains original files in staging beside the plugin directory until
+record deletion succeeds. Backup or staging failure stops before record deletion.
+Staging uses a rename; a cross-filesystem rename fails rather than falling back
+to destructive copying. If record deletion returns an error, the service attempts
+to rename the staged files back. A conflicting destination is not overwritten;
+the error identifies the retained staging path for recovery. A repository error
+does not prove that its write was unapplied, so inspect recorded state as well.
+
+After successful record deletion, removal is committed and cleanup is
+irreversible. Cleanup failures identify leftover paths but do not make those
+potentially partial contents usable recovery snapshots. File-only removal callers
+can distinguish this committed outcome through `ModRemovalCleanupError`; mod
+updates report it and continue installing the replacement rather than stopping
+after the old files have already been removed.
+
+Single/all mod removal commands display the wrapped recovery details, including
+retained paths and instructions to verify database state. A committed cleanup
+error is shown as a completed removal with a cleanup warning, not as a failed
+removal.
+
+Restoration copies the snapshot into staging beside the destination before
+renaming any live files. The snapshot itself is never renamed across
+filesystems. A preparation failure leaves live files and the active backup
+unchanged. Publishing first moves the prior tree aside; if publishing fails,
+restoration moves that tree back. If recovery also fails, the error identifies
+the retained prior tree, prepared replacement, and original backup. Keep these
+paths until the intended tree has been recovered and inspected.
+
+Successful publication consumes the active backup before cleanup, even if
+cleanup fails. Explicit backup removal also consumes its handle before deleting
+files. Cleanup errors identify leftover paths; a partially deleted snapshot is
+not offered for another restore. The restored destination remains available.
+Missing destinations and parents are supported, but restoration rejects
+non-directory or symlink targets, filesystem roots, working-directory
+ancestors, and paths overlapping the backup, including resolved aliases.
+Restoration needs space and write access in the destination's parent and a
+destination that can be renamed. A mount point that cannot be renamed fails
+without deleting its live contents. The rename/recovery sequence is not
+crash-atomic and does not guard against concurrent filesystem changes.
+
+Framework installation, update, and removal check the restore target before
+changing live files; mod installation checks its plugins target. Run these
+operations from outside the tree they would restore. A rejected target returns
+a preflight error without downloading, creating a backup, or mutating files.
+Staged mod removal does not use general backup restoration and remains available
+from inside the plugins directory: its rollback renames the original files back.
+These checks do not guarantee that later I/O or cleanup will succeed.
+
+A framework update owns one original-server snapshot throughout removal,
+installation, configuration preservation, and plugin transfer. These steps do
+not replace or consume that snapshot. A reported removal, download,
+installation, configuration-preservation, or incomplete plugin-transfer failure
+triggers restoration of the original framework, plugins, configuration, and
+unrelated server files. Configuration file/directory conflicts and read or copy
+errors fail the update rather than discarding settings. If restoration fails
+before publication, the file-layer error identifies the retained server
+snapshot for recovery. Standalone framework installation and removal keep their
+own guarded backups and report restoration and cleanup failures.
+
+Before plugin transfer, the update copies the original `BepInEx/config` tree
+from that snapshot into the replacement framework. Each file is copied into a
+private directory beside its destination and renamed into place only after the
+copy succeeds. Existing readers of a packaged default keep reading that default,
+not the preserved user bytes. Staging is removed after publication or failure;
+copy, publication, and staging-cleanup errors fail the update through its
+original-server recovery path. Configuration directory modes are restored after
+their children are published; temporary publication roots remain private.
+
+Existing files win byte-for-byte over packaged defaults at the same relative
+path; new, non-conflicting defaults remain. This includes `BepInEx.cfg`,
+mod-specific and nested configuration, and files without a `.cfg` extension.
+Missing or empty pre-update configuration is valid and leaves new defaults in
+place. Existing file permissions and final configuration-directory modes are
+preserved. Ownership and extended metadata are not preserved. Warden does not
+merge values or migrate settings.
+This policy applies only to framework updates and that tree, not loader or
+startup files elsewhere in the server or Warden's home configuration/database.
+
+Framework plugin staging keeps a complete copy outside the server tree, where
+framework removal and whole-server restoration cannot erase it. This needs
+space and write access in the server directory's parent. Copying preserves plugin
+subdirectory permissions without broadening private snapshot or transfer roots.
+A failed initial copy stops before framework removal and cleans up its partial
+staging; the file-layer error reports any cleanup failure and the retained server
+backup.
+Once framework replacement starts, a failed update retains the
+complete plugin snapshot and reports its path. If the replacement archive omits
+the plugins directory, copy-back creates it. Plugin transfer copies into the
+plugins directory before using local renames, preserving non-conflicting
+bundled plugins and keeping the independent snapshot even after a partial
+transfer. A successful transfer removes that snapshot and reports cleanup
+failures rather than attempting another framework rollback. Once framework,
+configuration, and plugin replacement is complete, the update finalizes its
+server snapshot even if plugin cleanup fails. Cleanup errors identify leftover
+artifacts without advertising consumed server snapshots as valid recovery
+sources.
+
+Completed framework installation, update, or removal with cleanup failures
+returns `FrameworkMutationCleanupError`. The service still saves or deletes the
+matching framework record and retains the cleanup diagnostics; if the record
+write also fails, it reports both errors. The add, update, and remove commands
+display these completed-mutation diagnostics, including artifact paths. An add
+stops on a bootstrap diagnostic, but its recorded framework is reused on retry.
+A cleanup error after an incomplete or rolled-back operation does not mark
+completion and must not change its framework record.
+
+Some service callers still discard underlying file-layer error details,
+including recovery paths. Filesystem recovery does not roll back database
+writes or provide crash or concurrency atomicity.
 
 When changing these paths, define the observable filesystem and database state
 for success, cancellation, and each failure being handled. Verify those states,

@@ -3,6 +3,7 @@ package command
 import (
 	"errors"
 	"fmt"
+	"warden/internal/data/file"
 	"warden/internal/service"
 
 	"github.com/spf13/cobra"
@@ -73,8 +74,14 @@ func newRemoveBepInEx(fs service.Framework) *cobra.Command {
 }
 
 func parseRemoveError(err error) {
-	if errors.Is(err, service.ErrUnableToRemoveMod) {
-		fmt.Println("... unable to remove mod ...")
+	var committedModCleanup *file.ModRemovalCleanupError
+	var completed *file.FrameworkMutationCleanupError
+	if errors.As(err, &completed) {
+		fmt.Printf("... %v ...\n", err)
+	} else if errors.As(err, &committedModCleanup) {
+		fmt.Printf("... warning: %v ...\n", committedModCleanup)
+	} else if errors.Is(err, service.ErrUnableToRemoveMod) {
+		fmt.Printf("... %v ...\n", err)
 	} else if errors.Is(err, service.ErrMaxAttempts) {
 		fmt.Println("... unable to confim mod removal, aborting ...")
 	} else if errors.Is(err, service.ErrModNotInstalled) {
@@ -85,8 +92,11 @@ func parseRemoveError(err error) {
 }
 
 func parseRemoveAllError(err error) {
-	if errors.Is(err, service.ErrUnableToRemoveMod) {
-		fmt.Println("... unable to remove mods ...")
+	var committedModCleanup *file.ModRemovalCleanupError
+	if errors.As(err, &committedModCleanup) {
+		fmt.Printf("... warning: %v ...\n", committedModCleanup)
+	} else if errors.Is(err, service.ErrUnableToRemoveMod) {
+		fmt.Printf("... %v ...\n", err)
 	} else if errors.Is(err, service.ErrMaxAttempts) {
 		fmt.Println("... unable to confim mod removal, aborting ...")
 	}

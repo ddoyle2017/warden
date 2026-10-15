@@ -119,7 +119,7 @@ func (ms *modService) UpdateMod(name string) error {
 			if ms.in.Text() == yes {
 				err = ms.updateMod(current.FullName(), pkg.Latest)
 				if err != nil {
-					return ErrUnableToUpdateMod
+					return fmt.Errorf("%w: %w", ErrUnableToUpdateMod, err)
 				}
 				err = ms.addDependencies(pkg.Latest.Dependencies)
 				if err != nil {
@@ -164,7 +164,7 @@ func (ms *modService) UpdateAllMods() error {
 				if m.Version < pkg.Latest.VersionNumber {
 					err = ms.updateMod(m.FullName(), pkg.Latest)
 					if err != nil {
-						return ErrUnableToUpdateMod
+						return fmt.Errorf("%w: %w", ErrUnableToUpdateMod, err)
 					}
 					err = ms.addDependencies(pkg.Latest.Dependencies)
 					if err != nil {
@@ -203,18 +203,13 @@ func (ms *modService) RemoveMod(namespace, name string) error {
 				return ErrUnableToRemoveMod
 			}
 
-			// Remove mod record
-			err = ms.r.DeleteMod(name, namespace)
+			removal, err := ms.fm.StageModRemoval(current.FullName())
 			if err != nil {
-				return ErrUnableToRemoveMod
+				return fmt.Errorf("%w: %w", ErrUnableToRemoveMod, err)
 			}
-
-			// Remove mod files
-			err = ms.fm.RemoveMod(current.FullName())
-			if err != nil {
-				return ErrUnableToRemoveMod
-			}
-			return nil
+			return ms.finishModRemoval(removal, func() error {
+				return ms.r.DeleteMod(name, namespace)
+			})
 		} else if ms.in.Text() == no {
 			fmt.Println("... aborting ...")
 			return nil
@@ -234,13 +229,11 @@ func (ms *modService) RemoveAllMods() error {
 	tries := 0
 	for ms.in.Scan() && tries < 2 {
 		if ms.in.Text() == yesLong {
-			errRepo := ms.r.DeleteAllMods()
-			errFile := ms.fm.RemoveAllMods()
-
-			if errRepo != nil || errFile != nil {
-				return ErrUnableToRemoveMod
+			removal, err := ms.fm.StageAllModsRemoval()
+			if err != nil {
+				return fmt.Errorf("%w: %w", ErrUnableToRemoveMod, err)
 			}
-			return nil
+			return ms.finishModRemoval(removal, ms.r.DeleteAllMods)
 		} else if ms.in.Text() == noLong {
 			fmt.Println("... aborting ...")
 			return nil
@@ -250,6 +243,16 @@ func (ms *modService) RemoveAllMods() error {
 	}
 	if tries >= 2 {
 		return ErrMaxAttempts
+	}
+	return nil
+}
+
+func (ms *modService) finishModRemoval(removal file.ModRemoval, deleteRecords func() error) error {
+	if err := deleteRecords(); err != nil {
+		return fmt.Errorf("%w: record deletion failed; verify database state: %w", ErrUnableToRemoveMod, errors.Join(err, removal.Rollback()))
+	}
+	if err := removal.Commit(); err != nil {
+		return fmt.Errorf("%w: %w", ErrUnableToRemoveMod, err)
 	}
 	return nil
 }
@@ -277,24 +280,37 @@ func (ms *modService) addDependencies(dependencies []string) error {
 }
 
 func (ms *modService) updateMod(fullname string, latest thunderstore.Release) error {
+	if err := ms.fm.ValidateModInstall(); err != nil {
+		return err
+	}
+
 	// Delete the previous mod files
 	err := ms.fm.RemoveMod(fullname)
 	if err != nil {
-		return err
+		var cleanupErr *file.ModRemovalCleanupError
+		if !errors.As(err, &cleanupErr) {
+			return err
+		}
+		fmt.Printf("... %v ...\n", cleanupErr)
 	}
-	// Install the newest version and update DB record
-	return ms.installMod(latest)
+	// This path removed the prior release and owns cleanup of its obsolete record.
+	path, err := ms.fm.InstallMod(latest.DownloadURL, latest.FullName)
+	if err != nil {
+		return errors.Join(err, ms.r.DeleteMod(latest.Name, latest.Namespace))
+	}
+	return ms.recordMod(latest, path)
 }
 
 func (ms *modService) installMod(release thunderstore.Release) error {
 	// Download and install the mod files
 	path, err := ms.fm.InstallMod(release.DownloadURL, release.FullName)
 	if err != nil {
-		ms.r.DeleteMod(release.Name, release.Namespace)
 		return err
 	}
+	return ms.recordMod(release, path)
+}
 
-	// Record mod in DB
+func (ms *modService) recordMod(release thunderstore.Release, path string) error {
 	m := mod.Mod{
 		Name:         release.Name,
 		Namespace:    release.Namespace,
