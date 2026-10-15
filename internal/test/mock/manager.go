@@ -7,6 +7,7 @@ import "warden/internal/data/file"
 type Manager struct {
 	ValidateModInstallFunc     func() error
 	InstallModFunc             func(url, fullName string) (string, error)
+	ReplaceModFunc             func(url, oldFullName, newFullName string) (file.ModReplacement, error)
 	RemoveModFunc              func(fullName string) error
 	RemoveAllModsFunc          func() error
 	StageModRemovalFunc        func(fullName string) (file.ModRemoval, error)
@@ -23,6 +24,10 @@ func (m *Manager) ValidateModInstall() error {
 
 func (m *Manager) InstallMod(url, fullName string) (string, error) {
 	return m.InstallModFunc(url, fullName)
+}
+
+func (m *Manager) ReplaceMod(url, oldFullName, newFullName string) (file.ModReplacement, error) {
+	return m.ReplaceModFunc(url, oldFullName, newFullName)
 }
 
 func (m *Manager) RemoveMod(fullName string) error {

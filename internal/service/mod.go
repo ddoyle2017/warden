@@ -200,7 +200,7 @@ func (ms *modService) updateInstalledMod(current mod.Mod, err error) error {
 			fmt.Println("... aborting ...")
 			return nil
 		}
-		cleanupErr, err := ms.updateMod(current.FullName(), pkg.Latest)
+		cleanupErr, err := ms.updateMod(current, pkg.Latest)
 		if err != nil {
 			return modMutationResult(cleanupErr, fmt.Errorf("%w: %w", ErrUnableToUpdateMod, err))
 		}
@@ -255,7 +255,7 @@ func (ms *modService) UpdateAllMods() error {
 			return modMutationResult(cleanupErr, fmt.Errorf("%w: %s/%s: %w", ErrUnableToUpdateMod, m.Namespace, m.Name, err))
 		}
 		if newer {
-			updateCleanup, err := ms.updateMod(m.FullName(), pkg.Latest)
+			updateCleanup, err := ms.updateMod(m, pkg.Latest)
 			cleanupErr = errors.Join(cleanupErr, updateCleanup)
 			if err != nil {
 				return modMutationResult(cleanupErr, fmt.Errorf("%w: %w", ErrUnableToUpdateMod, err))
@@ -352,32 +352,32 @@ func (ms *modService) addDependencies(dependencies []string) (cleanupErr, failur
 	return cleanupErr, nil
 }
 
-func (ms *modService) updateMod(fullname string, latest thunderstore.Release) (cleanupErr, failure error) {
+func (ms *modService) updateMod(current mod.Mod, latest thunderstore.Release) (cleanupErr, failure error) {
 	if err := ms.fm.ValidateModInstall(); err != nil {
 		return nil, err
 	}
 
-	// Delete the previous mod files
-	err := ms.fm.RemoveMod(fullname)
-	if err != nil {
-		if _, completed := err.(*file.ModRemovalCleanupError); !completed {
-			return nil, err
-		}
-		cleanupErr = fmt.Errorf("%s: %w", fullname, err)
-	}
-	// This path removed the prior release and owns cleanup of its obsolete record.
-	path, err := ms.fm.InstallMod(latest.DownloadURL, latest.FullName)
+	replacement, err := ms.fm.ReplaceMod(latest.DownloadURL, current.FullName(), latest.FullName)
 	if err != nil {
 		if _, completed := err.(*file.ModInstallCleanupError); !completed {
-			recordErr := ms.r.DeleteMod(latest.Name, latest.Namespace)
-			if recordErr != nil {
-				recordErr = fmt.Errorf("obsolete record deletion failed; verify database state before retrying: %w", recordErr)
-			}
-			return cleanupErr, errors.Join(fmt.Errorf("%s: %w", latest.FullName, err), recordErr)
+			return nil, fmt.Errorf("%s: %w", latest.FullName, err)
+		}
+		cleanupErr = fmt.Errorf("%s: %w", latest.FullName, err)
+	}
+	if err := ms.recordMod(latest, replacement.Path()); err != nil {
+		recovery := "original files were absent"
+		if path := replacement.RecoveryPath(); path != "" {
+			recovery = fmt.Sprintf("original files retained at %q", path)
+		}
+		return cleanupErr, fmt.Errorf("%w; %s; original record before replacement: %+v", err, recovery, current)
+	}
+	if err := replacement.Commit(); err != nil {
+		if _, completed := err.(*file.ModInstallCleanupError); !completed {
+			return cleanupErr, fmt.Errorf("%s: finalize replacement: %w", latest.FullName, err)
 		}
 		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("%s: %w", latest.FullName, err))
 	}
-	return cleanupErr, ms.recordMod(latest, path)
+	return cleanupErr, nil
 }
 
 func (ms *modService) installMod(release thunderstore.Release) (cleanupErr, failure error) {

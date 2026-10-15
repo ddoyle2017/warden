@@ -48,11 +48,7 @@ func TestModUpdate_PreflightPreservesInstallation(t *testing.T) {
 		},
 	}
 	for name, tt := range tests {
-		for _, all := range []bool{false, true} {
-			mode := "single"
-			if all {
-				mode = "all"
-			}
+		for _, mode := range []string{"single", "qualified", "all"} {
 			t.Run(name+"/"+mode, func(t *testing.T) {
 				th, mr, original, backups := newUpdatePreflightFixture(t)
 				plugins := filepath.Dir(original.FilePath)
@@ -90,8 +86,10 @@ func TestModUpdate_PreflightPreservesInstallation(t *testing.T) {
 					return thunderstore.Package{Latest: latest}, nil
 				}}
 				ms := service.NewModService(mr, file.NewManager(client, th.GetValheimDirectory()), ts, strings.NewReader(tt.answer))
-				if all {
+				if mode == "all" {
 					err = ms.UpdateAllMods()
+				} else if mode == "qualified" {
+					err = ms.UpdateModByIdentity(original.Namespace, original.Name)
 				} else {
 					err = ms.UpdateMod(original.Name)
 				}

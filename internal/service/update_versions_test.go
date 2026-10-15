@@ -230,19 +230,12 @@ func TestUpdateReleaseVersions(t *testing.T) {
 					files := file.NewManager(client, server)
 					fm := &mock.Manager{
 						ValidateModInstallFunc: files.ValidateModInstall,
-						RemoveModFunc: func(fullName string) error {
+						ReplaceModFunc: func(url, oldFullName, newFullName string) (file.ModReplacement, error) {
 							fileCalls++
-							if fullName != oldMod.FullName() {
-								t.Fatalf("unexpected removed release %q", fullName)
+							if oldFullName != oldMod.FullName() || url != latest.DownloadURL || newFullName != latest.FullName {
+								t.Fatalf("unexpected replacement %q, %q, %q", url, oldFullName, newFullName)
 							}
-							return files.RemoveMod(fullName)
-						},
-						InstallModFunc: func(url, fullName string) (string, error) {
-							fileCalls++
-							if url != latest.DownloadURL || fullName != latest.FullName {
-								t.Fatalf("unexpected installed release %q, %q", url, fullName)
-							}
-							return files.InstallMod(url, fullName)
+							return files.ReplaceMod(url, oldFullName, newFullName)
 						},
 						UpdateBepInExFunc: func(url, fullName string) error {
 							fileCalls++
@@ -309,7 +302,7 @@ func TestUpdateReleaseVersions(t *testing.T) {
 							wantFramework.Version, wantFramework.Description = tt.latest, latest.Description
 							wantFiles["BepInEx/core/runtime"] = replacement
 						} else {
-							wantFileCalls = 2
+							wantFileCalls = 1
 							wantMod.Version, wantMod.Description = tt.latest, latest.Description
 							wantMod.FilePath = filepath.Join(server, "BepInEx", "plugins", latest.FullName)
 							delete(wantFiles, pluginPath)

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -43,7 +44,7 @@ func TestModInstallRequestOutcomes(t *testing.T) {
 			"given dependency cleanup failure, when installing, then record it and finish remaining dependencies": {
 				warning: "First", published: []string{"Root", "First", "Later"}, recorded: []string{"Root", "First", "Later"},
 			},
-			"given an invalid root archive and failed recovery, when installing, then preserve recovery details without completion": {
+			"given root installation failure, when returning, then preserve original state or recovery details without completion": {
 				failure: "files", failAt: "Root",
 			},
 			"given a nested file completion marker, when root installation fails, then do not record completion": {
@@ -62,14 +63,14 @@ func TestModInstallRequestOutcomes(t *testing.T) {
 			"given published files, when root metadata is rejected, then report the mismatch without deleting records": {
 				failure: "record", failAt: "Root", oldRoot: true, published: []string{"Root"},
 			},
-			"given root cleanup failure, when root metadata is rejected, then retain both causes without completion": {
+			"given root cleanup is configured to fail, when root metadata is rejected, then retain incurred causes without completion": {
 				warning: "Root", failure: "record", failAt: "Root", oldRoot: true, published: []string{"Root"},
 			},
 			"given root cleanup failure, when later dependency metadata is rejected, then report an incomplete request": {
 				warning: "Root", failure: "record", failAt: "Later",
 				published: []string{"Root", "First", "Later"}, recorded: []string{"Root", "First"},
 			},
-			"given root cleanup failure, when metadata reports an error after committing, then require verification without compensation": {
+			"given root cleanup is configured to fail, when metadata reports an error after committing, then retain recovery without compensation": {
 				warning: "Root", failure: "commit", failAt: "Root", published: []string{"Root"}, recorded: []string{"Root"},
 			},
 			"given earlier cleanup failure, when updating a later bulk mod, then finish and record every replacement": {
@@ -84,11 +85,27 @@ func TestModInstallRequestOutcomes(t *testing.T) {
 				warning: "Root", failure: "version", failAt: "Last", onlyBulk: true,
 				published: []string{"Root", "First", "Later"}, recorded: []string{"Root", "First", "Later"},
 			},
+			"given earlier cleanup failure, when a later bulk archive fails, then keep that package's original without whole-request completion": {
+				warning: "Root", failure: "files", failAt: "Last", onlyBulk: true,
+				published: []string{"Root", "First", "Later"}, recorded: []string{"Root", "First", "Later"},
+			},
+			"given earlier cleanup failure, when a later bulk record is rejected, then retain its original recovery and both diagnostics": {
+				warning: "Root", failure: "record", failAt: "Last", onlyBulk: true,
+				published: []string{"Root", "First", "Later", "Last"}, recorded: []string{"Root", "First", "Later"},
+			},
+			"given earlier cleanup failure, when a later bulk record has committed without acknowledgement, then retain recovery without compensation": {
+				warning: "Root", failure: "commit", failAt: "Last", onlyBulk: true,
+				published: []string{"Root", "First", "Later", "Last"}, recorded: []string{"Root", "First", "Later", "Last"},
+			},
 		} {
 			if tt.onlyBulk && operation != "bulk update" {
 				continue
 			}
 			t.Run(operation+"/"+name, func(t *testing.T) {
+				replacing := operation != "add" && (tt.failAt == "Root" || tt.failAt == "Last")
+				replacementPreparationFailure := replacing && tt.failure == "files"
+				unconfirmedReplacement := replacing && (tt.failure == "record" || tt.failure == "commit")
+				warned := tt.warning != "" && !(unconfirmedReplacement && tt.warning == tt.failAt)
 				th := helper.NewHelper(t)
 				server := th.GetValheimDirectory()
 				plugins := filepath.Join(server, "BepInEx", "plugins")
@@ -148,7 +165,6 @@ func TestModInstallRequestOutcomes(t *testing.T) {
 				first.Dependencies = []string{"Owner-NotRecursive-1.0.0"}
 				releases["First"] = first
 				cleanupCause, restoreCause := errors.New("backup cleanup interrupted"), errors.New("recovery interrupted")
-				removalCause := errors.New("removal cleanup interrupted")
 				recordCause, lookupCause := errors.New("commit result unavailable"), errors.New("package lookup interrupted")
 				archive := recoveryArchive(t, false, false)
 				client := &mock.HTTPClient{GetFunc: func(url string) (*http.Response, error) {
@@ -162,24 +178,45 @@ func TestModInstallRequestOutcomes(t *testing.T) {
 					return &http.Response{Body: io.NopCloser(bytes.NewReader(body))}, nil
 				}}
 				manager := file.NewManager(client, server)
-				var artifact, retained, removalArtifact string
+				var artifact, retained string
 				var retainedBackup file.Backup
-				var installed, writes, deleted []string
+				replacements := map[string]file.ModReplacement{}
+				var installed, writes []string
 				fm := &mock.Manager{
 					ValidateModInstallFunc: manager.ValidateModInstall,
-					RemoveModFunc: func(fullName string) error {
-						if tt.warning != "Root" || fullName != "Owner-Root-1.0.0" {
-							return manager.RemoveMod(fullName)
+					ReplaceModFunc: func(url, oldFullName, newFullName string) (file.ModReplacement, error) {
+						release, ok := releases[url]
+						previous := prior[url]
+						if !ok || newFullName != release.FullName || oldFullName != previous.FullName() {
+							t.Fatalf("unexpected replacement %q/%q/%q", url, oldFullName, newFullName)
 						}
-						removal, err := manager.StageModRemoval(fullName)
+						installed = append(installed, url)
+						replacement, err := manager.ReplaceMod(url, oldFullName, newFullName)
 						if err != nil {
-							t.Fatal(err)
+							switch tt.recoveryMarker {
+							case "install":
+								err = errors.Join(err, &file.ModInstallCleanupError{Err: restoreCause})
+							case "framework":
+								err = errors.Join(err, &file.FrameworkMutationCleanupError{Err: restoreCause})
+							case "removal":
+								err = errors.Join(err, &file.ModRemovalCleanupError{Err: restoreCause})
+							}
+							return nil, err
 						}
-						file.SetModRemovalCleanup(removal, func(path string) error {
-							removalArtifact = path
-							return removalCause
-						})
-						return removal.Commit()
+						replacements[url] = replacement
+						if url == tt.warning {
+							file.SetModReplacementCleanup(replacement, func(path string) error {
+								artifact = path
+								if replacement.RecoveryPath() != "" {
+									t.Fatal("replacement cleanup retained an active original")
+								}
+								if err := os.Remove(filepath.Join(path, "original", "plugin.dll")); err != nil {
+									t.Fatal(err)
+								}
+								return cleanupCause
+							})
+						}
+						return replacement, nil
 					},
 					InstallModFunc: func(url, fullName string) (string, error) {
 						release, ok := releases[url]
@@ -247,11 +284,8 @@ func TestModInstallRequestOutcomes(t *testing.T) {
 						return nil
 					},
 					DeleteModFunc: func(name, namespace string) error {
-						if name != "Root" || namespace != "Owner" || operation == "add" || tt.failure != "files" || tt.failAt != "Root" {
-							t.Fatalf("deletion exceeded obsolete-update-record ownership: %s/%s", namespace, name)
-						}
-						deleted = append(deleted, name)
-						return stored.DeleteMod(name, namespace)
+						t.Fatalf("installation failure deleted preserved metadata: %s/%s", namespace, name)
+						return nil
 					},
 				}
 				var fetched []string
@@ -297,7 +331,7 @@ func TestModInstallRequestOutcomes(t *testing.T) {
 					if readErr != nil {
 						t.Fatal(readErr)
 					}
-					for _, text := range []string{"mod request completed", cleanupCause.Error(), removalCause.Error(), artifact, removalArtifact} {
+					for _, text := range []string{"mod request completed", cleanupCause.Error(), artifact} {
 						if text == "" || strings.Count(string(data), text) != 1 {
 							t.Errorf("cross-layer diagnostic must appear once: %q in %q", text, data)
 						}
@@ -308,40 +342,37 @@ func TestModInstallRequestOutcomes(t *testing.T) {
 				} else {
 					err = runModInstallRequest(svc, operation)
 				}
-				if _, completed := err.(*service.ModMutationCleanupError); completed != (tt.warning != "" && tt.failure == "") {
+				if _, completed := err.(*service.ModMutationCleanupError); completed != (warned && tt.failure == "") {
 					t.Errorf("whole-request completion misclassified: %v", err)
 				}
 				var fileCompleted *file.ModInstallCleanupError
-				if errors.As(err, &fileCompleted) != (tt.warning != "" || tt.recoveryMarker == "install") {
+				if errors.As(err, &fileCompleted) != (warned || tt.recoveryMarker == "install") {
 					t.Errorf("file completion cause lost or invented: %v", err)
 				}
 				if tt.failure == "" && tt.warning == "" && err != nil {
 					t.Errorf("successful request failed: %v", err)
 				}
-				if tt.warning != "" {
+				if warned {
 					if !errors.Is(err, cleanupCause) || !errors.Is(err, file.ErrBackupDeleteFailed) ||
 						artifact == "" || !strings.Contains(err.Error(), artifact) || strings.Contains(err.Error(), fmt.Sprintf("backup retained at %q", artifact)) {
 						t.Errorf("cleanup diagnostics lost: %v", err)
 					}
-					leftovers := map[string]string{"z-unrelated.dll": "second unrelated plugin"}
-					if tt.warning == "First" {
-						leftovers[root.FullName+"/plugin.dll"] = "replacement plugin"
-					}
-					if tt.oldDependency {
-						dependency := prior["First"]
-						leftovers[dependency.FullName()+"/plugin.dll"] = "First original bytes"
-					}
-					if tt.onlyBulk {
-						last := prior["Last"]
-						leftovers[last.FullName()+"/plugin.dll"] = "Last original bytes"
+					leftovers := map[string]string{}
+					if tt.warning != "Root" || operation == "add" {
+						leftovers["z-unrelated.dll"] = "second unrelated plugin"
+						if tt.warning == "First" {
+							leftovers[root.FullName+"/plugin.dll"] = "replacement plugin"
+						}
+						if tt.oldDependency {
+							dependency := prior["First"]
+							leftovers[dependency.FullName()+"/plugin.dll"] = "First original bytes"
+						}
+						if tt.onlyBulk {
+							last := prior["Last"]
+							leftovers[last.FullName()+"/plugin.dll"] = "Last original bytes"
+						}
 					}
 					assertArchiveRecoveryFiles(t, th, artifact, leftovers, nil)
-				}
-				if tt.warning == "Root" && operation != "add" {
-					if !errors.Is(err, removalCause) || removalArtifact == "" || !strings.Contains(err.Error(), removalArtifact) {
-						t.Errorf("earlier removal diagnostic lost: %v", err)
-					}
-					assertArchiveRecoveryFiles(t, th, filepath.Join(removalArtifact, "contents"), map[string]string{"plugin.dll": "Root original bytes"}, nil)
 				}
 				if tt.failure != "" {
 					sentinel := service.ErrModInstallFailed
@@ -359,12 +390,24 @@ func TestModInstallRequestOutcomes(t *testing.T) {
 				}
 				switch tt.failure {
 				case "files":
-					if !errors.Is(err, file.ErrZipReadFailed) || !errors.Is(err, file.ErrBackupRestoreFailed) ||
-						!errors.Is(err, restoreCause) || retained == "" || !strings.Contains(err.Error(), retained) {
-						t.Errorf("installation/recovery diagnostics lost: %v", err)
+					if !errors.Is(err, file.ErrZipReadFailed) {
+						t.Errorf("installation diagnostic lost: %v", err)
 					}
-					if retainedBackup == nil || retainedBackup.Path() == nil || *retainedBackup.Path() != retained {
-						t.Fatal("failed restoration lost its active snapshot")
+					if replacementPreparationFailure {
+						if errors.Is(err, file.ErrBackupRestoreFailed) || retainedBackup != nil {
+							t.Errorf("preparation failure claimed an unnecessary restoration: %v", err)
+						}
+						if tt.recoveryMarker != "" && !errors.Is(err, restoreCause) {
+							t.Errorf("nested diagnostic was lost: %v", err)
+						}
+					} else {
+						if !errors.Is(err, file.ErrBackupRestoreFailed) || !errors.Is(err, restoreCause) ||
+							retained == "" || !strings.Contains(err.Error(), retained) {
+							t.Errorf("recovery diagnostics lost: %v", err)
+						}
+						if retainedBackup == nil || retainedBackup.Path() == nil || *retainedBackup.Path() != retained {
+							t.Fatal("failed restoration lost its active snapshot")
+						}
 					}
 				case "record":
 					var cause sqlite3.Error
@@ -391,6 +434,14 @@ func TestModInstallRequestOutcomes(t *testing.T) {
 						t.Errorf("metadata uncertainty or installed path lost: %v", err)
 					}
 				}
+				if unconfirmedReplacement {
+					replacement := replacements[tt.failAt]
+					if replacement == nil || replacement.RecoveryPath() == "" ||
+						!strings.Contains(err.Error(), replacement.RecoveryPath()) {
+						t.Fatalf("unconfirmed metadata lost original files: %v", err)
+					}
+					assertArchiveRecoveryFiles(t, th, replacement.RecoveryPath(), map[string]string{"plugin.dll": tt.failAt + " original bytes"}, nil)
+				}
 				wantFiles := map[string]string{"a-unrelated.dll": "first unrelated plugin", "z-unrelated.dll": "second unrelated plugin"}
 				wantRecords := map[string]mod.Mod{}
 				for _, name := range tt.published {
@@ -406,14 +457,21 @@ func TestModInstallRequestOutcomes(t *testing.T) {
 				if tt.oldRoot && operation != "add" {
 					wantRecords["Root"] = prior["Root"]
 				}
+				if replacementPreparationFailure && tt.failAt == "Root" {
+					wantRecords["Root"] = prior["Root"]
+					priorRoot := prior["Root"]
+					wantFiles[priorRoot.FullName()+"/plugin.dll"] = "Root original bytes"
+				}
 				for _, name := range []string{"First", "Last"} {
 					_, recorded := wantRecords[name]
 					if m, ok := prior[name]; ok && !recorded {
 						wantRecords[name] = m
-						wantFiles[m.FullName()+"/plugin.dll"] = name + " original bytes"
+						if !slices.Contains(tt.published, name) {
+							wantFiles[m.FullName()+"/plugin.dll"] = name + " original bytes"
+						}
 					}
 				}
-				if tt.failure == "files" {
+				if tt.failure == "files" && !replacementPreparationFailure {
 					assertArchiveRecoveryFiles(t, th, retained, wantFiles, nil)
 					wantFiles[releases[tt.failAt].FullName+".zip"] = "bad archive"
 				}
@@ -447,19 +505,12 @@ func TestModInstallRequestOutcomes(t *testing.T) {
 					t.Errorf("request stopped or continued at wrong phase: fetched=%v installed=%v written=%v; want %v/%v/%v",
 						fetched, installed, writes, wantFetched, wantInstalled, tt.published)
 				}
-				wantDeletes := 0
-				if operation != "add" && tt.failure == "files" && tt.failAt == "Root" {
-					wantDeletes = 1
-				}
-				if len(deleted) != wantDeletes {
-					t.Errorf("obsolete record deletes = %v, want %d", deleted, wantDeletes)
-				}
 				entries, readErr := os.ReadDir(backups)
 				wantBackups := 0
-				if tt.warning != "" {
+				if warned && (operation == "add" || tt.warning != "Root") {
 					wantBackups++
 				}
-				if tt.failure == "files" {
+				if tt.failure == "files" && !replacementPreparationFailure {
 					wantBackups++
 				}
 				if readErr != nil || len(entries) != wantBackups {
