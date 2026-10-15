@@ -125,12 +125,12 @@ func TestUpdateBepInExCleanupFailures(t *testing.T) {
 				}
 				return copyDirectory(source, target)
 			}, func(path string) error {
-				switch path {
-				case local:
+				switch {
+				case path == local:
 					if tt.local {
 						return localErr
 					}
-				case snapshot:
+				case path == snapshot:
 					if tt.snapshot {
 						if tt.partialSnapshot {
 							if err := os.Remove(filepath.Join(path, "a-plugin")); err != nil {
@@ -138,6 +138,11 @@ func TestUpdateBepInExCleanupFailures(t *testing.T) {
 							}
 						}
 						return snapshotErr
+					}
+				case filepath.Dir(path) == filepath.Join(server, "BepInEx", "config") &&
+					strings.HasPrefix(filepath.Base(path), ".warden-config-"):
+					if data, err := os.ReadFile(filepath.Join(server, "BepInEx", "config", "user.cfg")); err != nil || string(data) != "user framework configuration" {
+						t.Fatalf("configuration was not published before cleanup: %q, %v", data, err)
 					}
 				default:
 					t.Fatalf("unexpected cleanup path %q", path)

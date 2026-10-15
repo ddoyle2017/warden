@@ -1,11 +1,14 @@
 package file
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -42,7 +45,7 @@ func TestPreserveBepInExConfigRetainedReader(t *testing.T) {
 			}
 			defer reader.Close()
 
-			if err := preserveBepInExConfig(source, destination); err != nil {
+			if err := preserveBepInExConfig(source, destination, os.RemoveAll); err != nil {
 				t.Fatal(err)
 			}
 			if data, err := io.ReadAll(reader); err != nil || string(data) != "packaged defaults" {
@@ -158,7 +161,7 @@ func TestCopyBepInExConfigFilePublication(t *testing.T) {
 				}
 				checkBoundary()
 				return nil
-			})
+			}, os.RemoveAll)
 			if tt.interrupt || tt.closeFailure {
 				if !errors.Is(err, ErrFileCopyFailed) || !errors.Is(err, fault) {
 					t.Fatalf("copy failure lost its cause: %v", err)
@@ -210,7 +213,7 @@ func TestPreserveBepInExConfigDirectoryModes(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := preserveBepInExConfig(source, destination); err != nil {
+	if err := preserveBepInExConfig(source, destination, os.RemoveAll); err != nil {
 		t.Fatal(err)
 	}
 	assertRestoreTree(t, source, saved)
@@ -223,5 +226,112 @@ func TestPreserveBepInExConfigDirectoryModes(t *testing.T) {
 		if err != nil || !info.IsDir() || info.Mode().Perm() != mode {
 			t.Errorf("configuration directory %q = %v, %v; want %o", name, info, err, mode)
 		}
+	}
+}
+
+func TestCopyBepInExConfigCleanupFailure(t *testing.T) {
+	source, destination := t.TempDir(), t.TempDir()
+	saved := map[string]string{"user.cfg": "user settings"}
+	writeRestoreTree(t, source, saved)
+	writeRestoreTree(t, destination, map[string]string{"user.cfg": "packaged defaults"})
+	fault := errors.New("configuration staging cleanup failed")
+	var staging string
+	cleanups := 0
+	err := copyBepInExConfigFile(filepath.Join(source, "user.cfg"), filepath.Join(destination, "user.cfg"), copyFile, func(path string) error {
+		cleanups++
+		staging = path
+		if filepath.Dir(path) != destination || !strings.HasPrefix(filepath.Base(path), ".warden-config-") {
+			t.Fatalf("unexpected cleanup path %q", path)
+		}
+		assertRestoreTree(t, destination, saved)
+		assertRestoreTree(t, path, map[string]string{})
+		return fault
+	})
+	if !errors.Is(err, ErrBackupDeleteFailed) || !errors.Is(err, fault) {
+		t.Fatalf("published-file cleanup failure lost its causes: %v", err)
+	}
+	if cleanups != 1 || staging == "" || !strings.Contains(err.Error(), staging) {
+		t.Fatalf("cleanup count or reported staging path is incorrect: cleanups=%d, path=%q, error=%v", cleanups, staging, err)
+	}
+	assertRestoreTree(t, source, saved)
+	assertRestoreTree(t, destination, saved)
+	if info, err := os.Stat(staging); err != nil || !info.IsDir() || info.Mode().Perm() != 0o700 {
+		t.Errorf("reported staging artifact is missing or not private: %v, %v", info, err)
+	}
+}
+
+func TestUpdateBepInExConfigCleanupFailure(t *testing.T) {
+	parent, backups := restoreTempDir(t), t.TempDir()
+	server := filepath.Join(parent, "server")
+	t.Setenv("TMPDIR", backups)
+	original := map[string]string{
+		"BepInEx/core/old":            "original framework",
+		"BepInEx/config/user.cfg":     "user configuration",
+		"BepInEx/plugins/user/config": "original plugin settings",
+		"doorstop_config.ini":         "original loader settings",
+		"server-data":                 "unrelated server bytes",
+	}
+	writeRestoreTree(t, server, original)
+	archive := frameworkReplacementArchive(t)
+	requests := 0
+	m := NewManager(&pluginHTTPClient{GetFunc: func(url string) (*http.Response, error) {
+		requests++
+		if url != "fixture-url" {
+			t.Fatalf("unexpected download URL %q", url)
+		}
+		return &http.Response{Body: io.NopCloser(bytes.NewReader(archive))}, nil
+	}}, server).(*manager)
+	backup := &restoreTrackingBackup{Backup: m.backup}
+	m.backup = backup
+	fault := errors.New("configuration staging cleanup failed")
+	var plugins, staging string
+	cleanups := 0
+	err := m.updateBepInEx("fixture-url", "fixture-framework", func(source, destination string) error {
+		if source != m.modDirectory || plugins != "" {
+			t.Fatalf("unexpected plugin transfer: %q -> %q", source, destination)
+		}
+		plugins = destination
+		return copyDirectory(source, destination)
+	}, func(path string) error {
+		cleanups++
+		staging = path
+		if filepath.Dir(path) != filepath.Join(server, "BepInEx", "config") ||
+			!strings.HasPrefix(filepath.Base(path), ".warden-config-") {
+			t.Fatalf("unexpected cleanup path %q", path)
+		}
+		assertRestoreTree(t, server, map[string]string{
+			"BepInEx/core/runtime":    "replacement framework",
+			"BepInEx/config/user.cfg": "user configuration",
+			"BepInEx/plugins/bundled": "bundled plugin",
+			"server-data":             "unrelated server bytes",
+		})
+		assertRestoreTree(t, path, map[string]string{})
+		return fault
+	}, os.RemoveAll)
+	for _, cause := range []error{ErrFrameworkUpdateFailed, ErrBackupDeleteFailed, fault} {
+		if !errors.Is(err, cause) {
+			t.Fatalf("expected cleanup failure retaining %v, got %v", cause, err)
+		}
+	}
+	var completed *FrameworkMutationCleanupError
+	if errors.As(err, &completed) {
+		t.Fatalf("intermediate configuration publication marked the update complete: %v", err)
+	}
+	if requests != 1 || cleanups != 1 || backup.restores != 1 {
+		t.Errorf("unexpected update/recovery calls: downloads=%d, cleanups=%d, restores=%d", requests, cleanups, backup.restores)
+	}
+	assertRestoreTree(t, server, original)
+	if plugins == "" || filepath.Dir(plugins) != parent || !strings.Contains(err.Error(), plugins) {
+		t.Fatalf("independent plugin recovery path was lost: %q, %v", plugins, err)
+	}
+	assertRestoreTree(t, plugins, map[string]string{"user/config": "original plugin settings"})
+	if staging == "" || !strings.Contains(err.Error(), staging) {
+		t.Errorf("configuration cleanup path was lost: %q, %v", staging, err)
+	}
+	if backup.Path() != nil {
+		t.Error("successful restoration left an active server backup")
+	}
+	if entries, err := os.ReadDir(backups); err != nil || len(entries) != 0 {
+		t.Errorf("restoration orphaned a server backup: %v, %v", entries, err)
 	}
 }

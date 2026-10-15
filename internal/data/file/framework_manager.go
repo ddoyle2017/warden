@@ -135,7 +135,7 @@ func (m *manager) updateBepInEx(url, fullName string, copyPlugins func(string, s
 		return fail(err)
 	}
 	config := filepath.Join("BepInEx", "config")
-	if err := preserveBepInExConfig(filepath.Join(*m.backup.Path(), config), filepath.Join(server, config)); err != nil {
+	if err := preserveBepInExConfig(filepath.Join(*m.backup.Path(), config), filepath.Join(server, config), removeStaging); err != nil {
 		return fail(fmt.Errorf("preserve BepInEx configuration: %w", err))
 	}
 	transferred, cleanupErr := copyStagedPlugins(tmp, m.modDirectory, copyPlugins, removeStaging)
@@ -153,7 +153,7 @@ func (m *manager) updateBepInEx(url, fullName string, copyPlugins func(string, s
 	return nil
 }
 
-func preserveBepInExConfig(source, destination string) error {
+func preserveBepInExConfig(source, destination string, removeStaging func(string) error) error {
 	info, err := os.Stat(source)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
@@ -190,7 +190,7 @@ func preserveBepInExConfig(source, destination string) error {
 			directories = append(directories, directoryMode{path: target, mode: info.Mode()})
 			return nil
 		}
-		return copyBepInExConfigFile(path, target, copyFile)
+		return copyBepInExConfigFile(path, target, copyFile, removeStaging)
 	})
 	if err != nil {
 		return err
@@ -205,13 +205,13 @@ func preserveBepInExConfig(source, destination string) error {
 	return nil
 }
 
-func copyBepInExConfigFile(source, destination string, copyConfig func(string, string) error) (err error) {
+func copyBepInExConfigFile(source, destination string, copyConfig func(string, string) error, removeStaging func(string) error) (err error) {
 	staging, err := os.MkdirTemp(filepath.Dir(destination), ".warden-config-")
 	if err != nil {
 		return fmt.Errorf("%w: stage configuration %q: %w", ErrDirectoryCreateFailed, destination, err)
 	}
 	defer func() {
-		if cleanupErr := os.RemoveAll(staging); cleanupErr != nil {
+		if cleanupErr := removeStaging(staging); cleanupErr != nil {
 			err = errors.Join(err, fmt.Errorf("%w: remove configuration staging %q: %w", ErrBackupDeleteFailed, staging, cleanupErr))
 		}
 	}()
