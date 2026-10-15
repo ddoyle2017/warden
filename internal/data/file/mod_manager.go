@@ -10,6 +10,9 @@ import (
 
 // An interface for all mod file operations
 type modManager interface {
+	// Checks the installation target without changing files.
+	ValidateModInstall() error
+
 	// Downloads the targetted mod, unzips it, and adds it to the mod
 	// folder.
 	//
@@ -30,8 +33,12 @@ type modManager interface {
 	StageAllModsRemoval() (ModRemoval, error)
 }
 
+func (m *manager) ValidateModInstall() error {
+	return preflightRestore(m.modDirectory)
+}
+
 func (m *manager) InstallMod(url, fullName string) (string, error) {
-	if err := preflightRestore(m.modDirectory); err != nil {
+	if err := m.ValidateModInstall(); err != nil {
 		return "", err
 	}
 

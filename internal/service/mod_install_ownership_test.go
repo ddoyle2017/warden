@@ -92,6 +92,7 @@ func TestUpdate_RecordCleanupOwnership(t *testing.T) {
 					},
 				}
 				fm := &mock.Manager{
+					ValidateModInstallFunc: func() error { return nil },
 					RemoveModFunc: func(fullName string) error {
 						if fullName != current.FullName() {
 							t.Fatalf("removed a different release: %s", fullName)

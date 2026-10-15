@@ -40,7 +40,7 @@ Earlier completed steps can remain in effect if a later step fails.
 | Operation | Ordering and scope |
 | --- | --- |
 | Add a mod | The command first attempts BepInEx installation when its record is missing. If that returns no error, the mod service checks for an existing mod, fetches the latest release, installs files, upserts the record, and then installs direct dependencies. |
-| Update a mod | Fetch the installed record and latest release. If the version compares newer and the user confirms, remove the old release directory, install the new files, upsert the record, and process dependencies. |
+| Update a mod | Fetch the installed record and latest release. If the version compares newer and the user confirms, validate the installation target before removing the old release directory, then install the new files, upsert the record, and process dependencies. |
 | Update all mods | Confirm once, then process recorded mods sequentially. A failure stops the loop; earlier successful updates are not undone. This is not a framework update. |
 | Remove a mod | Confirm, take a complete backup and stage its versioned directory outside the plugin tree, delete its record, then discard staged files and the backup. |
 | Remove all mods | Require the stronger confirmation, back up and stage the plugin directory, recreate an empty plugin directory, delete the records, then discard staged files and the backup. |
@@ -54,10 +54,12 @@ all-or-nothing operations.
 
 Initial and dependency installations write records only after file installation
 succeeds. A failed file-install step does not delete pre-existing records, so a
-dependency backup failure preserves its earlier record and files. Explicit
-updates have already removed the old release: if replacement files fail, the
-update attempts to delete that obsolete record. Failure to write replacement
-metadata after successful file installation does not trigger that cleanup.
+dependency backup failure preserves its earlier record and files. Single/all
+updates validate the installation target before removing each old release; a
+refusal leaves its files and record unchanged. If replacement files fail after
+removal, the update attempts to delete that obsolete record. Failure to write
+replacement metadata after successful file installation does not trigger that
+cleanup.
 
 ## Confirmations and backups
 

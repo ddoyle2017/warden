@@ -280,6 +280,10 @@ func (ms *modService) addDependencies(dependencies []string) error {
 }
 
 func (ms *modService) updateMod(fullname string, latest thunderstore.Release) error {
+	if err := ms.fm.ValidateModInstall(); err != nil {
+		return err
+	}
+
 	// Delete the previous mod files
 	err := ms.fm.RemoveMod(fullname)
 	if err != nil {

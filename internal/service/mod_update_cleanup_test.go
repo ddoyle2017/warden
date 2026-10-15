@@ -52,6 +52,7 @@ func TestModUpdate_DistinguishesCommittedRemoval(t *testing.T) {
 				},
 			}
 			fm := &mock.Manager{
+				ValidateModInstallFunc: func() error { return nil },
 				RemoveModFunc: func(fullName string) error {
 					if fullName != "Owned-Installed-1.0.0" {
 						t.Fatalf("wrong release removed: %s", fullName)
