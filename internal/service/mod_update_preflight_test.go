@@ -41,7 +41,7 @@ func TestModUpdate_PreflightPreservesInstallation(t *testing.T) {
 			inside: true, answer: "n\n", version: "2.0.0",
 		},
 		"given cwd inside plugins, when input is exhausted, then leave the installation unchanged": {
-			inside: true, version: "2.0.0",
+			inside: true, version: "2.0.0", wantErr: io.EOF,
 		},
 		"given cwd inside plugins, when confirmation is invalid, then report it without mutation": {
 			inside: true, answer: "invalid\ninvalid\ninvalid\n", version: "2.0.0", wantErr: service.ErrMaxAttempts,

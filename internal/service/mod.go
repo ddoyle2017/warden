@@ -114,27 +114,21 @@ func (ms *modService) UpdateMod(name string) error {
 		fmt.Printf("... found a new version (%s) of %s %s ...\n", pkg.Latest.VersionNumber, current.Namespace, current.Name)
 		fmt.Printf("did you want to update this mod? %s\n", yesOrNo)
 
-		tries := 0
-		for ms.in.Scan() && tries < 2 {
-			if ms.in.Text() == yes {
-				err = ms.updateMod(current.FullName(), pkg.Latest)
-				if err != nil {
-					return fmt.Errorf("%w: %w", ErrUnableToUpdateMod, err)
-				}
-				err = ms.addDependencies(pkg.Latest.Dependencies)
-				if err != nil {
-					return ErrAddDependenciesFailed
-				}
-				return nil
-			} else if ms.in.Text() == no {
-				fmt.Println("... aborting ...")
-				return nil
-			} else {
-				tries++
-			}
+		accepted, err := confirm(ms.in, yes, no)
+		if err != nil {
+			return err
 		}
-		if tries >= 2 {
-			return ErrMaxAttempts
+		if !accepted {
+			fmt.Println("... aborting ...")
+			return nil
+		}
+		err = ms.updateMod(current.FullName(), pkg.Latest)
+		if err != nil {
+			return fmt.Errorf("%w: %w", ErrUnableToUpdateMod, err)
+		}
+		err = ms.addDependencies(pkg.Latest.Dependencies)
+		if err != nil {
+			return ErrAddDependenciesFailed
 		}
 	} else {
 		fmt.Printf("... latest version of %s %s already installed (%s) ...\n", current.Namespace, current.Name, current.Version)
@@ -145,45 +139,39 @@ func (ms *modService) UpdateMod(name string) error {
 func (ms *modService) UpdateAllMods() error {
 	fmt.Printf("are you sure you wanted to update ALL mods? %s\n", yesOrNo)
 
-	tries := 0
-	for ms.in.Scan() && tries < 2 {
-		if ms.in.Text() == yes {
-			// Get all installed mods
-			mods, err := ms.r.ListMods()
-			if err != nil {
-				return ErrUnableToListMods
-			}
-
-			// For each one, check if there's an update and install it if there is
-			for _, m := range mods {
-				pkg, err := ms.ts.GetPackage(m.Namespace, m.Name)
-				if err != nil {
-					return ErrModNotFound
-				}
-
-				if m.Version < pkg.Latest.VersionNumber {
-					err = ms.updateMod(m.FullName(), pkg.Latest)
-					if err != nil {
-						return fmt.Errorf("%w: %w", ErrUnableToUpdateMod, err)
-					}
-					err = ms.addDependencies(pkg.Latest.Dependencies)
-					if err != nil {
-						return ErrAddDependenciesFailed
-					}
-				} else {
-					fmt.Printf("... latest version of %s %s already installed (%s) ...\n", m.Namespace, m.Name, m.Version)
-				}
-			}
-			return nil
-		} else if ms.in.Text() == no {
-			fmt.Println("... aborting ...")
-			return nil
-		} else {
-			tries++
-		}
+	accepted, err := confirm(ms.in, yes, no)
+	if err != nil {
+		return err
 	}
-	if tries >= 2 {
-		return ErrMaxAttempts
+	if !accepted {
+		fmt.Println("... aborting ...")
+		return nil
+	}
+	// Get all installed mods
+	mods, err := ms.r.ListMods()
+	if err != nil {
+		return ErrUnableToListMods
+	}
+
+	// For each one, check if there's an update and install it if there is
+	for _, m := range mods {
+		pkg, err := ms.ts.GetPackage(m.Namespace, m.Name)
+		if err != nil {
+			return ErrModNotFound
+		}
+
+		if m.Version < pkg.Latest.VersionNumber {
+			err = ms.updateMod(m.FullName(), pkg.Latest)
+			if err != nil {
+				return fmt.Errorf("%w: %w", ErrUnableToUpdateMod, err)
+			}
+			err = ms.addDependencies(pkg.Latest.Dependencies)
+			if err != nil {
+				return ErrAddDependenciesFailed
+			}
+		} else {
+			fmt.Printf("... latest version of %s %s already installed (%s) ...\n", m.Namespace, m.Name, m.Version)
+		}
 	}
 	return nil
 }
@@ -191,60 +179,48 @@ func (ms *modService) UpdateAllMods() error {
 func (ms *modService) RemoveMod(namespace, name string) error {
 	fmt.Printf("are you sure you want to remove this mod? %s\n", yesOrNo)
 
-	tries := 0
-	for ms.in.Scan() && tries < 2 {
-		if ms.in.Text() == yes {
-			// Find the current installation of the mod
-			current, err := ms.r.GetMod(name)
-			if err != nil && errors.Is(err, repo.ErrModFetchNoResults) {
-				return ErrModNotInstalled
-			}
-			if err != nil {
-				return ErrUnableToRemoveMod
-			}
+	accepted, err := confirm(ms.in, yes, no)
+	if err != nil {
+		return err
+	}
+	if !accepted {
+		fmt.Println("... aborting ...")
+		return nil
+	}
+	// Find the current installation of the mod
+	current, err := ms.r.GetMod(name)
+	if err != nil && errors.Is(err, repo.ErrModFetchNoResults) {
+		return ErrModNotInstalled
+	}
+	if err != nil {
+		return ErrUnableToRemoveMod
+	}
 
-			removal, err := ms.fm.StageModRemoval(current.FullName())
-			if err != nil {
-				return fmt.Errorf("%w: %w", ErrUnableToRemoveMod, err)
-			}
-			return ms.finishModRemoval(removal, func() error {
-				return ms.r.DeleteMod(name, namespace)
-			})
-		} else if ms.in.Text() == no {
-			fmt.Println("... aborting ...")
-			return nil
-		} else {
-			tries++
-		}
+	removal, err := ms.fm.StageModRemoval(current.FullName())
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrUnableToRemoveMod, err)
 	}
-	if tries >= 2 {
-		return ErrMaxAttempts
-	}
-	return nil
+	return ms.finishModRemoval(removal, func() error {
+		return ms.r.DeleteMod(name, namespace)
+	})
 }
 
 func (ms *modService) RemoveAllMods() error {
 	fmt.Printf("are you sure you want to remove ALL mods? %s\n", yesOrNoLong)
 
-	tries := 0
-	for ms.in.Scan() && tries < 2 {
-		if ms.in.Text() == yesLong {
-			removal, err := ms.fm.StageAllModsRemoval()
-			if err != nil {
-				return fmt.Errorf("%w: %w", ErrUnableToRemoveMod, err)
-			}
-			return ms.finishModRemoval(removal, ms.r.DeleteAllMods)
-		} else if ms.in.Text() == noLong {
-			fmt.Println("... aborting ...")
-			return nil
-		} else {
-			tries++
-		}
+	accepted, err := confirm(ms.in, yesLong, noLong)
+	if err != nil {
+		return err
 	}
-	if tries >= 2 {
-		return ErrMaxAttempts
+	if !accepted {
+		fmt.Println("... aborting ...")
+		return nil
 	}
-	return nil
+	removal, err := ms.fm.StageAllModsRemoval()
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrUnableToRemoveMod, err)
+	}
+	return ms.finishModRemoval(removal, ms.r.DeleteAllMods)
 }
 
 func (ms *modService) finishModRemoval(removal file.ModRemoval, deleteRecords func() error) error {

@@ -78,6 +78,8 @@ warden start modded
 
 These are real installation commands, not a smoke test. Back up an existing server before changing its mods. Even `--help` initializes Warden's configuration and database; use the [isolated CLI procedure](CONTRIBUTING.md#isolated-cli-smoke-check) for development.
 
+Confirmation prompts allow two answers. End-of-input and input failures stop the requested mutation and report an error; see [confirmation behavior and limitations](docs/install-lifecycle.md#confirmations-and-backups).
+
 ## Installation
 ![installation-banner](./images/mistlands-exploration.png)
 Proper install process coming soon <sup>TM</sup>.
