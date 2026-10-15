@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"os/user"
 	"path/filepath"
 	"runtime"
@@ -56,7 +57,9 @@ func Load(path string) (*Config, error) {
 
 	// If config doesn't exist, create the file and add default values
 	if errors.As(err, &viper.ConfigFileNotFoundError{}) {
-		createConfigFile(cfg, path)
+		if err := createConfigFile(cfg, path); err != nil {
+			return nil, err
+		}
 	} else if err != nil {
 		return nil, ErrFailedToReadConfig
 	}
@@ -75,7 +78,7 @@ func createConfigFile(cfg *Config, path string) error {
 
 	file := filepath.Join(path, WardenConfigFile)
 	if err := viper.WriteConfigAs(file); err != nil {
-		return ErrUnableToWriteConfig
+		return fmt.Errorf("%w: %w", ErrUnableToWriteConfig, err)
 	}
 	return nil
 }
