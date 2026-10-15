@@ -7,5 +7,5 @@ const (
 
 	modPackageFlagLong  = "mod"
 	modPackageFlagShort = "m"
-	modPackageFlagDesc  = "The name of the mod, AKA package, to add (required)."
+	modPackageFlagDesc  = "The name of the mod package (required)."
 )

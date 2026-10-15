@@ -49,7 +49,7 @@ func TestRemoveCommand_Diagnostics(t *testing.T) {
 				return errors.New("database driver lost write confirmation")
 			}
 			r := &mock.ModsRepo{
-				GetModFunc: func(string) (mod.Mod, error) {
+				GetModByIdentityFunc: func(string, string) (mod.Mod, error) {
 					return mod.Mod{Namespace: "Owner", Name: "Installed", Version: "1.0.0"}, nil
 				},
 				DeleteModFunc:     func(string, string) error { return deleteRecord() },

@@ -18,6 +18,7 @@ var (
 	ErrUnableToRemoveMod = errors.New("unable to remove mod")
 	ErrUnableToUpdateMod = errors.New("unable to update mod")
 	ErrModNotInstalled   = errors.New("mod not installed")
+	ErrModNameAmbiguous  = errors.New("multiple installed mods have this name")
 
 	ErrModAlreadyInstalled = errors.New("mod is already installed")
 	ErrModInstallFailed    = errors.New("unable to install new mod")
@@ -32,6 +33,7 @@ type Mod interface {
 	ListMods() ([]mod.Mod, error)
 	AddMod(namespace, name string) error
 	UpdateMod(name string) error
+	UpdateModByIdentity(namespace, name string) error
 	UpdateAllMods() error
 	RemoveMod(namespace, name string) error
 	RemoveAllMods() error
@@ -59,7 +61,7 @@ func (ms *modService) ListMods() ([]mod.Mod, error) {
 
 func (ms *modService) AddMod(namespace, name string) error {
 	// Check if the mod is already installed
-	current, err := ms.r.GetMod(name)
+	current, err := ms.r.GetModByIdentity(namespace, name)
 
 	if err == nil && !current.Equals(&mod.Mod{}) {
 		// Mod already installed
@@ -95,13 +97,24 @@ func (ms *modService) AddMod(namespace, name string) error {
 }
 
 func (ms *modService) UpdateMod(name string) error {
-	// Find the current installation of the mod
 	current, err := ms.r.GetMod(name)
+	if errors.Is(err, repo.ErrModFetchMultipleResults) {
+		return fmt.Errorf("%w: %w: %w", ErrUnableToUpdateMod, ErrModNameAmbiguous, err)
+	}
+	return ms.updateInstalledMod(current, err)
+}
+
+func (ms *modService) UpdateModByIdentity(namespace, name string) error {
+	current, err := ms.r.GetModByIdentity(namespace, name)
+	return ms.updateInstalledMod(current, err)
+}
+
+func (ms *modService) updateInstalledMod(current mod.Mod, err error) error {
 	if err != nil && errors.Is(err, repo.ErrModFetchNoResults) {
 		return ErrModNotInstalled
 	}
 	if err != nil {
-		return ErrUnableToUpdateMod
+		return fmt.Errorf("%w: %w", ErrUnableToUpdateMod, err)
 	}
 
 	// Fetch the latest version from online
@@ -196,12 +209,12 @@ func (ms *modService) RemoveMod(namespace, name string) error {
 		return nil
 	}
 	// Find the current installation of the mod
-	current, err := ms.r.GetMod(name)
+	current, err := ms.r.GetModByIdentity(namespace, name)
 	if err != nil && errors.Is(err, repo.ErrModFetchNoResults) {
 		return ErrModNotInstalled
 	}
 	if err != nil {
-		return ErrUnableToRemoveMod
+		return fmt.Errorf("%w: %w", ErrUnableToRemoveMod, err)
 	}
 
 	removal, err := ms.fm.StageModRemoval(current.FullName())
@@ -209,7 +222,7 @@ func (ms *modService) RemoveMod(namespace, name string) error {
 		return fmt.Errorf("%w: %w", ErrUnableToRemoveMod, err)
 	}
 	return ms.finishModRemoval(removal, func() error {
-		return ms.r.DeleteMod(name, namespace)
+		return ms.r.DeleteMod(current.Name, current.Namespace)
 	})
 }
 

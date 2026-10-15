@@ -49,7 +49,7 @@ func TestModRemoval_ReportsFinalizationErrors(t *testing.T) {
 				return nil
 			}
 			r := &mock.ModsRepo{
-				GetModFunc: func(string) (mod.Mod, error) {
+				GetModByIdentityFunc: func(string, string) (mod.Mod, error) {
 					return mod.Mod{Namespace: "Owned", Name: "Installed", Version: "1.0.0"}, nil
 				},
 				DeleteModFunc:     func(string, string) error { return deleteRecord() },
@@ -108,7 +108,7 @@ func TestModRemoval_DoesNotStageWithoutConfirmation(t *testing.T) {
 				t.Fatal("removal accessed files or records without confirmation")
 			}
 			r := &mock.ModsRepo{
-				GetModFunc: func(string) (mod.Mod, error) {
+				GetModByIdentityFunc: func(string, string) (mod.Mod, error) {
 					unexpected()
 					return mod.Mod{}, nil
 				},

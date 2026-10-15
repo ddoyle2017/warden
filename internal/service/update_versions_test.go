@@ -29,6 +29,7 @@ func TestUpdateReleaseVersions(t *testing.T) {
 		run       func(service.Mod, service.Framework) error
 	}{
 		{"UpdateMod", false, func(ms service.Mod, _ service.Framework) error { return ms.UpdateMod("Versioned") }},
+		{"UpdateModByIdentity", false, func(ms service.Mod, _ service.Framework) error { return ms.UpdateModByIdentity("Owned", "Versioned") }},
 		{"UpdateAllMods", false, func(ms service.Mod, _ service.Framework) error { return ms.UpdateAllMods() }},
 		{"UpdateBepInEx", true, func(_ service.Mod, fs service.Framework) error { return fs.UpdateBepInEx() }},
 	}
@@ -253,6 +254,7 @@ func TestUpdateReleaseVersions(t *testing.T) {
 					}
 					mr := &mock.ModsRepo{
 						GetModFunc: modRecords.GetMod, ListModsFunc: modRecords.ListMods,
+						GetModByIdentityFunc: modRecords.GetModByIdentity,
 						UpsertModFunc: func(m mod.Mod) error {
 							recordWrites++
 							return modRecords.UpsertMod(m)

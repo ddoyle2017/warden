@@ -111,7 +111,7 @@ func TestDependencyInstall_BackupFailurePreservesExistingRecord(t *testing.T) {
 
 func TestInitialInstallFailure_DoesNotDeleteRecords(t *testing.T) {
 	r := &mock.ModsRepo{
-		GetModFunc: func(string) (mod.Mod, error) {
+		GetModByIdentityFunc: func(string, string) (mod.Mod, error) {
 			return mod.Mod{}, repo.ErrModFetchNoResults
 		},
 		DeleteModFunc: func(string, string) error {

@@ -10,14 +10,21 @@ import (
 )
 
 func NewUpdateCommand(fs service.Framework, ms service.Mod) *cobra.Command {
+	var namespace string
 	var modPkg string
 
 	cmd := &cobra.Command{
 		Use:   "update",
 		Short: "Updates the targetted mod.",
-		Long:  "Finds the latest version of the mod on Thunderstore and updates the currently installed version with the new one.",
+		Long:  "Updates an installed mod to the latest version on Thunderstore. Specify --namespace when multiple installed mods share the same name; --mod alone is accepted only for an unambiguous name.",
+		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
-			err := ms.UpdateMod(modPkg)
+			var err error
+			if cmd.Flags().Changed(namespaceFlagLong) {
+				err = ms.UpdateModByIdentity(namespace, modPkg)
+			} else {
+				err = ms.UpdateMod(modPkg)
+			}
 			if err != nil {
 				parseUpdateError(err)
 			} else {
@@ -26,6 +33,7 @@ func NewUpdateCommand(fs service.Framework, ms service.Mod) *cobra.Command {
 		},
 	}
 
+	cmd.Flags().StringVarP(&namespace, namespaceFlagLong, namespaceFlagShort, "", "The namespace, AKA author, of the mod package (required if the name is ambiguous).")
 	cmd.Flags().StringVarP(&modPkg, modPackageFlagLong, modPackageFlagShort, "", modPackageFlagDesc)
 	cmd.MarkFlagRequired(modPackageFlagLong)
 
@@ -73,6 +81,8 @@ func parseUpdateError(err error) {
 		errors.Is(err, service.ErrConfirmationInput) ||
 		errors.Is(err, service.ErrInvalidReleaseVersion) {
 		fmt.Printf("... %v ...\n", err)
+	} else if errors.Is(err, service.ErrModNameAmbiguous) {
+		fmt.Printf("... %v; specify --namespace, update stopped ...\n", service.ErrModNameAmbiguous)
 	} else if errors.Is(err, service.ErrModNotInstalled) {
 		fmt.Println("... mod not installed, update stopped ...")
 	} else if errors.Is(err, service.ErrUnableToUpdateMod) {
