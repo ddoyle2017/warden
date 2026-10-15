@@ -147,6 +147,9 @@ func (m *manager) updateBepInEx(url, fullName string, copyPlugins func(string, s
 }
 
 func copyStagedPlugins(source, destination string, copyPlugins func(string, string) error, removeStaging func(string) error) (transferred bool, err error) {
+	if err := os.MkdirAll(destination, os.ModePerm); err != nil {
+		return false, fmt.Errorf("%w: prepare plugin destination %q: %w", ErrDirectoryCreateFailed, destination, err)
+	}
 	local, err := os.MkdirTemp(destination, ".warden-plugins-")
 	if err != nil {
 		return false, fmt.Errorf("%w: prepare plugin transfer: %w", ErrDirectoryCreateFailed, err)

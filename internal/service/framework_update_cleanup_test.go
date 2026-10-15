@@ -1,8 +1,12 @@
 package service_test
 
 import (
+	"archive/zip"
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +19,124 @@ import (
 	"warden/internal/test/helper"
 	"warden/internal/test/mock"
 )
+
+func TestFrameworkUpdateArchiveWithoutPlugins(t *testing.T) {
+	for name, tt := range map[string]struct{ savedPlugin, archivePlugins bool }{
+		"given an empty saved tree and a core-only archive, when updating, then install and record the release":    {},
+		"given saved plugins and a core-only archive, when updating, then preserve plugins and record the release": {savedPlugin: true},
+		"given an archive with a plugins directory, when updating an empty tree, then retain normal success":       {archivePlugins: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			parent := t.TempDir()
+			server := filepath.Join(parent, "server")
+			th := helper.NewHelper(t, helper.WithValheimFolder(server))
+			t.Setenv("TMPDIR", t.TempDir())
+			plugins := filepath.Join(server, "BepInEx", "plugins")
+			core := filepath.Join(server, "BepInEx", "core")
+			for _, path := range []string{plugins, core} {
+				if err := os.MkdirAll(path, 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for path, contents := range map[string]string{
+				filepath.Join(core, "runtime"):       "old framework",
+				filepath.Join(server, "server-data"): "unrelated bytes",
+			} {
+				if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if tt.savedPlugin {
+				if err := os.WriteFile(filepath.Join(plugins, "user-plugin"), []byte("saved plugin"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var archive bytes.Buffer
+			writer := zip.NewWriter(&archive)
+			entries := []string{
+				"BepInExPack_Valheim/",
+				"BepInExPack_Valheim/BepInEx/",
+				"BepInExPack_Valheim/BepInEx/core/",
+				"BepInExPack_Valheim/BepInEx/core/runtime",
+			}
+			if tt.archivePlugins {
+				entries = append(entries, "BepInExPack_Valheim/BepInEx/plugins/")
+			}
+			for _, name := range entries {
+				entry, err := writer.Create(name)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !strings.HasSuffix(name, "/") {
+					if _, err := io.WriteString(entry, "new framework"); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			if err := writer.Close(); err != nil {
+				t.Fatal(err)
+			}
+			db := th.CreateDatabase()
+			repo.CreateFrameworksTable(db)
+			records := repo.NewFrameworksRepo(db)
+			if err := records.InsertFramework(framework.Framework{
+				Name: framework.BepInEx, Namespace: framework.BepInExNamespace, Version: "1.0.0",
+			}); err != nil {
+				t.Fatal(err)
+			}
+			latest := thunderstore.Release{
+				Name: framework.BepInEx, Namespace: framework.BepInExNamespace, VersionNumber: "2.0.0",
+				FullName: "denikson-BepInExPack_Valheim-2.0.0", DownloadURL: helper.TestDownloadURL,
+			}
+			requests := 0
+			client := &mock.HTTPClient{GetFunc: func(url string) (*http.Response, error) {
+				requests++
+				if url != latest.DownloadURL {
+					t.Fatalf("unexpected download URL %q", url)
+				}
+				return &http.Response{Body: io.NopCloser(bytes.NewReader(archive.Bytes()))}, nil
+			}}
+			ts := &mock.Thunderstore{GetPackageFunc: func(namespace, name string) (thunderstore.Package, error) {
+				if namespace != framework.BepInExNamespace || name != framework.BepInEx {
+					t.Fatalf("unexpected package %q/%q", namespace, name)
+				}
+				return thunderstore.Package{Latest: latest}, nil
+			}}
+			err := service.NewFrameworkService(records, file.NewManager(client, server), ts, strings.NewReader("Y\n")).UpdateBepInEx()
+			if err != nil {
+				t.Fatalf("framework update failed: %v", err)
+			}
+			if requests != 1 {
+				t.Errorf("download requests = %d, want 1", requests)
+			}
+			for path, contents := range map[string]string{
+				filepath.Join(core, "runtime"):       "new framework",
+				filepath.Join(server, "server-data"): "unrelated bytes",
+			} {
+				if data, err := os.ReadFile(path); err != nil || string(data) != contents {
+					t.Errorf("file %q = %q, %v; want %q", path, data, err, contents)
+				}
+			}
+			wantPlugins := 0
+			if tt.savedPlugin {
+				wantPlugins = 1
+				if data, err := os.ReadFile(filepath.Join(plugins, "user-plugin")); err != nil || string(data) != "saved plugin" {
+					t.Errorf("saved plugin changed: %q, %v", data, err)
+				}
+			}
+			if entries, err := os.ReadDir(plugins); err != nil || len(entries) != wantPlugins {
+				t.Errorf("plugin directory = %v, %v; want %d entries", entries, err, wantPlugins)
+			}
+			if stages, err := filepath.Glob(filepath.Join(parent, ".warden-plugins-*")); err != nil || len(stages) != 0 {
+				t.Errorf("successful update retained plugin staging: %v, %v", stages, err)
+			}
+			stored, err := records.GetFramework(framework.BepInEx)
+			if err != nil || stored.Version != "2.0.0" {
+				t.Errorf("recorded version = %q, %v; want 2.0.0", stored.Version, err)
+			}
+		})
+	}
+}
 
 func TestFrameworkUpdateCompletion(t *testing.T) {
 	for name, tt := range map[string]struct {

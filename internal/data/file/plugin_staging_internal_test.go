@@ -264,6 +264,31 @@ func TestUpdatePluginPreparationFailure(t *testing.T) {
 	}
 }
 
+func TestPluginTransferDestinationFailure(t *testing.T) {
+	snapshot, parent := t.TempDir(), t.TempDir()
+	saved := map[string]string{"plugin": "saved plugin"}
+	writeRestoreTree(t, snapshot, saved)
+	blocker := filepath.Join(parent, "blocked")
+	if err := os.WriteFile(blocker, []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	transferred, err := copyStagedPlugins(snapshot, filepath.Join(blocker, "plugins"),
+		func(string, string) error {
+			t.Fatal("plugin copying ran before its destination was prepared")
+			return nil
+		},
+		func(string) error {
+			t.Fatal("cleanup ran without transfer staging")
+			return nil
+		})
+	var cause *os.PathError
+	if transferred || !errors.Is(err, ErrDirectoryCreateFailed) || !errors.As(err, &cause) {
+		t.Fatalf("expected a cause-preserving destination failure, got transferred=%t, error=%v", transferred, err)
+	}
+	assertRestoreTree(t, snapshot, saved)
+	assertRestoreTree(t, parent, map[string]string{"blocked": "not a directory"})
+}
+
 func TestPluginTransferPreparation(t *testing.T) {
 	for name, tt := range map[string]struct{ copyFailure, cleanupFailure bool }{
 		"given a staged snapshot, when transferring plugins, then copy locally and preserve bundled files":          {},

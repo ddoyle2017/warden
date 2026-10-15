@@ -135,7 +135,8 @@ A failed initial copy stops before framework removal and cleans up its partial
 staging; the file-layer error reports any cleanup failure and the retained server
 backup.
 Once framework replacement starts, a failed update retains the
-complete plugin snapshot and reports its path. Plugin transfer copies into the
+complete plugin snapshot and reports its path. If the replacement archive omits
+the plugins directory, copy-back creates it. Plugin transfer copies into the
 plugins directory before using local renames, preserving non-conflicting
 bundled plugins and keeping the independent snapshot even after a partial
 transfer. A successful transfer removes that snapshot and reports cleanup
