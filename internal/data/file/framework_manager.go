@@ -57,7 +57,7 @@ func (m *manager) InstallBepInEx(url, fullName string) (string, error) {
 	}
 
 	if err := m.installBepInExFiles(resp.Body, fullName); err != nil {
-		return "", errors.Join(err, m.restoreServerBackup())
+		return "", errors.Join(err, m.restoreBackup(m.valheimDirectory))
 	}
 	if err := m.backup.Remove(); err != nil {
 		return "", &FrameworkMutationCleanupError{Err: fmt.Errorf("%w: %w", ErrFrameworkInstallFailed, err)}
@@ -123,7 +123,7 @@ func (m *manager) updateBepInEx(url, fullName string, copyPlugins func(string, s
 	}
 
 	fail := func(cause error) error {
-		restoreErr := m.restoreServerBackup()
+		restoreErr := m.restoreBackup(m.valheimDirectory)
 		return fmt.Errorf("%w: %w; plugin snapshot retained at %q",
 			ErrFrameworkUpdateFailed, errors.Join(cause, restoreErr), tmp)
 	}
@@ -269,7 +269,7 @@ func (m *manager) removeBepInEx(removeFiles func(string) error) error {
 		return fmt.Errorf("%w: %w", ErrFrameworkDeleteFailed, err)
 	}
 	if err := m.removeBepInExFiles(removeFiles); err != nil {
-		return errors.Join(err, m.restoreServerBackup())
+		return errors.Join(err, m.restoreBackup(m.valheimDirectory))
 	}
 	if err := m.backup.Remove(); err != nil {
 		return &FrameworkMutationCleanupError{Err: fmt.Errorf("%w: %w", ErrFrameworkDeleteFailed, err)}
@@ -299,14 +299,6 @@ func (m *manager) removeBepInExFiles(removeFiles func(string) error) error {
 		}
 	}
 	return nil
-}
-
-func (m *manager) restoreServerBackup() error {
-	err := m.backup.Restore(m.valheimDirectory)
-	if path := m.backup.Path(); err != nil && path != nil {
-		return fmt.Errorf("%w; backup retained at %q", err, *path)
-	}
-	return err
 }
 
 func (m *manager) moveBepInExFiles() error {

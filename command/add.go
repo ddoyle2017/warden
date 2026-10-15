@@ -40,19 +40,23 @@ func NewAddCommand(fs service.Framework, ms service.Mod) *cobra.Command {
 
 func parseAddError(err error) {
 	var completed *file.FrameworkMutationCleanupError
-	if errors.As(err, &completed) || errors.Is(err, service.ErrConfirmationInput) {
+	if _, modCompleted := err.(*service.ModMutationCleanupError); modCompleted {
+		fmt.Printf("... warning: %v ...\n", err)
+	} else if errors.As(err, &completed) || errors.Is(err, service.ErrConfirmationInput) {
 		fmt.Printf("... %v ...\n", err)
 	} else if errors.Is(err, service.ErrModAlreadyInstalled) {
 		fmt.Println("... mod already installed ...")
 	} else if errors.Is(err, service.ErrModInstallFailed) {
-		fmt.Println("... unable to install mod ...")
+		fmt.Printf("... %v ...\n", err)
 	} else if errors.Is(err, service.ErrModNotFound) {
-		fmt.Println("... unable to find mod on Thunderstore")
+		fmt.Printf("... unable to find mod on Thunderstore: %v ...\n", err)
 	} else if errors.Is(err, service.ErrAddDependenciesFailed) {
-		fmt.Println("... unable to install mod's dependencies...")
+		fmt.Printf("... %v ...\n", err)
 	} else if errors.Is(err, service.ErrUnableToInstallFramework) {
 		fmt.Println("... unable to install BepInEx ...")
 	} else if errors.Is(err, service.ErrFrameworkNotFound) {
 		fmt.Println("... unable to find BepInEx ...")
+	} else {
+		fmt.Printf("... %v ...\n", err)
 	}
 }

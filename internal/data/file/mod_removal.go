@@ -18,6 +18,7 @@ var ErrModRemovalFinished = errors.New("mod removal is already finished")
 
 // ModRemovalCleanupError reports cleanup failure after files are removed from the
 // live installation. Callers must not treat it as a failed removal or roll it back.
+// File-only removals return it directly; nested markers do not establish completion.
 type ModRemovalCleanupError struct {
 	Err error
 }
