@@ -81,8 +81,8 @@ func parseUpdateError(err error) {
 		errors.Is(err, service.ErrConfirmationInput) ||
 		errors.Is(err, service.ErrInvalidReleaseVersion) {
 		fmt.Printf("... %v ...\n", err)
-	} else if errors.Is(err, service.ErrModNameAmbiguous) {
-		fmt.Printf("... %v; specify --namespace, update stopped ...\n", service.ErrModNameAmbiguous)
+	} else if errors.Is(err, service.ErrModNameAmbiguous) || errors.Is(err, service.ErrDuplicateModRecords) {
+		fmt.Printf("... %v, update stopped ...\n", err)
 	} else if errors.Is(err, service.ErrModNotInstalled) {
 		fmt.Println("... mod not installed, update stopped ...")
 	} else if errors.Is(err, service.ErrUnableToUpdateMod) {

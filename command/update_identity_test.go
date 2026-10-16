@@ -3,12 +3,15 @@ package command_test
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"strings"
 	"testing"
 	"warden/command"
 	"warden/internal/service"
+
+	"github.com/spf13/cobra"
 )
 
 func TestUpdateCommand_IdentitySelection(t *testing.T) {
@@ -19,6 +22,7 @@ func TestUpdateCommand_IdentitySelection(t *testing.T) {
 		invalid   bool
 		result    error
 		wantError []string
+		omitError []string
 	}{
 		"given a mod name, when updating, then use the compatible unambiguous-name path": {
 			args: []string{"--mod", "Shared"},
@@ -42,8 +46,24 @@ func TestUpdateCommand_IdentitySelection(t *testing.T) {
 			args: []string{"Shared", "--mod", "Shared"}, invalid: true,
 		},
 		"given an ambiguous name, when updating, then explain qualification without reporting success": {
-			args: []string{"--mod", "Shared"}, result: errors.Join(service.ErrUnableToUpdateMod, service.ErrModNameAmbiguous),
-			wantError: []string{"specify --namespace"},
+			args: []string{"--mod", "Shared"},
+			result: fmt.Errorf("%w: %w; matching packages: AuthorA/Shared, AuthorB/Shared; specify --namespace",
+				service.ErrUnableToUpdateMod, service.ErrModNameAmbiguous),
+			wantError: []string{"AuthorA/Shared, AuthorB/Shared", "specify --namespace"},
+		},
+		"given duplicate exact records, when updating, then explain the record problem without namespace advice": {
+			args: []string{"--namespace", "AuthorA", "--mod", "Shared"}, namespace: "AuthorA", exact: true,
+			result: fmt.Errorf("%w: %w for AuthorA/Shared; inspect installation records before retrying",
+				service.ErrUnableToUpdateMod, service.ErrDuplicateModRecords),
+			wantError: []string{"duplicate installation records", "AuthorA/Shared", "inspect installation records"},
+			omitError: []string{"specify --namespace"},
+		},
+		"given a failed ambiguity lookup, when updating, then print its cause without suggesting a namespace": {
+			args: []string{"--mod", "Shared"},
+			result: fmt.Errorf("%w: %w; unable to list matching installations: controlled list failure",
+				service.ErrUnableToUpdateMod, service.ErrModNameAmbiguous),
+			wantError: []string{"unable to list matching installations", "controlled list failure"},
+			omitError: []string{"specify --namespace"},
 		},
 		"given an input failure, when updating a qualified mod, then print its cause without reporting success": {
 			args: []string{"--namespace", "AuthorB", "--mod", "Shared"}, namespace: "AuthorB", exact: true,
@@ -73,8 +93,9 @@ func TestUpdateCommand_IdentitySelection(t *testing.T) {
 					return tt.result
 				},
 			}
-			cmd := command.NewUpdateCommand(nil, ms)
-			cmd.SetArgs(tt.args)
+			cmd := &cobra.Command{Use: "warden"}
+			cmd.AddCommand(command.NewUpdateCommand(nil, ms))
+			cmd.SetArgs(append([]string{"update"}, tt.args...))
 			output, err := os.CreateTemp(t.TempDir(), "stdout")
 			if err != nil {
 				t.Fatal(err)
@@ -108,6 +129,11 @@ func TestUpdateCommand_IdentitySelection(t *testing.T) {
 				for _, text := range tt.wantError {
 					if !strings.Contains(string(data), text) {
 						t.Errorf("update diagnostic omits %q: %q", text, data)
+					}
+				}
+				for _, text := range tt.omitError {
+					if strings.Contains(string(data), text) {
+						t.Errorf("update diagnostic incorrectly includes %q: %q", text, data)
 					}
 				}
 				if strings.Contains(string(data), "successfully") {

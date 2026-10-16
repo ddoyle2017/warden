@@ -21,15 +21,20 @@ release directories; updating one retains its record ID. An explicitly
 qualified lookup never falls back to another namespace.
 
 Name-only updates remain supported when exactly one installed record matches.
-An ambiguous name stops the update before a package fetch or file changes; use
-the namespace-qualified syntax in the [README](../README.md#usage). Lookup and
-mapping errors are not evidence that a mod is absent: upsert returns the error
-rather than inserting a new record.
+An ambiguous name stops the update before a package fetch or file changes and
+lists the matching namespace/name pairs. Use the namespace-qualified syntax in
+the [README](../README.md#usage) to select a package. If listing the matches
+fails, the error is reported without proceeding. Lookup and mapping errors are
+not evidence that a mod is absent: upsert returns the error rather than
+inserting a new record.
 
 The existing database schema already stores namespace and name separately, so
 this identity rule requires no schema migration or recreation. Duplicate records
 for the same namespace and name are not automatically reconciled; exact lookups
-and upserts reject them rather than selecting or overwriting one.
+and upserts reject them rather than selecting or overwriting one. Updates
+identify duplicated packages and direct the user to inspect installation records
+before retrying, rather than suggesting that namespace qualification can repair
+duplicate rows.
 
 BepInEx is a framework, not an ordinary plugin. Its archive contains a wrapper
 directory whose contents are moved into the Valheim server directory. Ordinary

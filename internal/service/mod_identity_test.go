@@ -102,12 +102,18 @@ func TestUpdateMod_NamespacedIdentity(t *testing.T) {
 	for name, tt := range map[string]struct {
 		namespace string
 		second    string
+		third     string
 		nameOnly  bool
 		all       bool
 		apiFail   bool
 		lookupErr error
+		listErr   error
+		staleList bool
+		unrelated bool
 		updated   []string
 		wantErr   error
+		wantText  []string
+		omitText  []string
 	}{
 		"given two authors, when updating the first, then preserve the second's bytes and metadata": {
 			namespace: "AuthorA", second: "AuthorB", updated: []string{"AuthorA"},
@@ -120,6 +126,35 @@ func TestUpdateMod_NamespacedIdentity(t *testing.T) {
 		},
 		"given two matching names, when updating without namespace, then stop before fetch or files": {
 			nameOnly: true, second: "AuthorB", wantErr: service.ErrModNameAmbiguous,
+			wantText: []string{"matching packages: AuthorA/Shared, AuthorB/Shared", "specify --namespace"},
+		},
+		"given reverse-order namespaces, when updating by name, then list sorted identities": {
+			nameOnly: true, second: "Author0", wantErr: service.ErrModNameAmbiguous,
+			wantText: []string{"matching packages: Author0/Shared, AuthorA/Shared"},
+		},
+		"given unrelated packages, when describing ambiguity, then list only matching identities": {
+			nameOnly: true, second: "AuthorB", unrelated: true, wantErr: service.ErrModNameAmbiguous,
+			wantText: []string{"matching packages: AuthorA/Shared, AuthorB/Shared"},
+			omitText: []string{"Unrelated"},
+		},
+		"given duplicate records for one name, when updating by name, then explain duplicates rather than namespace selection": {
+			nameOnly: true, second: "AuthorA", wantErr: service.ErrDuplicateModRecords,
+			wantText: []string{"duplicate installation records for AuthorA/Shared", "inspect installation records"},
+			omitText: []string{"specify --namespace"},
+		},
+		"given duplicate and distinct identities, when updating by name, then identify both choices and the duplicate records": {
+			nameOnly: true, second: "AuthorA", third: "AuthorB", wantErr: service.ErrDuplicateModRecords,
+			wantText: []string{"matching packages: AuthorA/Shared, AuthorB/Shared", "duplicate installation records for AuthorA/Shared"},
+		},
+		"given an ambiguity listing failure, when updating by name, then report it without unsafe work": {
+			nameOnly: true, second: "AuthorB", listErr: repo.ErrModListFailed, wantErr: service.ErrModNameAmbiguous,
+			wantText: []string{"unable to list matching installations"},
+			omitText: []string{"specify --namespace", "matching packages:"},
+		},
+		"given records changing after an ambiguous lookup, when updating by name, then stop rather than select a new match": {
+			nameOnly: true, second: "AuthorB", staleList: true, wantErr: service.ErrModNameAmbiguous,
+			wantText: []string{"matching installation records changed during lookup; retry"},
+			omitText: []string{"specify --namespace"},
 		},
 		"given another author's mod, when updating an explicit namespace, then do not fall back": {
 			namespace: "Missing", wantErr: service.ErrModNotInstalled,
@@ -128,7 +163,9 @@ func TestUpdateMod_NamespacedIdentity(t *testing.T) {
 			wantErr: service.ErrModNotInstalled,
 		},
 		"given duplicate records for one identity, when updating, then stop before fetch or files": {
-			namespace: "AuthorA", second: "AuthorA", wantErr: service.ErrUnableToUpdateMod,
+			namespace: "AuthorA", second: "AuthorA", wantErr: service.ErrDuplicateModRecords,
+			wantText: []string{"duplicate installation records for AuthorA/Shared", "inspect installation records"},
+			omitText: []string{"specify --namespace"},
 		},
 		"given a failed package fetch, when updating, then preserve both installations": {
 			namespace: "AuthorA", second: "AuthorB", apiFail: true, wantErr: service.ErrModNotFound,
@@ -148,7 +185,25 @@ func TestUpdateMod_NamespacedIdentity(t *testing.T) {
 			if tt.second != "" {
 				namespaces = append(namespaces, tt.second)
 			}
+			if tt.third != "" {
+				namespaces = append(namespaces, tt.third)
+			}
 			th, mr, original, backups := newModIdentityFixture(t, namespaces...)
+			if tt.unrelated {
+				other := original[0]
+				other.ID, other.Namespace, other.Name = len(original)+1, "Unrelated", "Other"
+				other.FilePath = filepath.Join(th.GetValheimDirectory(), file.BepInExPluginDirectory, other.FullName())
+				if err := os.MkdirAll(other.FilePath, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(other.FilePath, "plugin.dll"), []byte("Unrelated 1.0.0 bytes"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				if err := mr.InsertMod(other); err != nil {
+					t.Fatal(err)
+				}
+				original = append(original, other)
+			}
 			downloads, fetches := 0, 0
 			client := &mock.HTTPClient{GetFunc: func(url string) (*http.Response, error) {
 				for _, namespace := range tt.updated {
@@ -194,6 +249,17 @@ func TestUpdateMod_NamespacedIdentity(t *testing.T) {
 				}
 				lookup = faulted
 			}
+			if tt.listErr != nil || tt.staleList {
+				lookup = &mock.ModsRepo{
+					GetModFunc: mr.GetMod,
+					ListModsFunc: func() ([]mod.Mod, error) {
+						if tt.staleList {
+							return original[:1], nil
+						}
+						return nil, tt.listErr
+					},
+				}
+			}
 			files := file.NewManager(client, th.GetValheimDirectory())
 			mutations := 0
 			manager := &mock.Manager{
@@ -219,11 +285,28 @@ func TestUpdateMod_NamespacedIdentity(t *testing.T) {
 			if !errors.Is(err, tt.wantErr) {
 				t.Errorf("expected error %v, got %v", tt.wantErr, err)
 			}
-			if tt.wantErr == service.ErrModNameAmbiguous && (!errors.Is(err, service.ErrUnableToUpdateMod) || !errors.Is(err, repo.ErrModFetchMultipleResults)) {
+			if (tt.wantErr == service.ErrModNameAmbiguous || tt.wantErr == service.ErrDuplicateModRecords) &&
+				(!errors.Is(err, service.ErrUnableToUpdateMod) || !errors.Is(err, repo.ErrModFetchMultipleResults)) {
 				t.Errorf("ambiguous update lost its error classifications: %v", err)
+			}
+			if tt.nameOnly && tt.wantErr == service.ErrDuplicateModRecords && !errors.Is(err, service.ErrModNameAmbiguous) {
+				t.Errorf("duplicate name-only lookup lost its ambiguity classification: %v", err)
 			}
 			if tt.lookupErr != nil && !errors.Is(err, tt.lookupErr) {
 				t.Errorf("lookup cause was lost: %v", err)
+			}
+			if tt.listErr != nil && !errors.Is(err, tt.listErr) {
+				t.Errorf("ambiguity-listing cause was lost: %v", err)
+			}
+			for _, text := range tt.wantText {
+				if err == nil || !strings.Contains(err.Error(), text) {
+					t.Errorf("update diagnostic omits %q: %v", text, err)
+				}
+			}
+			for _, text := range tt.omitText {
+				if err != nil && strings.Contains(err.Error(), text) {
+					t.Errorf("update diagnostic incorrectly includes %q: %v", text, err)
+				}
 			}
 			if tt.wantErr != nil && mutations != 0 {
 				t.Errorf("failed selection or fetch reached %d file mutations", mutations)
@@ -314,6 +397,38 @@ func TestAddMod_NamespacedIdentity(t *testing.T) {
 			assertModIdentityState(t, mr, want)
 			if fetches != len(packages) || downloads != len(packages) {
 				t.Errorf("fetches/downloads = %d/%d, want %d each", fetches, downloads, len(packages))
+			}
+		})
+	}
+}
+
+func TestAddMod_AlreadyInstalledIdentity(t *testing.T) {
+	for name, namespaces := range map[string][]string{
+		"given an installed identity, when adding it again, then stop before fetching or installing":  {"AuthorA"},
+		"given two authors with the same name, when adding an installed identity, then preserve both": {"AuthorB", "AuthorA"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, records, original, backups := newModIdentityFixture(t, namespaces...)
+			fetches, installs := 0, 0
+			ts := &mock.Thunderstore{GetPackageFunc: func(string, string) (thunderstore.Package, error) {
+				fetches++
+				return thunderstore.Package{}, thunderstore.ErrPackageNotFound
+			}}
+			fm := &mock.Manager{InstallModFunc: func(string, string) (string, error) {
+				installs++
+				return "", file.ErrFileWriteFailed
+			}}
+			ms := service.NewModService(records, fm, ts, strings.NewReader(""))
+
+			if err := ms.AddMod("AuthorA", "Shared"); !errors.Is(err, service.ErrModAlreadyInstalled) {
+				t.Errorf("expected already-installed error, got %v", err)
+			}
+			if fetches != 0 || installs != 0 {
+				t.Errorf("already-installed identity triggered %d fetches and %d installs", fetches, installs)
+			}
+			assertModIdentityState(t, records, original)
+			if entries, err := os.ReadDir(backups); err != nil || len(entries) != 0 {
+				t.Errorf("already-installed identity left backup artifacts: %v, %v", entries, err)
 			}
 		})
 	}
