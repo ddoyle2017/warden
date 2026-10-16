@@ -271,16 +271,16 @@ func TestDependencyMetadata_DoesNotOverrideUpdateGates(t *testing.T) {
 		wantErr        error
 	}{
 		"an equal version": {
-			latest: "1.0.0", answer: "Y\n", noUpdate: true,
+			latest: "1.0.0", answer: "Y\n", noUpdate: true, wantErr: service.ErrNoChanges,
 		},
 		"an older version": {
-			latest: "0.9.0", answer: "Y\n", noUpdate: true,
+			latest: "0.9.0", answer: "Y\n", noUpdate: true, wantErr: service.ErrNoChanges,
 		},
 		"only a build metadata difference": {
-			latest: "1.0.0+different.1", answer: "Y\n", noUpdate: true,
+			latest: "1.0.0+different.1", answer: "Y\n", noUpdate: true, wantErr: service.ErrNoChanges,
 		},
 		"a declined update": {
-			latest: "2.0.0", answer: "n\n",
+			latest: "2.0.0", answer: "n\n", wantErr: service.ErrCancelled,
 		},
 		"EOF at confirmation": {
 			latest: "2.0.0", wantErr: io.EOF,
@@ -337,7 +337,7 @@ func TestDependencyMetadata_DoesNotOverrideUpdateGates(t *testing.T) {
 					if operation == "all" {
 						if tt.answer != "Y\n" {
 							wantLookups = nil
-						} else if tt.wantErr == nil {
+						} else if tt.noUpdate {
 							wantLookups = append(wantLookups, "Other/Unrelated")
 						}
 					}

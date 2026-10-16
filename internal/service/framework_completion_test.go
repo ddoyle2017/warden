@@ -204,6 +204,9 @@ func TestStandaloneFrameworkCompletion(t *testing.T) {
 				if errors.As(err, &completed) != ((tt.completed || tt.nestedCompletion) && tt.cleanup) {
 					t.Errorf("completion diagnostic was lost or invented: %v", err)
 				}
+				if _, requestCompleted := err.(*service.FrameworkMutationCleanupError); requestCompleted != (tt.completed && tt.cleanup && !tt.recordFailure) {
+					t.Errorf("incorrect framework request completion: %v", err)
+				}
 				if !tt.completed || tt.cleanup || tt.recordFailure {
 					if !errors.Is(err, serviceSentinel) {
 						t.Errorf("service sentinel lost: %v", err)
@@ -224,7 +227,7 @@ func TestStandaloneFrameworkCompletion(t *testing.T) {
 					t.Errorf("recovery artifact changed: %q, %v", data, err)
 				}
 				if operation == "install" && tt.completed && !tt.recordFailure {
-					if err := service.NewFrameworkService(fr, fm, ts, strings.NewReader("Y\n")).InstallBepInEx(); err != nil || fileCalls != 1 || packageCalls != 1 {
+					if err := service.NewFrameworkService(fr, fm, ts, strings.NewReader("Y\n")).InstallBepInEx(); err != service.ErrNoChanges || fileCalls != 1 || packageCalls != 1 {
 						t.Errorf("recorded framework was installed again: calls=%d/%d, error=%v", fileCalls, packageCalls, err)
 					}
 				}

@@ -38,6 +38,13 @@ func TestStandaloneFrameworkDiagnostics(t *testing.T) {
 					result = errors.Join(result, fmt.Errorf("%w: record write interrupted", sentinel))
 					want = append(want, "record write interrupted")
 				}
+				if tt.cleanup && !tt.recordFailure {
+					result = &service.FrameworkMutationCleanupError{Err: result}
+					want = append(want, "framework request completed")
+					if operation == "install" {
+						want = append(want, success)
+					}
+				}
 				fileCalls, modCalls := 0, 0
 				fs := &standaloneFrameworkStub{}
 				run := func() error {
@@ -82,7 +89,11 @@ func TestStandaloneFrameworkDiagnostics(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if fileCalls != 1 || (operation == "install" && result == nil && modCalls != 1) || (result != nil && modCalls != 0) {
+				wantModCalls := 0
+				if operation == "install" && (result == nil || tt.cleanup && !tt.recordFailure) {
+					wantModCalls = 1
+				}
+				if fileCalls != 1 || modCalls != wantModCalls {
 					t.Errorf("unexpected framework/mod calls: %d/%d", fileCalls, modCalls)
 				}
 				for _, text := range want {
@@ -90,7 +101,10 @@ func TestStandaloneFrameworkDiagnostics(t *testing.T) {
 						t.Errorf("output %q omits %q", data, text)
 					}
 				}
-				if result != nil && strings.Contains(string(data), "successfully") {
+				if strings.HasPrefix(string(data), "... warning:") != (tt.cleanup && !tt.recordFailure) {
+					t.Errorf("framework request status was misclassified: %q", data)
+				}
+				if result != nil && wantModCalls == 0 && strings.Contains(string(data), "successfully") {
 					t.Errorf("diagnostics were reported as ordinary success: %q", data)
 				}
 			})

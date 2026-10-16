@@ -88,9 +88,15 @@ be resolved by namespace qualification; see the
 
 These are real installation commands, not a smoke test. Back up an existing server before changing its mods. Even `--help` initializes Warden's configuration and database; use the [isolated CLI procedure](CONTRIBUTING.md#isolated-cli-smoke-check) for development.
 
-Confirmation prompts allow two answers. End-of-input and input failures stop the requested mutation and report an error; see [confirmation behavior and limitations](docs/install-lifecycle.md#confirmations-and-backups).
+Confirmation prompts allow two answers. A deliberate negative answer cancels the
+operation without a success message. Declining BepInEx installation also stops
+the requested mod add before it fetches or installs the mod. An unchanged version
+is reported as unchanged, not as a completed update. End-of-input and input
+failures remain errors; see [confirmation behavior and limitations](docs/install-lifecycle.md#confirmations-and-backups).
 
-Mod add/update requests can complete with cleanup warnings. An incomplete request
+Installation, update, and removal requests can complete with cleanup warnings.
+A completed BepInEx bootstrap warning does not stop the requested mod add, but
+does not establish that the mod itself was installed. An incomplete request
 instead reports failure details, including recovery paths or database-verification
 guidance; see [recovery and cleanup outcomes](docs/install-lifecycle.md#confirmations-and-backups)
 before retrying or using leftover backup files.

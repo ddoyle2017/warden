@@ -30,7 +30,7 @@ func TestFrameworkUpdateDiagnostics(t *testing.T) {
 				want = []string{"framework files changed", "snapshot cleanup interrupted", path}
 			} else if tt.failed {
 				result = service.ErrUnableToUpdateFramework
-				want = []string{"... unable to update BepInEx ..."}
+				want = []string{"unable to update BepInEx"}
 			}
 			if tt.recordFailure {
 				result = errors.Join(result, fmt.Errorf("%w: framework record write interrupted", service.ErrUnableToInstallFramework))
@@ -38,6 +38,10 @@ func TestFrameworkUpdateDiagnostics(t *testing.T) {
 					want = nil
 				}
 				want = append(want, "framework record write interrupted")
+			}
+			if tt.completed && !tt.recordFailure {
+				result = &service.FrameworkMutationCleanupError{Err: result}
+				want = append(want, "framework request completed")
 			}
 			calls := 0
 			fs := &updateFrameworkStub{update: func() error {
@@ -73,6 +77,12 @@ func TestFrameworkUpdateDiagnostics(t *testing.T) {
 				if !strings.Contains(string(data), text) {
 					t.Errorf("output %q omits %q", data, text)
 				}
+			}
+			if strings.HasPrefix(string(data), "... warning:") != (tt.completed && !tt.recordFailure) {
+				t.Errorf("framework request status was misclassified: %q", data)
+			}
+			if result != nil && strings.Contains(string(data), "successfully") {
+				t.Errorf("diagnostics reported as ordinary success: %q", data)
 			}
 		})
 	}

@@ -3,7 +3,6 @@ package command
 import (
 	"errors"
 	"fmt"
-	"warden/internal/data/file"
 	"warden/internal/service"
 
 	"github.com/spf13/cobra"
@@ -64,7 +63,7 @@ func newRemoveBepInEx(fs service.Framework) *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) {
 			err := fs.RemoveBepInEx()
 			if err != nil {
-				parseRemoveError(err)
+				parseFrameworkError(err, "remove")
 			} else {
 				fmt.Println("... BepInEx and mods were removed successfully! ...")
 			}
@@ -74,30 +73,33 @@ func newRemoveBepInEx(fs service.Framework) *cobra.Command {
 }
 
 func parseRemoveError(err error) {
-	var committedModCleanup *file.ModRemovalCleanupError
-	var completed *file.FrameworkMutationCleanupError
-	if errors.As(err, &completed) || errors.Is(err, service.ErrConfirmationInput) {
-		fmt.Printf("... %v ...\n", err)
-	} else if errors.Is(err, service.ErrUnableToRemoveFramework) {
-		fmt.Printf("... unable to remove BepInEx: %v ...\n", err)
-	} else if errors.As(err, &committedModCleanup) {
-		fmt.Printf("... warning: %v ...\n", committedModCleanup)
-	} else if errors.Is(err, service.ErrUnableToRemoveMod) {
+	if err == service.ErrCancelled || err == service.ErrNoChanges {
+		return
+	}
+	if _, completed := err.(*service.ModRemovalCleanupError); completed {
+		fmt.Printf("... warning: %v ...\n", err)
+	} else if errors.Is(err, service.ErrUnableToRemoveMod) || errors.Is(err, service.ErrConfirmationInput) {
 		fmt.Printf("... %v ...\n", err)
 	} else if errors.Is(err, service.ErrMaxAttempts) {
 		fmt.Println("... unable to confim mod removal, aborting ...")
 	} else if errors.Is(err, service.ErrModNotInstalled) {
 		fmt.Println("... mod not installed ...")
+	} else {
+		fmt.Printf("... unable to remove mod: %v ...\n", err)
 	}
 }
 
 func parseRemoveAllError(err error) {
-	var committedModCleanup *file.ModRemovalCleanupError
-	if errors.As(err, &committedModCleanup) {
-		fmt.Printf("... warning: %v ...\n", committedModCleanup)
+	if err == service.ErrCancelled || err == service.ErrNoChanges {
+		return
+	}
+	if _, completed := err.(*service.ModRemovalCleanupError); completed {
+		fmt.Printf("... warning: %v ...\n", err)
 	} else if errors.Is(err, service.ErrUnableToRemoveMod) || errors.Is(err, service.ErrConfirmationInput) {
 		fmt.Printf("... %v ...\n", err)
 	} else if errors.Is(err, service.ErrMaxAttempts) {
 		fmt.Println("... unable to confim mod removal, aborting ...")
+	} else {
+		fmt.Printf("... unable to remove mods: %v ...\n", err)
 	}
 }

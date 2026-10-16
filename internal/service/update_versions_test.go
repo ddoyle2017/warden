@@ -53,16 +53,16 @@ func TestUpdateReleaseVersions(t *testing.T) {
 			installed: "1.0.9", latest: "1.0.10", updated: true,
 		},
 		"given a lower minor version, when updating, then refuse the downgrade": {
-			installed: "1.10.0", latest: "1.9.0",
+			installed: "1.10.0", latest: "1.9.0", wantErr: service.ErrNoChanges,
 		},
 		"given a lower major with a higher minor, when updating, then refuse the downgrade": {
-			installed: "2.0.0", latest: "1.99.99",
+			installed: "2.0.0", latest: "1.99.99", wantErr: service.ErrNoChanges,
 		},
 		"given equal versions, when updating, then preserve the installation": {
-			installed: "1.10.0", latest: "1.10.0",
+			installed: "1.10.0", latest: "1.10.0", wantErr: service.ErrNoChanges,
 		},
 		"given a newer release, when declining confirmation, then preserve the installation": {
-			installed: "1.9.0", latest: "1.10.0", answer: "n\n",
+			installed: "1.9.0", latest: "1.10.0", answer: "n\n", wantErr: service.ErrCancelled,
 		},
 		"given a newer release, when confirmation attempts are exhausted, then fail without mutation": {
 			installed: "1.9.0", latest: "1.10.0", answer: "invalid\ninvalid\ninvalid\n", wantErr: service.ErrMaxAttempts,
@@ -74,13 +74,13 @@ func TestUpdateReleaseVersions(t *testing.T) {
 			installed: "1.0.0-rc.1", latest: "1.0.0", updated: true,
 		},
 		"given a stable release and its prerelease, when updating, then refuse the downgrade": {
-			installed: "1.0.0", latest: "1.0.0-rc.1",
+			installed: "1.0.0", latest: "1.0.0-rc.1", wantErr: service.ErrNoChanges,
 		},
 		"given a numeric prerelease upgrade, when updating, then compare its identifiers numerically": {
 			installed: "1.0.0-beta.9", latest: "1.0.0-beta.10", updated: true,
 		},
 		"given a lower numeric prerelease, when updating, then refuse the downgrade": {
-			installed: "1.0.0-beta.10", latest: "1.0.0-beta.9",
+			installed: "1.0.0-beta.10", latest: "1.0.0-beta.9", wantErr: service.ErrNoChanges,
 		},
 		"given an alphabetic prerelease upgrade, when updating, then install it": {
 			installed: "1.0.0-alpha", latest: "1.0.0-beta", updated: true,
@@ -92,7 +92,7 @@ func TestUpdateReleaseVersions(t *testing.T) {
 			installed: "1.0.0-alpha", latest: "1.0.0-alpha.1", updated: true,
 		},
 		"given only different build metadata, when updating, then preserve the installation": {
-			installed: "1.0.0+build.1", latest: "1.0.0+build.2",
+			installed: "1.0.0+build.1", latest: "1.0.0+build.2", wantErr: service.ErrNoChanges,
 		},
 		"given an upgrade with build metadata, when updating, then preserve the complete release identity": {
 			installed: "1.0.9+old", latest: "1.0.10+new.001", updated: true,
@@ -292,6 +292,9 @@ func TestUpdateReleaseVersions(t *testing.T) {
 						}
 					} else if !errors.Is(err, tt.wantErr) {
 						t.Errorf("update error = %v, want %v", err, tt.wantErr)
+					}
+					if (tt.wantErr == service.ErrCancelled || tt.wantErr == service.ErrNoChanges) && err != tt.wantErr {
+						t.Errorf("no-work outcome is not direct: %v", err)
 					}
 					wantMod, wantFramework := oldMod, oldFramework
 					wantDownloads, wantFileCalls, wantRecordWrites := 0, 0, 0
