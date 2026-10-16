@@ -3,6 +3,7 @@ package repo
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"warden/internal/domain/mod"
 )
 
@@ -71,13 +72,13 @@ func (r *mods) GetMod(name string) (mod.Mod, error) {
 func (r *mods) getMod(query string, args ...any) (mod.Mod, error) {
 	rows, err := r.db.Query(query, args...)
 	if err != nil {
-		return mod.Mod{}, ErrModFetchFailed
+		return mod.Mod{}, fmt.Errorf("%w: %w", ErrModFetchFailed, err)
 	}
 	defer rows.Close()
 
 	mods, err := mapRowsToMod(rows)
 	if err != nil {
-		return mod.Mod{}, ErrModMappingFailed
+		return mod.Mod{}, fmt.Errorf("%w: %w", ErrModMappingFailed, err)
 	}
 	if len(mods) == 0 {
 		return mod.Mod{}, ErrModFetchNoResults

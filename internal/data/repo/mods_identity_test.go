@@ -9,6 +9,8 @@ import (
 	"warden/internal/domain/mod"
 	"warden/internal/test/helper"
 	"warden/internal/test/mock"
+
+	"github.com/mattn/go-sqlite3"
 )
 
 func TestUpsertMod_NamespacedIdentity(t *testing.T) {
@@ -133,12 +135,14 @@ func TestGetMod_NamespacedIdentity(t *testing.T) {
 
 func TestUpsertMod_RejectsFailedLookup(t *testing.T) {
 	for name, tt := range map[string]struct {
-		query     string
-		duplicate bool
-		wantErr   error
+		query      string
+		duplicate  bool
+		wantErr    error
+		wantCause  error
+		wantSQLite bool
 	}{
 		"given a query failure, when upserting, then do not attempt a write": {
-			wantErr: repo.ErrModFetchFailed,
+			wantErr: repo.ErrModFetchFailed, wantCause: sql.ErrConnDone,
 		},
 		"given invalid stored metadata, when upserting, then do not interpret it as absence": {
 			query:   `SELECT id, name, namespace, filePath, version, NULL, description, frameworkId FROM mods`,
@@ -147,7 +151,7 @@ func TestUpsertMod_RejectsFailedLookup(t *testing.T) {
 		"given a row iteration failure after one match, when upserting, then do not select the partial result": {
 			query: `SELECT id, name, namespace, filePath, version, websiteUrl, description, frameworkId FROM mods
 							UNION ALL SELECT abs(-9223372036854775808), name, namespace, filePath, version, websiteUrl, description, frameworkId FROM mods`,
-			wantErr: repo.ErrModMappingFailed,
+			wantErr: repo.ErrModMappingFailed, wantSQLite: true,
 		},
 		"given duplicate records for one namespace and name, when upserting, then retain both without inserting another": {
 			duplicate: true, wantErr: repo.ErrModFetchMultipleResults,
@@ -192,8 +196,18 @@ func TestUpsertMod_RejectsFailedLookup(t *testing.T) {
 			})
 			update := original
 			update.Version = "2.0.0"
-			if err := faulted.UpsertMod(update); !errors.Is(err, tt.wantErr) {
+			err := faulted.UpsertMod(update)
+			if !errors.Is(err, tt.wantErr) {
 				t.Errorf("expected error %v, got %v", tt.wantErr, err)
+			}
+			if tt.wantCause != nil && !errors.Is(err, tt.wantCause) {
+				t.Errorf("lookup cause was lost: %v", err)
+			}
+			if tt.wantSQLite {
+				var cause sqlite3.Error
+				if !errors.As(err, &cause) || cause.Code != sqlite3.ErrError {
+					t.Errorf("SQLite iteration cause was lost: %v", err)
+				}
 			}
 			got, err := mr.ListMods()
 			if err != nil {

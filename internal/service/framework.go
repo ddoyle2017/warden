@@ -46,9 +46,12 @@ func NewFrameworkService(fr repo.Frameworks, fm file.Manager, ts thunderstore.Th
 }
 
 func (fs *frameworkService) InstallBepInEx() error {
-	// Check if BepInEx already installed
-	if _, err := fs.fr.GetFramework(framework.BepInEx); err == nil {
+	_, err := fs.fr.GetFramework(framework.BepInEx)
+	if err == nil {
 		return nil
+	}
+	if !errors.Is(err, repo.ErrFrameworkFetchNoResults) {
+		return fmt.Errorf("%w: %w", ErrUnableToInstallFramework, err)
 	}
 
 	fmt.Println("... BepInEx installation is missing ...")
@@ -100,10 +103,10 @@ func (fs *frameworkService) UpdateBepInEx() error {
 	// Check if BepInEx is installed
 	current, err := fs.fr.GetFramework(framework.BepInEx)
 	if err != nil && errors.Is(err, repo.ErrFrameworkFetchNoResults) {
-		return ErrFrameworkNotInstalled
+		return fmt.Errorf("%w: %w", ErrFrameworkNotInstalled, err)
 	}
 	if err != nil {
-		return ErrUnableToUpdateFramework
+		return fmt.Errorf("%w: %w", ErrUnableToUpdateFramework, err)
 	}
 	// Check if current version is the latest
 	pkg, err := fs.ts.GetPackage(framework.BepInExNamespace, framework.BepInEx)
