@@ -50,7 +50,7 @@ func TestFrameworkBootstrapLookup(t *testing.T) {
 				UNION ALL SELECT abs(-9223372036854775808), '', '', '', '', ''`,
 		},
 		"given an existing framework, when bootstrapping, then return without confirmation or work": {
-			installed: true,
+			installed: true, wantErr: service.ErrNoChanges,
 		},
 		"given a genuinely absent framework, when confirming installation, then install and record it": {
 			wantInstall: true,
@@ -169,9 +169,9 @@ func TestFrameworkBootstrapLookup(t *testing.T) {
 			}}
 			reader := &confirmationReader{steps: []confirmationRead{{text: "Y\n"}}}
 			err := service.NewFrameworkService(fr, fm, ts, reader).InstallBepInEx()
-			if tt.wantErr == nil {
-				if err != nil {
-					t.Errorf("bootstrap failed: %v", err)
+			if tt.wantErr == nil || tt.wantErr == service.ErrNoChanges {
+				if err != tt.wantErr {
+					t.Errorf("bootstrap outcome = %v, want %v", err, tt.wantErr)
 				}
 			} else {
 				for _, cause := range []error{service.ErrUnableToInstallFramework, tt.wantErr, lookupErr} {

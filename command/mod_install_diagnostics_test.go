@@ -14,7 +14,10 @@ import (
 
 func TestModInstallDiagnostics(t *testing.T) {
 	for _, operation := range []string{"add", "single update", "qualified update", "bulk update"} {
-		for _, outcome := range []string{"completed cleanup", "recovery failure", "record failure", "dependency failure", "nested request completion", "file completion only"} {
+		for _, outcome := range []string{
+			"completed cleanup", "recovery failure", "record failure", "dependency failure", "nested request completion",
+			"file completion only", "framework completion", "removal completion", "nested no changes", "nested already installed",
+		} {
 			t.Run("given "+outcome+", when reporting "+operation+", then preserve diagnostics and request status once", func(t *testing.T) {
 				t.Setenv("HOME", t.TempDir())
 				artifact := filepath.Join(t.TempDir(), "backup-artifact")
@@ -45,6 +48,18 @@ func TestModInstallDiagnostics(t *testing.T) {
 				case "file completion only":
 					result = cleanup
 					want = []string{"mod files installed", "cleanup interrupted", artifact}
+				case "framework completion":
+					result = &service.FrameworkMutationCleanupError{Err: cleanup}
+					want = []string{"framework request completed", "cleanup interrupted", artifact}
+				case "removal completion":
+					result = &service.ModRemovalCleanupError{Err: cleanup}
+					want = []string{"mod removal completed", "cleanup interrupted", artifact}
+				case "nested no changes":
+					result = errors.Join(fmt.Errorf("%w: lookup interrupted", sentinel), service.ErrNoChanges)
+					want = []string{"lookup interrupted", service.ErrNoChanges.Error()}
+				case "nested already installed":
+					result = errors.Join(fmt.Errorf("%w: lookup interrupted", sentinel), service.ErrModAlreadyInstalled)
+					want = []string{"lookup interrupted", service.ErrModAlreadyInstalled.Error()}
 				}
 				calls := 0
 				run := func(mode, namespace, name string) error {

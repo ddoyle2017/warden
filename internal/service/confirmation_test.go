@@ -78,13 +78,13 @@ func TestConfirmationInput(t *testing.T) {
 					steps: []confirmationRead{{text: operation.yes + "\n"}}, wantReads: 1, accepted: true,
 				},
 				"given a negative answer, when confirming, then leave the installation unchanged": {
-					steps: []confirmationRead{{text: operation.no + "\n"}}, wantReads: 1,
+					steps: []confirmationRead{{text: operation.no + "\n"}}, wantErr: service.ErrCancelled, wantReads: 1,
 				},
 				"given invalid then affirmative answers, when confirming, then perform the work": {
 					steps: []confirmationRead{{text: "invalid\n"}, {text: operation.yes + "\n"}}, wantReads: 2, accepted: true,
 				},
 				"given invalid then negative answers, when confirming, then leave the installation unchanged": {
-					steps: []confirmationRead{{text: "invalid\n"}, {text: operation.no + "\n"}}, wantReads: 2,
+					steps: []confirmationRead{{text: "invalid\n"}, {text: operation.no + "\n"}}, wantErr: service.ErrCancelled, wantReads: 2,
 				},
 				"given two invalid answers, when exhausted, then stop before a failing third read": {
 					steps: []confirmationRead{{text: "invalid\n"}, {text: "invalid\n"}}, wantErr: service.ErrMaxAttempts, wantReads: 2,
@@ -133,7 +133,7 @@ func TestConfirmationInput(t *testing.T) {
 					steps: []confirmationRead{{text: operation.yes, err: io.EOF}}, wantReads: 1, accepted: true,
 				},
 				"given a final negative answer without a newline, when confirming, then leave the installation unchanged": {
-					steps: []confirmationRead{{text: operation.no, err: io.EOF}}, wantReads: 1,
+					steps: []confirmationRead{{text: operation.no, err: io.EOF}}, wantErr: service.ErrCancelled, wantReads: 1,
 				},
 				"given two invalid answers ending at EOF, when confirming, then report the attempt limit": {
 					steps: []confirmationRead{{text: "invalid\n"}, {text: "invalid", err: io.EOF}}, wantErr: service.ErrMaxAttempts, wantReads: 2,
@@ -151,7 +151,10 @@ func TestConfirmationInput(t *testing.T) {
 					if !errors.Is(err, tt.wantErr) {
 						t.Errorf("confirmation error = %v, want %v", err, tt.wantErr)
 					}
-					wantInputError := tt.wantErr != nil && tt.wantErr != service.ErrMaxAttempts
+					if tt.wantErr == service.ErrCancelled && err != service.ErrCancelled {
+						t.Errorf("cancellation is not a direct outcome: %v", err)
+					}
+					wantInputError := tt.wantErr != nil && tt.wantErr != service.ErrMaxAttempts && tt.wantErr != service.ErrCancelled
 					if errors.Is(err, service.ErrConfirmationInput) != wantInputError {
 						t.Errorf("incorrect confirmation input error classification: %v", err)
 					}

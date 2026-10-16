@@ -25,6 +25,7 @@ func TestUpdateMod_Happy(t *testing.T) {
 		current mod.Mod
 		latest  thunderstore.Release
 		updated bool
+		wantErr error
 	}{
 		"return successful when mod is updated": {
 			rd:      strings.NewReader("Y"),
@@ -46,8 +47,8 @@ func TestUpdateMod_Happy(t *testing.T) {
 				VersionNumber: "0.0.2",
 			},
 		},
-		"return successful when mod is up-to-date": {
-			rd: strings.NewReader("Y"),
+		"given a current mod, when updating, then report no changes": {
+			rd: strings.NewReader("Y"), wantErr: service.ErrNoChanges,
 			current: mod.Mod{
 				Name:         name,
 				Namespace:    namespace,
@@ -65,8 +66,9 @@ func TestUpdateMod_Happy(t *testing.T) {
 				VersionNumber: "0.0.1",
 			},
 		},
-		"return successful if user aborts update": {
+		"given a negative answer, when updating, then report cancellation": {
 			rd:      strings.NewReader("n"),
+			wantErr: service.ErrCancelled,
 			current: mod.Mod{Name: name, Namespace: namespace, Version: "0.0.1"},
 			latest:  thunderstore.Release{Name: name, Namespace: namespace, VersionNumber: "0.0.2"},
 		},
@@ -113,8 +115,8 @@ func TestUpdateMod_Happy(t *testing.T) {
 			ms := service.NewModService(&r, &fm, &ts, test.rd)
 
 			err := ms.UpdateMod("Sleepover")
-			if err != nil {
-				t.Errorf("expected a nil error, received: %+v", err)
+			if !errors.Is(err, test.wantErr) {
+				t.Errorf("update outcome = %v, want %v", err, test.wantErr)
 			}
 			wantFileCalls, wantRecordWrites := 0, 0
 			if test.updated {
@@ -301,10 +303,12 @@ func TestUpdateAllMods_Happy(t *testing.T) {
 		current    []mod.Mod
 		latest     thunderstore.Release
 		dependency thunderstore.Release
+		wantErr    error
 	}{
-		"return successful when there are no mods to update": {
+		"given no installed mods, when updating all, then report no changes": {
 			rd:      strings.NewReader("Y"),
 			current: []mod.Mod{},
+			wantErr: service.ErrNoChanges,
 		},
 		"return successful when all mods are updated": {
 			rd: strings.NewReader("Y"),
@@ -329,8 +333,8 @@ func TestUpdateAllMods_Happy(t *testing.T) {
 				VersionNumber: depVersion,
 			},
 		},
-		"return successful when all mods are up-to-date": {
-			rd: strings.NewReader("Y"),
+		"given current mods, when updating all, then report no changes": {
+			rd: strings.NewReader("Y"), wantErr: service.ErrNoChanges,
 			current: []mod.Mod{
 				{
 					ID:           1,
@@ -352,8 +356,8 @@ func TestUpdateAllMods_Happy(t *testing.T) {
 				VersionNumber: depVersion,
 			},
 		},
-		"return successful if user aborts update all": {
-			rd: strings.NewReader("n"),
+		"given a negative answer, when updating all, then report cancellation": {
+			rd: strings.NewReader("n"), wantErr: service.ErrCancelled,
 		},
 	}
 
@@ -386,8 +390,8 @@ func TestUpdateAllMods_Happy(t *testing.T) {
 			ms := service.NewModService(r, fm, ts, test.rd)
 
 			err := ms.UpdateAllMods()
-			if err != nil {
-				t.Errorf("expected nil error, received: %+v", err)
+			if !errors.Is(err, test.wantErr) {
+				t.Errorf("bulk update outcome = %v, want %v", err, test.wantErr)
 			}
 		})
 	}

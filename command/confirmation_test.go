@@ -22,6 +22,8 @@ func TestConfirmationInputDiagnostics(t *testing.T) {
 		for name, cause := range map[string]error{
 			"given a reader failure, when confirming, then print its cause without reporting success": errors.New("injected reader failure"),
 			"given EOF, when confirming, then print EOF without reporting success":                    io.EOF,
+			"given cancellation as a reader error, when confirming, then retain the input failure":    service.ErrCancelled,
+			"given no changes as a reader error, when confirming, then retain the input failure":      service.ErrNoChanges,
 		} {
 			t.Run(operation+"/"+name, func(t *testing.T) {
 				reader := &confirmationErrorReader{err: cause}

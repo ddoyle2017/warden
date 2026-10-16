@@ -3,7 +3,6 @@ package command
 import (
 	"errors"
 	"fmt"
-	"warden/internal/data/file"
 	"warden/internal/service"
 
 	"github.com/spf13/cobra"
@@ -18,9 +17,11 @@ func NewAddCommand(fs service.Framework, ms service.Mod) *cobra.Command {
 		Short: "Adds the specified mod.",
 		Long:  "Searches Thunderstone for the specified mod, downloads it, then adds it to your local mod collection.",
 		Run: func(cmd *cobra.Command, args []string) {
-			if err := fs.InstallBepInEx(); err != nil {
-				parseAddError(err)
-				return
+			if err := fs.InstallBepInEx(); err != nil && err != service.ErrNoChanges {
+				parseFrameworkError(err, "install")
+				if _, ready := err.(*service.FrameworkMutationCleanupError); !ready {
+					return
+				}
 			}
 			if err := ms.AddMod(namespace, modPkg); err != nil {
 				parseAddError(err)
@@ -39,12 +40,14 @@ func NewAddCommand(fs service.Framework, ms service.Mod) *cobra.Command {
 }
 
 func parseAddError(err error) {
-	var completed *file.FrameworkMutationCleanupError
+	if err == service.ErrCancelled || err == service.ErrNoChanges {
+		return
+	}
 	if _, modCompleted := err.(*service.ModMutationCleanupError); modCompleted {
 		fmt.Printf("... warning: %v ...\n", err)
-	} else if errors.As(err, &completed) || errors.Is(err, service.ErrConfirmationInput) {
+	} else if errors.Is(err, service.ErrConfirmationInput) {
 		fmt.Printf("... %v ...\n", err)
-	} else if errors.Is(err, service.ErrModAlreadyInstalled) {
+	} else if err == service.ErrModAlreadyInstalled {
 		fmt.Println("... mod already installed ...")
 	} else if errors.Is(err, service.ErrModInstallFailed) {
 		fmt.Printf("... %v ...\n", err)
@@ -52,10 +55,6 @@ func parseAddError(err error) {
 		fmt.Printf("... unable to find mod on Thunderstore: %v ...\n", err)
 	} else if errors.Is(err, service.ErrAddDependenciesFailed) {
 		fmt.Printf("... %v ...\n", err)
-	} else if errors.Is(err, service.ErrUnableToInstallFramework) {
-		fmt.Println("... unable to install BepInEx ...")
-	} else if errors.Is(err, service.ErrFrameworkNotFound) {
-		fmt.Println("... unable to find BepInEx ...")
 	} else {
 		fmt.Printf("... %v ...\n", err)
 	}

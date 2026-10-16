@@ -87,6 +87,9 @@ func TestModRemoval_ReportsFinalizationErrors(t *testing.T) {
 			if errors.As(err, &committed) == tt.rollback {
 				t.Errorf("incorrect committed-removal classification: %v", err)
 			}
+			if _, completed := err.(*service.ModRemovalCleanupError); completed == tt.rollback {
+				t.Errorf("incorrect service-removal completion: %v", err)
+			}
 		})
 	}
 }
@@ -97,8 +100,8 @@ func TestModRemoval_DoesNotStageWithoutConfirmation(t *testing.T) {
 		answer  string
 		wantErr error
 	}{
-		"given a declined single removal, when returning, then perform no operations":      {answer: "n"},
-		"given declined all-mod removal, when returning, then perform no operations":       {all: true, answer: "no"},
+		"given a declined single removal, when returning, then perform no operations":      {answer: "n", wantErr: service.ErrCancelled},
+		"given declined all-mod removal, when returning, then perform no operations":       {all: true, answer: "no", wantErr: service.ErrCancelled},
 		"given exhausted single-removal input, when returning, then perform no operations": {wantErr: io.EOF},
 		"given exhausted all-mod input, when returning, then perform no operations":        {all: true, wantErr: io.EOF},
 	}

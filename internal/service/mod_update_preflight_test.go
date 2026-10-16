@@ -35,10 +35,10 @@ func TestModUpdate_PreflightPreservesInstallation(t *testing.T) {
 			answer: "Y\n", version: "2.0.0", updated: true,
 		},
 		"given cwd inside plugins, when no update is available, then leave the installation unchanged": {
-			inside: true, answer: "Y\n", version: "1.0.0",
+			inside: true, answer: "Y\n", version: "1.0.0", wantErr: service.ErrNoChanges,
 		},
 		"given cwd inside plugins, when declining an update, then leave the installation unchanged": {
-			inside: true, answer: "n\n", version: "2.0.0",
+			inside: true, answer: "n\n", version: "2.0.0", wantErr: service.ErrCancelled,
 		},
 		"given cwd inside plugins, when input is exhausted, then leave the installation unchanged": {
 			inside: true, version: "2.0.0", wantErr: io.EOF,

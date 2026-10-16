@@ -3,7 +3,6 @@ package command
 import (
 	"errors"
 	"fmt"
-	"warden/internal/data/file"
 	"warden/internal/service"
 
 	"github.com/spf13/cobra"
@@ -65,7 +64,7 @@ func newUpdateBepInEx(fs service.Framework) *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) {
 			err := fs.UpdateBepInEx()
 			if err != nil {
-				parseUpdateError(err)
+				parseFrameworkError(err, "update")
 			} else {
 				fmt.Println("...successfully updated BepInEx!...")
 			}
@@ -75,12 +74,12 @@ func newUpdateBepInEx(fs service.Framework) *cobra.Command {
 }
 
 func parseUpdateError(err error) {
-	var completed *file.FrameworkMutationCleanupError
+	if err == service.ErrCancelled || err == service.ErrNoChanges {
+		return
+	}
 	if _, modCompleted := err.(*service.ModMutationCleanupError); modCompleted {
 		fmt.Printf("... warning: %v ...\n", err)
-	} else if errors.As(err, &completed) ||
-		errors.Is(err, service.ErrUnableToInstallFramework) ||
-		errors.Is(err, service.ErrConfirmationInput) ||
+	} else if errors.Is(err, service.ErrConfirmationInput) ||
 		errors.Is(err, service.ErrInvalidReleaseVersion) {
 		fmt.Printf("... %v ...\n", err)
 	} else if errors.Is(err, service.ErrModNameAmbiguous) || errors.Is(err, service.ErrDuplicateModRecords) {
@@ -95,10 +94,6 @@ func parseUpdateError(err error) {
 		fmt.Printf("... %v ...\n", err)
 	} else if errors.Is(err, service.ErrMaxAttempts) {
 		fmt.Println("... unable to confim update, aborting ...")
-	} else if errors.Is(err, service.ErrFrameworkNotInstalled) {
-		fmt.Println("... BepInEx is not installed ...")
-	} else if errors.Is(err, service.ErrUnableToUpdateFramework) {
-		fmt.Println("... unable to update BepInEx ...")
 	} else {
 		fmt.Printf("... %v ...\n", err)
 	}

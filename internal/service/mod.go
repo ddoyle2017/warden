@@ -44,6 +44,24 @@ func (e *ModMutationCleanupError) Unwrap() error {
 	return e.Err
 }
 
+// ModRemovalCleanupError marks a completed service removal, including metadata.
+// Only a direct return establishes completion; file-only and nested markers do not.
+type ModRemovalCleanupError struct {
+	Err error
+}
+
+func (e *ModRemovalCleanupError) Error() string {
+	return fmt.Sprintf("mod removal completed; %v", e.Err)
+}
+
+func (e *ModRemovalCleanupError) Unwrap() error {
+	return e.Err
+}
+
+func (e *ModRemovalCleanupError) Is(target error) bool {
+	return target == ErrUnableToRemoveMod
+}
+
 // Encapsulates all the business logic for managing mods. It coordinates both the mods
 // database and file management to make sure they're updated together.
 type Mod interface {
@@ -239,7 +257,7 @@ func (ms *modService) updateInstalledMod(current mod.Mod, err error) error {
 		}
 		if !accepted {
 			fmt.Println("... aborting ...")
-			return nil
+			return ErrCancelled
 		}
 		dependencies, err := planDependencies(pkg.Latest)
 		if err != nil {
@@ -258,7 +276,7 @@ func (ms *modService) updateInstalledMod(current mod.Mod, err error) error {
 	} else {
 		fmt.Printf("... latest version of %s %s already installed (%s) ...\n", current.Namespace, current.Name, current.Version)
 	}
-	return nil
+	return ErrNoChanges
 }
 
 func (ms *modService) UpdateAllMods() error {
@@ -270,7 +288,7 @@ func (ms *modService) UpdateAllMods() error {
 	}
 	if !accepted {
 		fmt.Println("... aborting ...")
-		return nil
+		return ErrCancelled
 	}
 	// Get all installed mods
 	mods, err := ms.r.ListMods()
@@ -362,6 +380,10 @@ func (ms *modService) UpdateAllMods() error {
 			return modMutationResult(cleanupErr, fmt.Errorf("%w: %w", ErrAddDependenciesFailed, err))
 		}
 	}
+	if len(updated) == 0 {
+		fmt.Println("... no mods need updating ...")
+		return ErrNoChanges
+	}
 	return modMutationResult(cleanupErr, nil)
 }
 
@@ -374,7 +396,7 @@ func (ms *modService) RemoveMod(namespace, name string) error {
 	}
 	if !accepted {
 		fmt.Println("... aborting ...")
-		return nil
+		return ErrCancelled
 	}
 	// Find the current installation of the mod
 	current, err := ms.r.GetModByIdentity(namespace, name)
@@ -403,7 +425,7 @@ func (ms *modService) RemoveAllMods() error {
 	}
 	if !accepted {
 		fmt.Println("... aborting ...")
-		return nil
+		return ErrCancelled
 	}
 	removal, err := ms.fm.StageAllModsRemoval()
 	if err != nil {
@@ -417,6 +439,9 @@ func (ms *modService) finishModRemoval(removal file.ModRemoval, deleteRecords fu
 		return fmt.Errorf("%w: record deletion failed; verify database state: %w", ErrUnableToRemoveMod, errors.Join(err, removal.Rollback()))
 	}
 	if err := removal.Commit(); err != nil {
+		if _, completed := err.(*file.ModRemovalCleanupError); completed {
+			return &ModRemovalCleanupError{Err: err}
+		}
 		return fmt.Errorf("%w: %w", ErrUnableToRemoveMod, err)
 	}
 	return nil

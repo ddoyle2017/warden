@@ -200,6 +200,130 @@ func TestFrameworkRemovalDiagnostics(t *testing.T) {
 	}
 }
 
+func TestRemovalCompletionBoundary(t *testing.T) {
+	for _, all := range []bool{false, true} {
+		for _, phase := range []string{"completed", "staging", "metadata", "rollback", "commit"} {
+			t.Run(fmt.Sprintf("given %s cleanup with all=%t, when removing, then report only whole-request completion", phase, all), func(t *testing.T) {
+				cause := errors.New("retained cleanup detail")
+				marker := &file.ModRemovalCleanupError{Err: cause}
+				recordCause := errors.New("record deletion uncertain")
+				stages, writes, commits, rollbacks := 0, 0, 0, 0
+				removal := &mock.ModRemoval{
+					CommitFunc: func() error {
+						commits++
+						if phase == "completed" {
+							return marker
+						}
+						if phase != "commit" {
+							t.Fatal("committed a failed removal")
+						}
+						return errors.Join(file.ErrBackupDeleteFailed, marker)
+					},
+					RollbackFunc: func() error {
+						rollbacks++
+						if phase == "rollback" {
+							return marker
+						}
+						return nil
+					},
+				}
+				stage := func() (file.ModRemoval, error) {
+					stages++
+					if phase == "staging" {
+						return nil, marker
+					}
+					return removal, nil
+				}
+				deleteRecords := func() error {
+					writes++
+					switch phase {
+					case "metadata":
+						return errors.Join(recordCause, marker)
+					case "rollback":
+						return recordCause
+					default:
+						return nil
+					}
+				}
+				mr := &mock.ModsRepo{
+					GetModByIdentityFunc: func(namespace, name string) (mod.Mod, error) {
+						if namespace != "Owner" || name != "Root" {
+							t.Fatalf("unexpected target %s/%s", namespace, name)
+						}
+						return mod.Mod{Namespace: namespace, Name: name, Version: "1.0.0"}, nil
+					},
+					DeleteModFunc: func(name, namespace string) error {
+						if namespace != "Owner" || name != "Root" {
+							t.Fatalf("unexpected deletion %s/%s", namespace, name)
+						}
+						return deleteRecords()
+					},
+					DeleteAllModsFunc: deleteRecords,
+				}
+				fm := &mock.Manager{
+					StageModRemovalFunc: func(fullName string) (file.ModRemoval, error) {
+						if fullName != "Owner-Root-1.0.0" {
+							t.Fatalf("unexpected staged release %q", fullName)
+						}
+						return stage()
+					},
+					StageAllModsRemovalFunc: stage,
+				}
+				answer, args := "Y\n", []string{"--namespace", "Owner", "--mod", "Root"}
+				if all {
+					answer, args = "YES I AM\n", []string{"all"}
+				}
+				ms := &observedOutcomeRemoval{Mod: service.NewModService(mr, fm, &mock.Thunderstore{}, strings.NewReader(answer))}
+				cmd := command.NewRemoveCommand(nil, ms)
+				cmd.SetArgs(args)
+				output := runOutcomeCommand(t, cmd)
+				completed := phase == "completed"
+				if _, direct := ms.result.(*service.ModRemovalCleanupError); direct != completed {
+					t.Errorf("service removal boundary misclassified: %v", ms.result)
+				}
+				var fileCompletion *file.ModRemovalCleanupError
+				if !errors.As(ms.result, &fileCompletion) || !errors.Is(ms.result, marker) ||
+					!errors.Is(ms.result, cause) || !errors.Is(ms.result, service.ErrUnableToRemoveMod) {
+					t.Errorf("removal lost cause compatibility: %v", ms.result)
+				}
+				wantWrites, wantCommits, wantRollbacks := 1, 0, 0
+				if phase == "staging" {
+					wantWrites = 0
+				} else if completed || phase == "commit" {
+					wantCommits = 1
+				} else {
+					wantRollbacks = 1
+					if !errors.Is(ms.result, recordCause) || !strings.Contains(output, "verify database state") {
+						t.Errorf("metadata uncertainty was hidden: %v, %q", ms.result, output)
+					}
+				}
+				if stages != 1 || writes != wantWrites || commits != wantCommits || rollbacks != wantRollbacks {
+					t.Errorf("unexpected stages/writes/commits/rollbacks = %d/%d/%d/%d", stages, writes, commits, rollbacks)
+				}
+				if strings.Contains(output, "warning:") != completed || strings.Contains(output, "successfully") ||
+					strings.Count(output, cause.Error()) != 1 {
+					t.Errorf("removal outcome was misreported or repeated: %q", output)
+				}
+			})
+		}
+	}
+}
+
+type observedOutcomeRemoval struct {
+	service.Mod
+	result error
+}
+
+func (s *observedOutcomeRemoval) RemoveMod(namespace, name string) error {
+	s.result = s.Mod.RemoveMod(namespace, name)
+	return s.result
+}
+
+func (s *observedOutcomeRemoval) RemoveAllMods() error {
+	s.result = s.Mod.RemoveAllMods()
+	return s.result
+}
+
 func TestRemoveCommand_RequiresTargetFlags(t *testing.T) {
 	tests := map[string]struct {
 		args    []string

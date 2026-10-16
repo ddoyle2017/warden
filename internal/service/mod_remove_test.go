@@ -33,13 +33,14 @@ func TestRemoveMod_Happy(t *testing.T) {
 	}
 
 	tests := map[string]struct {
-		rd io.Reader
+		rd      io.Reader
+		wantErr error
 	}{
 		"if user confirms delete, remove the mod and return success": {
 			rd: strings.NewReader("Y"),
 		},
-		"if user denies delete, cancel mod removal and return success": {
-			rd: strings.NewReader("n"),
+		"given a negative answer, when removing a mod, then return cancellation": {
+			rd: strings.NewReader("n"), wantErr: service.ErrCancelled,
 		},
 	}
 
@@ -48,8 +49,8 @@ func TestRemoveMod_Happy(t *testing.T) {
 			ms := service.NewModService(r, fm, &mock.Thunderstore{}, test.rd)
 
 			err := ms.RemoveMod("Azumatt", "Sleepover")
-			if err != nil {
-				t.Errorf("expected a nil error, received: %+v", err)
+			if !errors.Is(err, test.wantErr) {
+				t.Errorf("removal outcome = %v, want %v", err, test.wantErr)
 			}
 		})
 	}
@@ -158,13 +159,14 @@ func TestRemoveAllMods_Happy(t *testing.T) {
 	}
 
 	tests := map[string]struct {
-		rd io.Reader
+		rd      io.Reader
+		wantErr error
 	}{
 		"if user confirms delete, remove all mods and return success": {
 			rd: strings.NewReader("YES I AM"),
 		},
-		"if user denies delete, cancel mod removal and return success": {
-			rd: strings.NewReader("no"),
+		"given a negative answer, when removing all mods, then return cancellation": {
+			rd: strings.NewReader("no"), wantErr: service.ErrCancelled,
 		},
 	}
 
@@ -173,8 +175,8 @@ func TestRemoveAllMods_Happy(t *testing.T) {
 			ms := service.NewModService(r, fm, &mock.Thunderstore{}, test.rd)
 
 			err := ms.RemoveAllMods()
-			if err != nil {
-				t.Errorf("expected a nil error, received: %+v", err)
+			if !errors.Is(err, test.wantErr) {
+				t.Errorf("removal outcome = %v, want %v", err, test.wantErr)
 			}
 		})
 	}

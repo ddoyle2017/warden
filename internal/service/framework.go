@@ -17,8 +17,22 @@ var (
 	ErrUnableToRemoveFramework  = errors.New("unable to remove mod framework")
 
 	ErrFrameworkNotInstalled = errors.New("framework is not installed")
-	ErrFrameworkNotFound     = errors.New("unable to delete record from frameworks table")
+	ErrFrameworkNotFound     = errors.New("framework package lookup failed")
 )
+
+// FrameworkMutationCleanupError marks a completed framework request, including
+// metadata. Only a direct return from InstallBepInEx establishes bootstrap readiness.
+type FrameworkMutationCleanupError struct {
+	Err error
+}
+
+func (e *FrameworkMutationCleanupError) Error() string {
+	return fmt.Sprintf("framework request completed; cleanup failed: %v", e.Err)
+}
+
+func (e *FrameworkMutationCleanupError) Unwrap() error {
+	return e.Err
+}
 
 // Encapsulates all the business logic for managing frameworks, namely BepInEx. It coordinates
 // both the database and file management to make sure they're updated together. Frameworks have
@@ -48,7 +62,7 @@ func NewFrameworkService(fr repo.Frameworks, fm file.Manager, ts thunderstore.Th
 func (fs *frameworkService) InstallBepInEx() error {
 	_, err := fs.fr.GetFramework(framework.BepInEx)
 	if err == nil {
-		return nil
+		return ErrNoChanges
 	}
 	if !errors.Is(err, repo.ErrFrameworkFetchNoResults) {
 		return fmt.Errorf("%w: %w", ErrUnableToInstallFramework, err)
@@ -63,12 +77,12 @@ func (fs *frameworkService) InstallBepInEx() error {
 	}
 	if !accepted {
 		fmt.Println("... aborting ...")
-		return nil
+		return ErrCancelled
 	}
 	// Install BepInEx
 	pkg, err := fs.ts.GetPackage(framework.BepInExNamespace, framework.BepInEx)
 	if err != nil {
-		return ErrFrameworkNotFound
+		return fmt.Errorf("%w: %w", ErrFrameworkNotFound, err)
 	}
 
 	var installErr error
@@ -89,10 +103,10 @@ func (fs *frameworkService) InstallBepInEx() error {
 	}
 	err = fs.fr.InsertFramework(f)
 	if err != nil {
-		return errors.Join(installErr, fmt.Errorf("%w: %w", ErrUnableToInstallFramework, err))
+		return errors.Join(installErr, fmt.Errorf("%w: framework files installed, but metadata write failed; verify database state before retrying: %w", ErrUnableToInstallFramework, err))
 	}
 	if installErr != nil {
-		return installErr
+		return &FrameworkMutationCleanupError{Err: installErr}
 	}
 
 	fmt.Println("... successfully installed BepInEx ...")
@@ -111,7 +125,7 @@ func (fs *frameworkService) UpdateBepInEx() error {
 	// Check if current version is the latest
 	pkg, err := fs.ts.GetPackage(framework.BepInExNamespace, framework.BepInEx)
 	if err != nil {
-		return ErrUnableToUpdateFramework
+		return fmt.Errorf("%w: %w", ErrUnableToUpdateFramework, err)
 	}
 
 	newer, err := hasNewerRelease(current.Version, pkg.Latest.VersionNumber)
@@ -128,7 +142,7 @@ func (fs *frameworkService) UpdateBepInEx() error {
 		}
 		if !accepted {
 			fmt.Println("... aborting ...")
-			return nil
+			return ErrCancelled
 		}
 		var updateErr error
 		if err := fs.fm.UpdateBepInEx(pkg.Latest.DownloadURL, pkg.Latest.FullName); err != nil {
@@ -148,13 +162,16 @@ func (fs *frameworkService) UpdateBepInEx() error {
 		}
 		err = fs.fr.UpdateFramework(f)
 		if err != nil {
-			return errors.Join(updateErr, fmt.Errorf("%w: %w", ErrUnableToInstallFramework, err))
+			return errors.Join(updateErr, fmt.Errorf("%w: framework files updated, but metadata write failed; verify database state before retrying: %w", ErrUnableToInstallFramework, err))
 		}
-		return updateErr
+		if updateErr != nil {
+			return &FrameworkMutationCleanupError{Err: updateErr}
+		}
+		return nil
 	} else {
 		fmt.Println("... BepInEx is up-to-date! ...")
 	}
-	return nil
+	return ErrNoChanges
 }
 
 func (fs *frameworkService) RemoveBepInEx() error {
@@ -166,7 +183,7 @@ func (fs *frameworkService) RemoveBepInEx() error {
 	}
 	if !accepted {
 		fmt.Println("... aborting ...")
-		return nil
+		return ErrCancelled
 	}
 	var removeErr error
 	if err := fs.fm.RemoveBepInEx(); err != nil {
@@ -178,5 +195,8 @@ func (fs *frameworkService) RemoveBepInEx() error {
 	if err := fs.fr.DeleteFramework(framework.BepInEx, fs.fm.BepInExPluginDirectory()); err != nil {
 		return errors.Join(removeErr, fmt.Errorf("%w: framework files were removed, but metadata deletion failed; verify database state before retrying: %w", ErrUnableToRemoveFramework, err))
 	}
-	return removeErr
+	if removeErr != nil {
+		return &FrameworkMutationCleanupError{Err: removeErr}
+	}
+	return nil
 }

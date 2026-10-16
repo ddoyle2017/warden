@@ -81,9 +81,9 @@ fetching dependencies. New roots use the latest release; existing roots use
 their recorded version as described in [retrying an add](#retrying-an-add).
 Updates validate only when a newer release is selected
 and confirmation succeeds. No-update, declined, and confirmation-input outcomes
-remain unchanged. Bulk updates validate each selected package immediately before
-its replacement, including replacement as an earlier root's dependency, not every
-package before the loop.
+stop before dependency validation. Bulk updates validate each selected package
+immediately before its replacement, including replacement as an earlier root's
+dependency, not every package before the loop.
 
 Invalid input returns `ErrAddDependenciesFailed` and `ErrInvalidDependency`,
 identifying the root package and offending token. Invalid dependency versions
@@ -141,7 +141,7 @@ Earlier completed steps can remain in effect if a later step fails.
 
 | Operation | Ordering and scope |
 | --- | --- |
-| Add a mod | The command first attempts BepInEx installation when its record is missing. If that returns no error, the mod service fetches the latest release for a new root or exact-version metadata for an existing root, validates the direct-dependency plan, installs and records only a new root, and then installs missing direct dependencies. |
+| Add a mod | Establish framework readiness from an existing record or completed bootstrap. Only then fetch the latest release for a new root or exact-version metadata for an existing root, validate the direct-dependency plan, install and record only a new root, and install missing direct dependencies. |
 | Update a mod | Fetch the installed record and latest release. If the version compares newer and the user confirms, validate the direct-dependency plan and target, prepare the replacement, retain the original outside plugins, publish the replacement, upsert its record, finalize original-file cleanup, and process dependencies. |
 | Update all mods | Confirm once, then process recorded mods and their direct dependencies. Before fetching each listed mod or selected dependency, reject duplicate namespace/name identities from the original list. Installed dependencies in the selection are validated and replaced immediately when needed. A failure stops the loop; earlier successful updates are not undone. This is not a framework update. |
 | Remove a mod | Confirm, look up the exact namespace and name, take a complete backup and stage that record's versioned directory outside the plugin tree, delete the matching record, then discard staged files and the backup. |
@@ -157,6 +157,12 @@ ambiguous-result errors stop bootstrap and the enclosing add command before
 confirmation, package fetches, downloads, backups, or file and record changes.
 Framework lookup failures retain the repository classification and underlying
 cause through installation and update service errors.
+
+Declining bootstrap cancels the entire add before mod metadata fetches, downloads,
+or file and record changes. A completed bootstrap with cleanup warnings is ready
+only after its framework record is saved: the command reports that warning once
+and continues the requested mod add. An incomplete bootstrap or an uncertain
+metadata write stops the add, even if its error contains a file-completion marker.
 
 After dependency validation, installing or replacing a root mod can still
 succeed before a dependency lookup, file operation, or metadata write fails.
@@ -285,10 +291,29 @@ mutations, and commands display the input diagnostic. An answer delivered with
 a non-EOF reader error does not authorize work; a valid final answer without a
 newline is still accepted.
 
-A deliberate negative answer still returns nil without a mutation. Callers must
-not interpret every nil error as proof that an installation, update, or removal
-occurred. Commands do not yet consistently distinguish cancellation from
-completion or propagate runtime failures to the process exit status.
+Mutation services distinguish deliberate cancellation and known no-work outcomes
+from completion without changing their error-based APIs:
+
+| Direct service result | Meaning |
+| --- | --- |
+| `nil` | The requested service operation completed without cleanup warnings. |
+| `ErrCancelled` | A deliberate negative confirmation stopped the operation before its mutation or dependent work. |
+| `ErrNoChanges` | A framework record already exists, or an update found no newer release. Bulk updates also use this result for an empty installed-mod list. |
+| `ErrModAlreadyInstalled` | An add verified the installed root's dependency plan and found no missing direct dependencies. A completed dependency repair instead returns `nil` or the completed-request cleanup result below. |
+
+Commands do not print mutation-success messages for cancellation or no-change.
+Bootstrap's `ErrNoChanges` establishes readiness for the requested add; it does
+not claim that framework files were checked. A bulk update returns no-change
+only if none of its packages needed updating, not when some completed and others
+were already current.
+
+No-work outcomes must be direct service results, not nested causes of a failure.
+EOF, reader failures (even alongside a negative answer), exhausted invalid input,
+missing targets, lookup failures, and invalid versions remain failures. Wrapped
+causes retain `errors.Is`/`errors.As` compatibility for diagnosis; finding a nested
+outcome does not authorize continuation or declare the enclosing request complete.
+Commands still do not consistently propagate runtime failures to process exit
+status.
 
 The file manager makes a backup available for restoration only after the
 complete copy succeeds. After a failed copy, it attempts to remove the temporary
@@ -299,7 +324,8 @@ incomplete snapshot.
 
 An empty source directory is valid for a backup; a missing source is an error.
 Mod installation and removal of all mods create a missing plugins directory
-before taking a backup. Removing an absent mod remains a no-op.
+before taking a backup. File-only removal of an absent release directory remains
+a no-op; service removal of an unrecorded mod still returns `ErrModNotInstalled`.
 
 Mod installation returns the original archive-write, extraction, or archive-delete
 failure together with any restoration or restoration-cleanup failure. Failed
@@ -339,10 +365,13 @@ does not prove that its write was unapplied, so inspect recorded state as well.
 After successful record deletion, removal is committed and cleanup is
 irreversible. Cleanup failures identify leftover paths but do not make those
 potentially partial contents usable recovery snapshots. File-only removal callers
-receive `ModRemovalCleanupError` directly for this committed outcome; a nested
-marker does not establish completed removal. This is not installation completion.
-Updates use the owned replacement lifecycle instead of committing a file-only
-removal before installation.
+receive `file.ModRemovalCleanupError` directly for this committed outcome. The
+service returns `service.ModRemovalCleanupError` directly only after record
+deletion and committed file removal; it retains `ErrUnableToRemoveMod` and the
+file-layer causes for diagnostic compatibility. Neither a file-only marker nor
+a nested service marker establishes completed service removal. This is not
+installation completion. Updates use the owned replacement lifecycle instead
+of committing a file-only removal before installation.
 
 Single/all mod removal commands display the wrapped recovery details, including
 retained paths and instructions to verify database state. A committed cleanup
@@ -427,17 +456,20 @@ artifacts without advertising consumed server snapshots as valid recovery
 sources.
 
 Completed framework installation, update, or removal with cleanup failures
-returns `FrameworkMutationCleanupError` directly from the file manager.
+returns `file.FrameworkMutationCleanupError` directly from the file manager.
 The service still saves or deletes the matching framework record, reconciles
-removed plugin records, and retains the cleanup diagnostics; if a record write
-also fails, it reports both errors. A marker nested in another error is retained
-as a cause, not treated as proof that the enclosing operation completed.
+removed plugin records, and retains the cleanup diagnostics. Only after metadata
+succeeds does it return `service.FrameworkMutationCleanupError` directly.
+If a record write also fails, it reports both errors and asks the user to verify
+database state; the commit outcome may be unknown. A marker nested in another
+error remains a cause, not proof that the enclosing operation completed.
 The add, update, and remove commands display completed-mutation diagnostics,
 including artifact paths. Framework removal also displays metadata-failure
-details and database-verification guidance without a cleanup marker. An add
-stops on a bootstrap diagnostic, but its recorded framework is reused on retry.
-A cleanup error after an incomplete or rolled-back operation does not authorize
-metadata changes.
+details and database-verification guidance without a cleanup marker. A completed
+bootstrap warning permits the mod add to continue, not to claim that the mod
+request completed. A later mod or dependency failure remains a failure; a
+verified already-installed mod remains a no-work outcome. A cleanup error after
+an incomplete or rolled-back operation does not authorize metadata changes.
 
 Filesystem recovery does not roll back database writes or provide crash or
 concurrency atomicity.

@@ -263,6 +263,9 @@ func TestFrameworkUpdateCompletion(t *testing.T) {
 			if errors.As(err, &completed) != ((tt.completed || tt.nestedCompletion) && tt.cleanup) {
 				t.Errorf("completion diagnostic was lost or invented: %v", err)
 			}
+			if _, requestCompleted := err.(*service.FrameworkMutationCleanupError); requestCompleted != (tt.completed && tt.cleanup && !tt.recordFailure) {
+				t.Errorf("incorrect framework request completion: %v", err)
+			}
 			if tt.cleanup {
 				if !errors.Is(err, cleanupCause) || !errors.Is(err, file.ErrBackupDeleteFailed) || !strings.Contains(err.Error(), recoveryPath) {
 					t.Errorf("cleanup cause or recovery path lost: %v", err)
@@ -289,7 +292,7 @@ func TestFrameworkUpdateCompletion(t *testing.T) {
 				t.Errorf("incomplete update cause lost: %v", err)
 			}
 			if tt.completed && !tt.recordFailure {
-				if err := service.NewFrameworkService(fr, fm, ts, strings.NewReader("Y\n")).UpdateBepInEx(); err != nil {
+				if err := service.NewFrameworkService(fr, fm, ts, strings.NewReader("Y\n")).UpdateBepInEx(); err != service.ErrNoChanges {
 					t.Errorf("already recorded release required another update: %v", err)
 				}
 				if fileCalls != 1 {
