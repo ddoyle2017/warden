@@ -40,7 +40,7 @@ func NewAddCommand(fs service.Framework, ms service.Mod) *cobra.Command {
 
 func parseAddError(err error) {
 	var completed *file.FrameworkMutationCleanupError
-	if errors.As(err, &completed) {
+	if errors.As(err, &completed) || errors.Is(err, service.ErrConfirmationInput) {
 		fmt.Printf("... %v ...\n", err)
 	} else if errors.Is(err, service.ErrModAlreadyInstalled) {
 		fmt.Println("... mod already installed ...")

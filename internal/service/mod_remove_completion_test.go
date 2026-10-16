@@ -2,6 +2,7 @@ package service_test
 
 import (
 	"errors"
+	"io"
 	"slices"
 	"strings"
 	"testing"
@@ -92,13 +93,14 @@ func TestModRemoval_ReportsFinalizationErrors(t *testing.T) {
 
 func TestModRemoval_DoesNotStageWithoutConfirmation(t *testing.T) {
 	tests := map[string]struct {
-		all    bool
-		answer string
+		all     bool
+		answer  string
+		wantErr error
 	}{
 		"given a declined single removal, when returning, then perform no operations":      {answer: "n"},
 		"given declined all-mod removal, when returning, then perform no operations":       {all: true, answer: "no"},
-		"given exhausted single-removal input, when returning, then perform no operations": {},
-		"given exhausted all-mod input, when returning, then perform no operations":        {all: true},
+		"given exhausted single-removal input, when returning, then perform no operations": {wantErr: io.EOF},
+		"given exhausted all-mod input, when returning, then perform no operations":        {all: true, wantErr: io.EOF},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -124,8 +126,8 @@ func TestModRemoval_DoesNotStageWithoutConfirmation(t *testing.T) {
 			} else {
 				err = ms.RemoveMod("Owned", "Installed")
 			}
-			if err != nil {
-				t.Errorf("cancellation changed its result: %v", err)
+			if !errors.Is(err, tt.wantErr) {
+				t.Errorf("confirmation error = %v, want %v", err, tt.wantErr)
 			}
 		})
 	}

@@ -80,10 +80,19 @@ filesystem sandbox.
 ## Confirmations and backups
 
 Confirmation inputs are case-sensitive. Ordinary prompts accept `Y` or `n`;
-removing all mods or BepInEx uses `YES I AM` or `no`. Invalid input is bounded.
-A negative answer returns nil, and exhausted input can also return nil without
-a mutation. Callers must not interpret every nil error as proof that an
-installation, update, or removal occurred.
+removing all mods or BepInEx uses `YES I AM` or `no`. Each prompt allows two
+answers. Two invalid answers return `ErrMaxAttempts` without scanning a third
+answer. EOF before an accepted or declined answer and scanner/reader failures
+return `ErrConfirmationInput`, preserving the underlying cause (including
+`io.EOF`) for `errors.Is`. These errors stop the operation before file or record
+mutations, and commands display the input diagnostic. An answer delivered with
+a non-EOF reader error does not authorize work; a valid final answer without a
+newline is still accepted.
+
+A deliberate negative answer still returns nil without a mutation. Callers must
+not interpret every nil error as proof that an installation, update, or removal
+occurred. Commands do not yet consistently distinguish cancellation from
+completion or propagate runtime failures to the process exit status.
 
 The file manager makes a backup available for restoration only after the
 complete copy succeeds. After a failed copy, it attempts to remove the temporary
