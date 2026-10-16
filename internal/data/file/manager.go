@@ -2,6 +2,7 @@ package file
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
 	"warden/internal/api"
 )
@@ -44,4 +45,12 @@ func NewManager(c api.HTTPClient, vd string) Manager {
 		valheimDirectory: vd,
 		modDirectory:     filepath.Join(vd, BepInExPluginDirectory),
 	}
+}
+
+func (m *manager) restoreBackup(destination string) error {
+	err := m.backup.Restore(destination)
+	if path := m.backup.Path(); err != nil && path != nil {
+		return fmt.Errorf("%w; backup retained at %q", err, *path)
+	}
+	return err
 }

@@ -91,13 +91,16 @@ removes its old files before the new installation succeeds. These are not
 all-or-nothing operations.
 
 Initial and dependency installations write records only after file installation
-succeeds. A failed file-install step does not delete pre-existing records, so a
+completes, including when final backup cleanup reports a warning. An incomplete
+file-install step does not delete pre-existing records, so a
 dependency backup failure preserves its earlier record and files. Single/all
 updates validate the installation target before removing each old release; a
 refusal leaves its files and record unchanged. If replacement files fail after
 removal, the update attempts to delete that obsolete record. Failure to write
 replacement metadata after successful file installation does not trigger that
-cleanup.
+cleanup. A failed metadata write can have an unknown commit outcome; the
+diagnostic identifies the installed path and asks the user to verify database
+state before retrying.
 
 Framework removal identifies plugin records by their stored installation paths
 within the configured `BepInEx/plugins` tree, not by `FrameworkID`. This covers
@@ -164,6 +167,34 @@ An empty source directory is valid for a backup; a missing source is an error.
 Mod installation and removal of all mods create a missing plugins directory
 before taking a backup. Removing an absent mod remains a no-op.
 
+Mod installation returns the original archive-write, extraction, or archive-delete
+failure together with any restoration or restoration-cleanup failure. Failed
+restoration reports the active snapshot's path when it remains available.
+Successful restoration followed by cleanup failure restores that attempt's
+snapshot, but the installation still failed; consumed cleanup artifacts are not
+retryable snapshots. For a mod update, this snapshot is taken after the old
+release is removed, so it cannot recover that release.
+
+Once mod files are installed and the downloaded archive is removed, final backup
+cleanup cannot undo that publication. The file manager returns the installed
+path and a direct `ModInstallCleanupError` for this outcome. The mod service
+still writes the record and installs remaining direct dependencies. An update
+must not delete the obsolete record merely because completed installation
+returned this cleanup warning.
+
+The service returns `ModMutationCleanupError` directly only after the entire
+add or update request finishes, including metadata and direct dependencies
+(and every selected mod for a bulk update). A later file, metadata, dependency,
+package lookup, or version failure keeps earlier cleanup diagnostics but makes
+the request incomplete. Nested completion markers are causes, not evidence that
+the enclosing request completed. Mod installation, mod removal, and framework
+file-completion markers are not interchangeable.
+
+Add and update commands display these diagnostics once. A completed request with
+cleanup warnings is distinguished from an incomplete request; metadata failures
+and unknown commit outcomes are not relabeled as completion. Earlier installed
+files and records are not rolled back when later work fails.
+
 Mod removal retains original files in staging beside the plugin directory until
 record deletion succeeds. Backup or staging failure stops before record deletion.
 Staging uses a rename; a cross-filesystem rename fails rather than falling back
@@ -175,9 +206,10 @@ does not prove that its write was unapplied, so inspect recorded state as well.
 After successful record deletion, removal is committed and cleanup is
 irreversible. Cleanup failures identify leftover paths but do not make those
 potentially partial contents usable recovery snapshots. File-only removal callers
-can distinguish this committed outcome through `ModRemovalCleanupError`; mod
-updates report it and continue installing the replacement rather than stopping
-after the old files have already been removed.
+receive `ModRemovalCleanupError` directly for this committed outcome; a nested
+marker does not establish completed removal. Mod updates retain its diagnostics
+and continue installing the replacement rather than stopping after the old files
+have already been removed.
 
 Single/all mod removal commands display the wrapped recovery details, including
 retained paths and instructions to verify database state. A committed cleanup
@@ -274,9 +306,8 @@ stops on a bootstrap diagnostic, but its recorded framework is reused on retry.
 A cleanup error after an incomplete or rolled-back operation does not authorize
 metadata changes.
 
-Some service callers still discard underlying file-layer error details,
-including recovery paths. Filesystem recovery does not roll back database
-writes or provide crash or concurrency atomicity.
+Filesystem recovery does not roll back database writes or provide crash or
+concurrency atomicity.
 
 When changing these paths, define the observable filesystem and database state
 for success, cancellation, and each failure being handled. Verify those states,

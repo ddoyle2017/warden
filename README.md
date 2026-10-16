@@ -89,6 +89,11 @@ These are real installation commands, not a smoke test. Back up an existing serv
 
 Confirmation prompts allow two answers. End-of-input and input failures stop the requested mutation and report an error; see [confirmation behavior and limitations](docs/install-lifecycle.md#confirmations-and-backups).
 
+Mod add/update requests can complete with cleanup warnings. An incomplete request
+instead reports failure details, including recovery paths or database-verification
+guidance; see [recovery and cleanup outcomes](docs/install-lifecycle.md#confirmations-and-backups)
+before retrying or using leftover backup files.
+
 ## Installation
 ![installation-banner](./images/mistlands-exploration.png)
 Proper install process coming soon <sup>TM</sup>.

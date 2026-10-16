@@ -19,3 +19,9 @@ func RemoveBepInExWithOperations(m Manager, b Backup, removeFiles func(string) e
 func RemoveBackupWithCleanup(b Backup, cleanup func(string) error) error {
 	return b.(*backup).remove(cleanup)
 }
+
+func InstallModWithBackup(m Manager, b Backup, url, fullName string) (string, error) {
+	manager := m.(*manager)
+	manager.backup = b
+	return manager.InstallMod(url, fullName)
+}
