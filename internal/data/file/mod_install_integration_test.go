@@ -31,6 +31,7 @@ func TestModInstallRequestOutcomes(t *testing.T) {
 		for name, tt := range map[string]struct {
 			warning, failure, failAt string
 			recoveryMarker           string
+			invalidToken             string
 			published, recorded      []string
 			oldRoot, oldDependency   bool
 			onlyBulk                 bool
@@ -87,11 +88,23 @@ func TestModInstallRequestOutcomes(t *testing.T) {
 			},
 			"given earlier cleanup failure, when a later bulk dependency token is malformed, then preserve that root and earlier diagnostics": {
 				warning: "Root", failure: "dependency syntax", failAt: "Last", onlyBulk: true,
-				published: []string{"Root", "First", "Later"}, recorded: []string{"Root", "First", "Later"},
+				invalidToken: "malformed",
+				published:    []string{"Root", "First", "Later"}, recorded: []string{"Root", "First", "Later"},
 			},
 			"given earlier cleanup failure, when a later bulk dependency version is invalid, then preserve that root and earlier diagnostics": {
 				warning: "Root", failure: "dependency version", failAt: "Last", onlyBulk: true,
-				published: []string{"Root", "First", "Later"}, recorded: []string{"Root", "First", "Later"},
+				invalidToken: "Owner-Invalid-1.0",
+				published:    []string{"Root", "First", "Later"}, recorded: []string{"Root", "First", "Later"},
+			},
+			"given earlier cleanup failure, when a selected dependency has a malformed direct plan, then reject before its early replacement": {
+				warning: "Root", failure: "dependency syntax", failAt: "First", oldDependency: true, onlyBulk: true,
+				invalidToken: "malformed",
+				published:    []string{"Root"}, recorded: []string{"Root"},
+			},
+			"given earlier cleanup failure, when a selected dependency declares malformed BepInEx metadata, then validate before skipping or replacing": {
+				warning: "Root", failure: "dependency version", failAt: "First", oldDependency: true, onlyBulk: true,
+				invalidToken: "denikson-BepInExPack_Valheim-broken",
+				published:    []string{"Root"}, recorded: []string{"Root"},
 			},
 			"given earlier cleanup failure, when a later bulk archive fails, then keep that package's original without whole-request completion": {
 				warning: "Root", failure: "files", failAt: "Last", onlyBulk: true,
@@ -326,10 +339,8 @@ func TestModInstallRequestOutcomes(t *testing.T) {
 					}
 					if name == tt.failAt {
 						switch tt.failure {
-						case "dependency syntax":
-							release.Dependencies = []string{"Owner-Unreached-1.0.0", "malformed"}
-						case "dependency version":
-							release.Dependencies = []string{"Owner-Unreached-1.0.0", "Owner-Invalid-1.0"}
+						case "dependency syntax", "dependency version":
+							release.Dependencies = []string{"Owner-Unreached-1.0.0", tt.invalidToken}
 						}
 					}
 					return thunderstore.Package{Latest: release}, nil
@@ -462,11 +473,7 @@ func TestModInstallRequestOutcomes(t *testing.T) {
 						errors.Is(err, service.ErrInvalidReleaseVersion) != (tt.failure == "dependency version") {
 						t.Errorf("later dependency validation causes lost: %v", err)
 					}
-					token := `"malformed"`
-					if tt.failure == "dependency version" {
-						token = `"Owner-Invalid-1.0"`
-					}
-					if !strings.Contains(err.Error(), "Owner/Last") || !strings.Contains(err.Error(), token) {
+					if !strings.Contains(err.Error(), "Owner/"+tt.failAt) || !strings.Contains(err.Error(), fmt.Sprintf("%q", tt.invalidToken)) {
 						t.Errorf("later dependency error lost package/token context: %v", err)
 					}
 				}
@@ -541,7 +548,7 @@ func TestModInstallRequestOutcomes(t *testing.T) {
 				}
 				wantFetched := append([]string(nil), wantInstalled...)
 				if tt.onlyBulk && (tt.failure == "lookup" || tt.failure == "version" || tt.failure == "dependency syntax" || tt.failure == "dependency version") {
-					wantFetched = append(wantFetched, "Last")
+					wantFetched = append(wantFetched, tt.failAt)
 				}
 				if !reflect.DeepEqual(installed, wantInstalled) || !reflect.DeepEqual(writes, tt.published) ||
 					!reflect.DeepEqual(fetched, wantFetched) {

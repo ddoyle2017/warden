@@ -129,9 +129,9 @@ Its confirmed release is reused by later roots and its own bulk turn, so the
 obsolete directory is retired once rather than left beside the new release.
 That selected turn still processes the updated mod's retained, validated
 direct-dependency plan; it does not reinstall the package. Already-current
-selected dependencies are left unchanged. Dependencies outside the original selection use ordinary installation
-and are not recursively expanded. This does not change add or single-update
-dependency handling.
+selected dependencies are left unchanged. Dependencies outside the original
+selection use ordinary installation and are not recursively expanded. This does
+not change add or single-update dependency handling.
 
 Initial and dependency installations write records only after file installation
 completes, including when final backup cleanup reports a warning. An incomplete
