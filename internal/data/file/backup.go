@@ -81,7 +81,7 @@ func (b *backup) Restore(destination string) error {
 
 type restoreOperations struct {
 	copy      func(string, string) error
-	chmod     func(string, os.FileMode) error
+	chmod     func(string, os.FileMode) error // nil uses os.Chmod.
 	rename    func(string, string) error
 	removeAll func(string) error
 }
@@ -89,6 +89,9 @@ type restoreOperations struct {
 func (b *backup) restore(destination string, ops restoreOperations) (err error) {
 	if b.location == nil {
 		return ErrBackupMissing
+	}
+	if ops.chmod == nil {
+		ops.chmod = os.Chmod
 	}
 	snapshot, rootMode := *b.location, b.rootMode
 
