@@ -13,7 +13,7 @@
 
 Warden features a simple command-line interface for managing mods on a Valheim dedicated server. Linux is the primary target. macOS and Windows paths exist in the code, but complete support is not yet established.
 
-Mods are currently sourced from [Thunderstore.io](https://thunderstore.io/). [Nexus Mods](https://www.nexusmods.com/) is not implemented. Warden installs the latest releases of direct mod dependencies and prompts to install [BepInEx](https://github.com/BepInEx/BepInEx) when its installation record is missing. Dependency versions are not pinned and dependency resolution is not recursive; see the [installation lifecycle](docs/install-lifecycle.md) for ordering and limitations.
+Mods are currently sourced from [Thunderstore.io](https://thunderstore.io/). [Nexus Mods](https://www.nexusmods.com/) is not implemented. Warden fetches the latest release when installing a direct mod dependency and prompts to install [BepInEx](https://github.com/BepInEx/BepInEx) when its installation record is missing. Dependency versions are not pinned and dependency resolution is not recursive; see the [installation lifecycle](docs/install-lifecycle.md) for ordering and limitations.
 
 Warden stores data in 2 different files:
 - A YAML configuration file at `$HOME/.warden.yaml`.
@@ -43,6 +43,7 @@ Warden supports the following commands:
     - Prints a list of all installed mods
 - `add`
     - Downloads and installs the specified mod
+    - Repeating the same add can [finish missing direct dependencies](docs/install-lifecycle.md#retrying-an-add) without reinstalling the root or updating recorded dependencies
 - `update`
     - Updates the mod when a newer release is available; see the [version policy](docs/install-lifecycle.md#release-version-ordering)
     - `all`

@@ -77,46 +77,82 @@ func (ms *modService) ListMods() ([]mod.Mod, error) {
 }
 
 func (ms *modService) AddMod(namespace, name string) error {
-	// Check if the mod is already installed
 	current, err := ms.r.GetModByIdentity(namespace, name)
-
-	if err == nil && !current.Equals(&mod.Mod{}) {
-		// Mod already installed
-		return ErrModAlreadyInstalled
-	}
 	if err != nil && !errors.Is(err, repo.ErrModFetchNoResults) {
-		// If repo fetch returns any error BESIDES no results,
-		// return mod install failure
 		return fmt.Errorf("%w: %w", ErrModInstallFailed, err)
 	}
+	installed := err == nil
 
-	// Find the requested mod online
-	pkg, err := ms.ts.GetPackage(namespace, name)
-	if err != nil {
-		return fmt.Errorf("%w: %w", ErrModNotFound, err)
+	var release thunderstore.Release
+	if installed {
+		if err := validateReleaseVersion("installed", current.Version); err != nil {
+			return fmt.Errorf("%w: %s/%s: %w", ErrAddDependenciesFailed, namespace, name, err)
+		}
+		release, err = ms.ts.GetRelease(current.Namespace, current.Name, current.Version)
+		if err != nil {
+			return fmt.Errorf("%w: cannot determine dependencies for installed %s; root left unchanged; retry when its exact-version metadata is available: %w",
+				ErrAddDependenciesFailed, current.FullName(), err)
+		}
+	} else {
+		pkg, err := ms.ts.GetPackage(namespace, name)
+		if err != nil {
+			return fmt.Errorf("%w: %w", ErrModNotFound, err)
+		}
+		release = pkg.Latest
 	}
 
-	dependencies, err := planDependencies(pkg.Latest)
+	dependencies, err := planDependencies(release)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrAddDependenciesFailed, err)
 	}
 
-	// Install the mod and it's dependencies
-	cleanupErr, err := ms.installMod(pkg.Latest)
+	var cleanupErr error
+	if !installed {
+		cleanupErr, err = ms.installMod(release)
+		if err != nil {
+			return modMutationResult(cleanupErr, fmt.Errorf("%w: %w", ErrModInstallFailed, err))
+		}
+	}
+	missing, err := ms.missingDependencies(dependencies)
 	if err != nil {
-		return modMutationResult(cleanupErr, fmt.Errorf("%w: %w", ErrModInstallFailed, err))
+		return modMutationResult(cleanupErr, fmt.Errorf("%w: %w", ErrAddDependenciesFailed, err))
+	}
+	if installed && len(missing) == 0 {
+		return ErrModAlreadyInstalled
 	}
 
-	if len(dependencies) > 0 {
-		fmt.Printf("... mod has %d dependencies, installing them ...\n", len(dependencies))
+	if len(missing) > 0 {
+		if installed {
+			fmt.Printf("... keeping installed %s; repairing %d missing direct dependencies ...\n", current.FullName(), len(missing))
+		} else {
+			fmt.Printf("... mod has %d missing direct dependencies, installing them ...\n", len(missing))
+		}
 
-		dependencyCleanup, err := ms.addDependencies(dependencies)
+		dependencyCleanup, err := ms.addDependencies(missing)
 		cleanupErr = errors.Join(cleanupErr, dependencyCleanup)
 		if err != nil {
 			return modMutationResult(cleanupErr, fmt.Errorf("%w: %w", ErrAddDependenciesFailed, err))
 		}
 	}
 	return modMutationResult(cleanupErr, nil)
+}
+
+func (ms *modService) missingDependencies(dependencies []dependency) ([]dependency, error) {
+	missing := make([]dependency, 0, len(dependencies))
+	seen := make(map[dependency]bool, len(dependencies))
+	for _, dep := range dependencies {
+		if dep.name == framework.BepInEx || seen[dep] {
+			continue
+		}
+		seen[dep] = true
+		_, err := ms.r.GetModByIdentity(dep.namespace, dep.name)
+		if errors.Is(err, repo.ErrModFetchNoResults) {
+			missing = append(missing, dep)
+		} else if err != nil {
+			return nil, fmt.Errorf("%s/%s: %w", dep.namespace, dep.name, err)
+		}
+	}
+	return missing, nil
 }
 
 func (ms *modService) UpdateMod(name string) error {

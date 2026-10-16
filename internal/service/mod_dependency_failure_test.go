@@ -17,12 +17,13 @@ import (
 	"warden/internal/test/mock"
 )
 
-func TestDependencyInstall_BackupFailurePreservesExistingRecord(t *testing.T) {
+func TestAddMod_PreservesRecordedDependencies(t *testing.T) {
 	tests := map[string]string{
-		"given an existing current dependency, when its backup fails, then preserve its files and record": "1.0.0",
-		"given an existing older dependency, when its backup fails, then preserve its files and record":   "2.0.0",
+		"given a recorded dependency, when add declares the same version, then reuse its files and record": "1.0.0",
+		"given a recorded dependency, when add declares a newer version, then do not silently upgrade it":  "2.0.0",
+		"given a recorded dependency, when add declares an older version, then do not downgrade it":        "0.9.0",
 	}
-	for name, latestVersion := range tests {
+	for name, declaredVersion := range tests {
 		t.Run(name, func(t *testing.T) {
 			th := helper.NewHelper(t, helper.WithDataFolder(filepath.Join("..", "test", "data")))
 			t.Setenv("TMPDIR", t.TempDir())
@@ -51,15 +52,11 @@ func TestDependencyInstall_BackupFailurePreservesExistingRecord(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			dependencyRequested := false
+			downloads := 0
 			client := &mock.HTTPClient{
 				GetFunc: func(url string) (*http.Response, error) {
-					if url == "dependency-download" {
-						dependencyRequested = true
-						if err := os.Symlink(filepath.Join(plugins, "missing"), filepath.Join(plugins, "b-dangling")); err != nil {
-							t.Fatal(err)
-						}
-					} else if url != "root-download" {
+					downloads++
+					if url != "root-download" {
 						t.Fatalf("unexpected mock URL %q", url)
 					}
 					archive, err := os.Open(filepath.Join(th.GetDataDirectory(), helper.TestModFullName+file.ZipFileExtension))
@@ -79,11 +76,7 @@ func TestDependencyInstall_BackupFailurePreservesExistingRecord(t *testing.T) {
 					case "Root":
 						release.FullName = "Owner-Root-1.0.0"
 						release.DownloadURL = "root-download"
-						release.Dependencies = []string{"Owner-Dependency-" + latestVersion}
-					case "Dependency":
-						release.VersionNumber = latestVersion
-						release.FullName = "Owner-Dependency-" + latestVersion
-						release.DownloadURL = "dependency-download"
+						release.Dependencies = []string{"Owner-Dependency-" + declaredVersion}
 					default:
 						t.Fatalf("unexpected package %q", name)
 					}
@@ -92,14 +85,14 @@ func TestDependencyInstall_BackupFailurePreservesExistingRecord(t *testing.T) {
 			}
 			ms := service.NewModService(mr, file.NewManager(client, th.GetValheimDirectory()), ts, strings.NewReader(""))
 			err = ms.AddMod("Owner", "Root")
-			if !dependencyRequested || !errors.Is(err, service.ErrAddDependenciesFailed) {
-				t.Fatalf("expected a dependency failure after root installation: requested=%v, error=%v", dependencyRequested, err)
+			if err != nil || downloads != 1 {
+				t.Fatalf("expected only a root installation: downloads=%d, error=%v", downloads, err)
 			}
 			if _, err := mr.GetMod("Root"); err != nil {
 				t.Errorf("root installation record was lost: %v", err)
 			}
 			if data, err := os.ReadFile(payload); err != nil || string(data) != "existing dependency bytes" {
-				t.Errorf("dependency bytes changed during backup preflight: %q, %v", data, err)
+				t.Errorf("recorded dependency bytes changed: %q, %v", data, err)
 			}
 			after, err := mr.GetMod(dependency.Name)
 			if err != nil || after.ID != before.ID || !after.Equals(&before) {

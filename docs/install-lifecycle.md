@@ -75,9 +75,11 @@ following Thunderstore's
 The complete version suffix follows the [release version policy](#release-version-ordering),
 including prerelease hyphens and build metadata.
 
-An add validates the entire direct-dependency list after fetching the root
-package, before downloading its archive, staging files, writing its record, or
-fetching dependencies. Updates validate only when a newer release is selected
+An add validates the entire direct-dependency list after fetching root release
+metadata, before downloading its archive, staging files, writing its record, or
+fetching dependencies. New roots use the latest release; existing roots use
+their recorded version as described in [retrying an add](#retrying-an-add).
+Updates validate only when a newer release is selected
 and confirmation succeeds. No-update, declined, and confirmation-input outcomes
 remain unchanged. Bulk updates validate each selected package immediately before
 its replacement, including replacement as an earlier root's dependency, not every
@@ -88,10 +90,49 @@ identifying the root package and offending token. Invalid dependency versions
 also retain `ErrInvalidReleaseVersion` for `errors.Is`. No part of that root's
 plan is installed or recorded, even when a malformed token follows valid ones.
 
-After validation, Warden installs the latest release for each direct dependency,
+For each dependency it installs, Warden selects the latest release,
 not the version declared in its token, and does not traverse dependencies
 recursively. BepInEx tokens are validated too, but skipped during mod dependency
 installation; framework bootstrap remains a separate command step.
+
+## Retrying an add
+
+Repeat the same namespace-qualified `add` after a direct-dependency failure to
+finish missing dependency installations. Warden retains an existing root's files
+and complete record instead of downloading, reinstalling, or upgrading it. This
+also works for partial installations left by older Warden versions.
+
+SQLite stores the root's version but not its dependency list. Warden retrieves
+the installed namespace, name, and version through Thunderstore's
+[exact-version endpoint](https://github.com/thunderstore-io/Thunderstore/blob/685b2743035e0ac0786180d10813d67b72fcdc2d/django/thunderstore/repository/api/experimental/urls.py).
+The response must identify that exact release and explicitly include its
+dependency list. A changed latest root's list is never substituted while keeping
+older root files. Unavailable, mismatched, incomplete, or malformed metadata
+stops the retry without changing the root or its dependencies; retry when valid
+metadata for the installed version is available. Even a no-work repeat requires
+this metadata lookup.
+
+After validating the complete plan, an add looks up every non-framework direct
+dependency by namespace and name before installing any dependency. Only a genuine
+no-results lookup makes it eligible for installation. Query, mapping, iteration,
+and ambiguous-result errors stop dependency work, though a newly added root may
+already be installed and recorded. Duplicate dependency identities are installed
+only once.
+
+An add reuses every recorded dependency without fetching its latest release or
+changing its files or record. It does not enforce the version declared in the
+token, downgrade a newer recorded dependency, or implicitly upgrade an older
+one. Use `update` deliberately to change recorded packages; update behavior is
+unchanged by add retries. If no direct dependencies are missing, an existing
+root returns the usual already-installed result without mutation.
+
+Here, "missing" means no installation record, not a failed file-integrity or
+compatibility check. This is not a repair of missing root files, damaged recorded
+dependencies, or untracked files, and it does not adopt orphaned installations.
+No database migration or recursive dependency resolver is involved. A later
+failure retains earlier completed work and cleanup diagnostics. After a metadata
+write failure, verify database and file state before retrying; a failed write may
+have committed.
 
 ## Operation ordering
 
@@ -100,7 +141,7 @@ Earlier completed steps can remain in effect if a later step fails.
 
 | Operation | Ordering and scope |
 | --- | --- |
-| Add a mod | The command first attempts BepInEx installation when its record is missing. If that returns no error, the mod service checks for an existing mod, fetches the latest release, validates its direct-dependency plan, installs files, upserts the record, and then installs direct dependencies. |
+| Add a mod | The command first attempts BepInEx installation when its record is missing. If that returns no error, the mod service fetches the latest release for a new root or exact-version metadata for an existing root, validates the direct-dependency plan, installs and records only a new root, and then installs missing direct dependencies. |
 | Update a mod | Fetch the installed record and latest release. If the version compares newer and the user confirms, validate the direct-dependency plan and target, prepare the replacement, retain the original outside plugins, publish the replacement, upsert its record, finalize original-file cleanup, and process dependencies. |
 | Update all mods | Confirm once, then process recorded mods and their direct dependencies. Before fetching each listed mod or selected dependency, reject duplicate namespace/name identities from the original list. Installed dependencies in the selection are validated and replaced immediately when needed. A failure stops the loop; earlier successful updates are not undone. This is not a framework update. |
 | Remove a mod | Confirm, look up the exact namespace and name, take a complete backup and stage that record's versioned directory outside the plugin tree, delete the matching record, then discard staged files and the backup. |
@@ -415,9 +456,10 @@ backups are not a substitute for that snapshot.
 
 After a partial failure, inspect both installed files and recorded metadata
 before retrying. `warden list` reads metadata; it does not prove the matching
-files are present. There is no repair or reconciliation command. If restoring
-a known-good snapshot, restore the corresponding server files and metadata
-together rather than deleting the database to silence an error.
+files are present. [Repeating an add](#retrying-an-add) can finish missing direct
+dependencies, but there is no general filesystem reconciliation command. If
+restoring a known-good snapshot, restore the corresponding server files and
+metadata together rather than deleting the database to silence an error.
 
 For development and regression scenarios, use the temporary fixtures and
 isolated execution procedure in [Contributing](../CONTRIBUTING.md), never a
