@@ -86,3 +86,82 @@ type updateFrameworkStub struct {
 func (f *updateFrameworkStub) UpdateBepInEx() error {
 	return f.update()
 }
+
+func TestUpdateVersionDiagnostics(t *testing.T) {
+	for name, tt := range map[string]struct {
+		args      []string
+		operation string
+		sentinel  error
+	}{
+		"given an invalid version, when updating one mod, then print the validation cause": {
+			args: []string{"--mod", "Versioned"}, operation: "single", sentinel: service.ErrUnableToUpdateMod,
+		},
+		"given an invalid version, when updating all mods, then print the validation cause": {
+			args: []string{"all"}, operation: "all", sentinel: service.ErrUnableToUpdateMod,
+		},
+		"given an invalid version, when updating BepInEx, then print the validation cause": {
+			args: []string{"bepinex"}, operation: "framework", sentinel: service.ErrUnableToUpdateFramework,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			calls := 0
+			result := func(operation string) error {
+				calls++
+				if operation != tt.operation {
+					t.Fatalf("unexpected update operation %q", operation)
+				}
+				return fmt.Errorf("%w: %w: latest version %q", tt.sentinel, service.ErrInvalidReleaseVersion, "1.2")
+			}
+			ms := &updateModStub{
+				update: func(name string) error {
+					if name != "Versioned" {
+						t.Fatalf("unexpected mod name %q", name)
+					}
+					return result("single")
+				},
+				updateAll: func() error { return result("all") },
+			}
+			fs := &updateFrameworkStub{update: func() error { return result("framework") }}
+			output, err := os.CreateTemp(t.TempDir(), "stdout")
+			if err != nil {
+				t.Fatal(err)
+			}
+			stdout := os.Stdout
+			t.Cleanup(func() {
+				os.Stdout = stdout
+				if err := output.Close(); err != nil {
+					t.Error(err)
+				}
+			})
+			os.Stdout = output
+			cmd := NewUpdateCommand(fs, ms)
+			cmd.SetArgs(tt.args)
+			if err := cmd.Execute(); err != nil {
+				t.Fatal(err)
+			}
+			os.Stdout = stdout
+			data, err := os.ReadFile(output.Name())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if calls != 1 {
+				t.Errorf("update calls = %d, want 1", calls)
+			}
+			if !strings.Contains(string(data), `invalid release version: latest version "1.2"`) {
+				t.Errorf("output omits the validation cause: %q", data)
+			}
+			if strings.Contains(string(data), "successfully") {
+				t.Errorf("failed update reported success: %q", data)
+			}
+		})
+	}
+}
+
+type updateModStub struct {
+	service.Mod
+	update    func(string) error
+	updateAll func() error
+}
+
+func (m *updateModStub) UpdateMod(name string) error { return m.update(name) }
+func (m *updateModStub) UpdateAllMods() error        { return m.updateAll() }

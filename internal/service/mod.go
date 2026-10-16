@@ -110,7 +110,11 @@ func (ms *modService) UpdateMod(name string) error {
 		return ErrModNotFound
 	}
 
-	if current.Version < pkg.Latest.VersionNumber {
+	newer, err := hasNewerRelease(current.Version, pkg.Latest.VersionNumber)
+	if err != nil {
+		return fmt.Errorf("%w: %s/%s: %w", ErrUnableToUpdateMod, current.Namespace, current.Name, err)
+	}
+	if newer {
 		fmt.Printf("... found a new version (%s) of %s %s ...\n", pkg.Latest.VersionNumber, current.Namespace, current.Name)
 		fmt.Printf("did you want to update this mod? %s\n", yesOrNo)
 
@@ -160,7 +164,11 @@ func (ms *modService) UpdateAllMods() error {
 			return ErrModNotFound
 		}
 
-		if m.Version < pkg.Latest.VersionNumber {
+		newer, err := hasNewerRelease(m.Version, pkg.Latest.VersionNumber)
+		if err != nil {
+			return fmt.Errorf("%w: %s/%s: %w", ErrUnableToUpdateMod, m.Namespace, m.Name, err)
+		}
+		if newer {
 			err = ms.updateMod(m.FullName(), pkg.Latest)
 			if err != nil {
 				return fmt.Errorf("%w: %w", ErrUnableToUpdateMod, err)
