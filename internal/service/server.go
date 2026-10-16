@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"fmt"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -45,12 +46,18 @@ func (s *serverService) Start(gameType string) (string, error) {
 		return "", ErrInvalidGameType
 	}
 
-	cmd := exec.Command("sh", s.getStartScript(gameType))
+	serverDirectory, err := filepath.Abs(s.ValheimDirectory)
+	if err != nil {
+		return "", fmt.Errorf("%w: %w", ErrServerStartFailed, err)
+	}
+
+	cmd := exec.Command("sh", s.getStartScript(gameType, serverDirectory))
+	cmd.Dir = serverDirectory
 
 	// Capture the output of the script
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return string(output), ErrServerStartFailed
+		return string(output), fmt.Errorf("%w: %w", ErrServerStartFailed, err)
 	}
 	return string(output), nil
 }
@@ -60,17 +67,17 @@ func (s *serverService) IsValidGameType(config string) bool {
 	return config == vanilla || config == modded
 }
 
-func (s *serverService) getStartScript(gameType string) string {
+func (s *serverService) getStartScript(gameType, serverDirectory string) string {
 	if gameType == modded {
-		return filepath.Join(s.ValheimDirectory, moddedStartScript)
+		return filepath.Join(serverDirectory, moddedStartScript)
 	} else {
 		switch s.Platform {
 		case config.Linux:
-			return filepath.Join(s.ValheimDirectory, linuxStartScript)
+			return filepath.Join(serverDirectory, linuxStartScript)
 		case config.MacOS:
-			return filepath.Join(s.ValheimDirectory, macOSStartScript)
+			return filepath.Join(serverDirectory, macOSStartScript)
 		case config.Windows:
-			return filepath.Join(s.ValheimDirectory, windowsStartScript)
+			return filepath.Join(serverDirectory, windowsStartScript)
 		default:
 			return ""
 		}
