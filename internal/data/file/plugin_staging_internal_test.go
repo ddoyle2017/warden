@@ -153,9 +153,8 @@ func TestUpdateBepInExCleanupFailures(t *testing.T) {
 				errors.Is(err, localErr) != tt.local || errors.Is(err, snapshotErr) != tt.snapshot {
 				t.Fatalf("cleanup errors did not retain their causes: %v", err)
 			}
-			var completed *FrameworkMutationCleanupError
-			if !errors.As(err, &completed) {
-				t.Fatalf("completed update was not distinguished from a failed update: %v", err)
+			if _, completed := err.(*FrameworkMutationCleanupError); !completed {
+				t.Fatalf("completed update must return a direct cleanup error: %T: %v", err, err)
 			}
 			if requests != 1 || backup.restores != 0 {
 				t.Errorf("completed publication retried or rolled back: downloads=%d, restores=%d", requests, backup.restores)
