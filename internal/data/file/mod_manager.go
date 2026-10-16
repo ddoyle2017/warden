@@ -21,6 +21,11 @@ type modManager interface {
 	// A direct ModInstallCleanupError returns the published path, not a failed installation.
 	InstallMod(url, fullName string) (string, error)
 
+	// Prepares and publishes a replacement, retaining the original until Commit.
+	// Failures leave it intact, restore it, or report retained recovery paths.
+	// A direct ModInstallCleanupError with a handle still requires recording and Commit.
+	ReplaceMod(url, oldFullName, newFullName string) (ModReplacement, error)
+
 	// Deletes the folder and contents for a mod. `FullName` is a
 	// value provided by Thunderstore that contains the name, namespace, and version of a
 	// specific mod release.

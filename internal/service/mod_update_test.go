@@ -86,13 +86,21 @@ func TestUpdateMod_Happy(t *testing.T) {
 			}
 			fm := mock.Manager{
 				ValidateModInstallFunc: func() error { return nil },
-				RemoveModFunc: func(fullName string) error {
+				ReplaceModFunc: func(url, oldFullName, newFullName string) (file.ModReplacement, error) {
 					fileCalls++
-					return nil
-				},
-				InstallModFunc: func(url, fullName string) (string, error) {
-					fileCalls++
-					return "/some/file/path", nil
+					if oldFullName != test.current.FullName() || newFullName != test.latest.FullName || url != test.latest.DownloadURL {
+						t.Fatalf("unexpected replacement: %q, %q, %q", url, oldFullName, newFullName)
+					}
+					return &mock.ModReplacement{
+						PathFunc: func() string { return "/some/file/path" },
+						CommitFunc: func() error {
+							if recordWrites != 1 {
+								t.Fatal("original discarded before metadata was recorded")
+							}
+							fileCalls++
+							return nil
+						},
+					}, nil
 				},
 			}
 			ts := mock.Thunderstore{
@@ -210,8 +218,8 @@ func TestUpdateMod_Sad(t *testing.T) {
 			},
 			fm: &mock.Manager{
 				ValidateModInstallFunc: func() error { return nil },
-				RemoveModFunc: func(fullName string) error {
-					return file.ErrModDeleteFailed
+				ReplaceModFunc: func(string, string, string) (file.ModReplacement, error) {
+					return nil, file.ErrModDeleteFailed
 				},
 			},
 			rd:       strings.NewReader("Y"),
@@ -242,11 +250,11 @@ func TestUpdateMod_Sad(t *testing.T) {
 			},
 			fm: &mock.Manager{
 				ValidateModInstallFunc: func() error { return nil },
-				RemoveModFunc: func(fullName string) error {
-					return nil
-				},
-				InstallModFunc: func(url, fullName string) (string, error) {
-					return "/SOME/PATH/FILE", nil
+				ReplaceModFunc: func(string, string, string) (file.ModReplacement, error) {
+					return &mock.ModReplacement{
+						PathFunc:   func() string { return "/SOME/PATH/FILE" },
+						CommitFunc: func() error { return nil },
+					}, nil
 				},
 			},
 			rd:       strings.NewReader("Y"),
@@ -280,11 +288,11 @@ func TestUpdateAllMods_Happy(t *testing.T) {
 
 	fm := &mock.Manager{
 		ValidateModInstallFunc: func() error { return nil },
-		RemoveModFunc: func(fullName string) error {
-			return nil
-		},
-		InstallModFunc: func(url, fullName string) (string, error) {
-			return "/SOME/PATH/FILE", nil
+		ReplaceModFunc: func(string, string, string) (file.ModReplacement, error) {
+			return &mock.ModReplacement{
+				PathFunc:   func() string { return "/SOME/PATH/FILE" },
+				CommitFunc: func() error { return nil },
+			}, nil
 		},
 	}
 
@@ -456,8 +464,8 @@ func TestUpdateAllMods_Sad(t *testing.T) {
 			},
 			fm: &mock.Manager{
 				ValidateModInstallFunc: func() error { return nil },
-				RemoveModFunc: func(fullName string) error {
-					return file.ErrModDeleteFailed
+				ReplaceModFunc: func(string, string, string) (file.ModReplacement, error) {
+					return nil, file.ErrModDeleteFailed
 				},
 			},
 			rd:       strings.NewReader("Y"),
@@ -498,11 +506,11 @@ func TestUpdateAllMods_Sad(t *testing.T) {
 			},
 			fm: &mock.Manager{
 				ValidateModInstallFunc: func() error { return nil },
-				RemoveModFunc: func(fullName string) error {
-					return nil
-				},
-				InstallModFunc: func(url, fullName string) (string, error) {
-					return "/SOME/FILE/PATH", nil
+				ReplaceModFunc: func(string, string, string) (file.ModReplacement, error) {
+					return &mock.ModReplacement{
+						PathFunc:   func() string { return "/SOME/FILE/PATH" },
+						CommitFunc: func() error { return nil },
+					}, nil
 				},
 			},
 			rd:       strings.NewReader("Y"),

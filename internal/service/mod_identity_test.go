@@ -264,13 +264,9 @@ func TestUpdateMod_NamespacedIdentity(t *testing.T) {
 			mutations := 0
 			manager := &mock.Manager{
 				ValidateModInstallFunc: files.ValidateModInstall,
-				RemoveModFunc: func(fullName string) error {
+				ReplaceModFunc: func(url, oldFullName, newFullName string) (file.ModReplacement, error) {
 					mutations++
-					return files.RemoveMod(fullName)
-				},
-				InstallModFunc: func(url, fullName string) (string, error) {
-					mutations++
-					return files.InstallMod(url, fullName)
+					return files.ReplaceMod(url, oldFullName, newFullName)
 				},
 			}
 			ms := service.NewModService(lookup, manager, ts, strings.NewReader("Y\n"))

@@ -78,29 +78,35 @@ Earlier completed steps can remain in effect if a later step fails.
 | Operation | Ordering and scope |
 | --- | --- |
 | Add a mod | The command first attempts BepInEx installation when its record is missing. If that returns no error, the mod service checks for an existing mod, fetches the latest release, installs files, upserts the record, and then installs direct dependencies. |
-| Update a mod | Fetch the installed record and latest release. If the version compares newer and the user confirms, validate the installation target before removing the old release directory, then install the new files, upsert the record, and process dependencies. |
-| Update all mods | Confirm once, then process recorded mods sequentially. Before fetching each listed mod, reject duplicate namespace/name identities from the original list. A failure stops the loop; earlier successful updates are not undone. This is not a framework update. |
+| Update a mod | Fetch the installed record and latest release. If the version compares newer and the user confirms, validate the target, prepare the replacement, retain the original outside plugins, publish the replacement, upsert its record, finalize original-file cleanup, and process dependencies. |
+| Update all mods | Confirm once, then process recorded mods and their direct dependencies. Before fetching each listed mod or selected dependency, reject duplicate namespace/name identities from the original list. Installed dependencies in the selection are replaced immediately when needed. A failure stops the loop; earlier successful updates are not undone. This is not a framework update. |
 | Remove a mod | Confirm, look up the exact namespace and name, take a complete backup and stage that record's versioned directory outside the plugin tree, delete the matching record, then discard staged files and the backup. |
 | Remove all mods | Require the stronger confirmation, back up and stage the plugin directory, recreate an empty plugin directory, delete the records, then discard staged files and the backup. |
 | Install BepInEx | Download and unpack the framework into the server directory, move the archive wrapper's contents into place, then insert the framework record. |
 | Update BepInEx | Take one original-server snapshot, copy plugins to a temporary sibling of the server directory, remove and install framework files, preserve existing configuration over packaged defaults, transfer plugin copies through destination-local staging, finalize the server snapshot, then update the framework record. |
 | Remove BepInEx | Remove the framework's known files, including the plugin directory, then delete matching plugin records and the framework record in one database transaction. |
 
-Installing a root mod can succeed before a dependency fails. Updating a mod
-removes its old files before the new installation succeeds. These are not
-all-or-nothing operations.
+Installing or replacing a root mod can succeed before a dependency fails.
+These requests are not all-or-nothing operations.
+
+Bulk updates coordinate packages by namespace and name within the request. If a
+root needs a newer release of another selected mod, that dependency uses the
+replacement lifecycle immediately, before the next selected package is processed.
+Its confirmed release is reused by later roots and its own bulk turn, so the
+obsolete directory is retired once rather than left beside the new release.
+That selected turn still processes the updated mod's direct dependencies; it does
+not reinstall the package. Already-current selected dependencies are left
+unchanged. Dependencies outside the original selection use ordinary installation
+and are not recursively expanded. This does not change add or single-update
+dependency handling.
 
 Initial and dependency installations write records only after file installation
 completes, including when final backup cleanup reports a warning. An incomplete
 file-install step does not delete pre-existing records, so a
-dependency backup failure preserves its earlier record and files. Single/all
-updates validate the installation target before removing each old release; a
-refusal leaves its files and record unchanged. If replacement files fail after
-removal, the update attempts to delete that obsolete record. Failure to write
-replacement metadata after successful file installation does not trigger that
-cleanup. A failed metadata write can have an unknown commit outcome; the
-diagnostic identifies the installed path and asks the user to verify database
-state before retrying.
+dependency backup failure preserves its earlier record and files. A failed
+metadata write can have an unknown commit outcome; the diagnostic identifies
+the installed path and asks the user to verify database state before retrying.
+It does not authorize deleting a pre-existing record.
 
 Framework removal identifies plugin records by their stored installation paths
 within the configured `BepInEx/plugins` tree, not by `FrameworkID`. This covers
@@ -122,6 +128,60 @@ and asks the user to verify database state before retrying. Plugin and framework
 deletions share a transaction, and errors retain the write, commit, or rollback
 cause. A failed call is not proof that no metadata changed. The consumed server
 backup is not used to undo a completed removal after a database failure.
+
+## Mod replacement and recovery
+
+Single, namespace-qualified, and bulk updates validate the installation target
+before downloading a replacement or changing the original. Each replacement is
+downloaded, closed, extracted, and checked using the archive rules below in a
+private staging directory beside plugins. The downloaded archive is removed
+before publication. Preparation failures leave the original files and complete
+record unchanged; any failed staging cleanup is reported separately.
+
+After preparation, Warden renames the original release directory into staging,
+then publishes the prepared release. If publication fails, it renames the
+original back without overwriting a conflicting destination. Successful
+restoration preserves the original directory and file permissions; a subsequent
+cleanup error is not a failed restoration. Failed recovery reports the retained
+original and prepared replacement paths. Keep those trees until the original
+has been recovered and inspected.
+
+The replacement owns its original independently of the file manager's shared
+backup. Staging is outside plugins, so nested installations cannot overwrite or
+consume it. Unrelated plugins and server files are not moved or restored.
+Staging and publication use local renames; a cross-filesystem rename fails
+rather than falling back to destructive copying. The plugins root is not
+replaced, and its existing root-symlink preflight policy is unchanged. An
+already-present replacement directory is refused rather than merged or
+overwritten. A missing original directory can still be replaced.
+
+After publication, the service writes the replacement record. Only a confirmed
+write authorizes `ModReplacement.Commit` to discard the original. A failed
+write may have committed: Warden leaves the replacement installed, retains the
+original files, and neither deletes the record nor attempts a filesystem
+rollback. The diagnostic includes the installed path, the original recovery
+path (or its prior absence), and the complete original record for reference.
+That record is reported, not saved as a database backup. Verify both installed
+files and database state before retrying or restoring anything.
+
+When the original directory was absent, the now-empty preparation directory is
+cleaned after publication, before metadata handling. A failed cleanup returns the
+published handle with a direct `ModInstallCleanupError` and the leftover path;
+metadata must still be written. The handle has no original recovery to finalize,
+and a later metadata failure does not leave unreported empty staging. This early
+cleanup never applies to a handle containing original files.
+
+Final cleanup consumes the recovery handle before deleting staging. A cleanup
+failure after confirmed publication and recording is a completed file operation
+with a direct `ModInstallCleanupError`, not permission to roll back. Leftovers
+may be partially deleted and are not advertised as usable recovery snapshots.
+The service retains the warning and continues direct dependencies and subsequent
+bulk packages. A later failure still makes the whole request incomplete without
+undoing earlier recorded replacements or dependencies.
+
+This is per-package, in-process recovery, not a filesystem/database transaction
+or a crash-atomic or concurrent-tree guarantee. Stop the server and avoid
+concurrent filesystem changes while updating.
 
 ## Archive extraction
 
@@ -172,15 +232,14 @@ failure together with any restoration or restoration-cleanup failure. Failed
 restoration reports the active snapshot's path when it remains available.
 Successful restoration followed by cleanup failure restores that attempt's
 snapshot, but the installation still failed; consumed cleanup artifacts are not
-retryable snapshots. For a mod update, this snapshot is taken after the old
-release is removed, so it cannot recover that release.
+retryable snapshots. Mod replacement uses its independently owned original tree
+rather than this standalone installation snapshot.
 
 Once mod files are installed and the downloaded archive is removed, final backup
 cleanup cannot undo that publication. The file manager returns the installed
 path and a direct `ModInstallCleanupError` for this outcome. The mod service
-still writes the record and installs remaining direct dependencies. An update
-must not delete the obsolete record merely because completed installation
-returned this cleanup warning.
+still writes the record and installs remaining direct dependencies. The warning
+does not authorize record deletion.
 
 The service returns `ModMutationCleanupError` directly only after the entire
 add or update request finishes, including metadata and direct dependencies
@@ -207,9 +266,9 @@ After successful record deletion, removal is committed and cleanup is
 irreversible. Cleanup failures identify leftover paths but do not make those
 potentially partial contents usable recovery snapshots. File-only removal callers
 receive `ModRemovalCleanupError` directly for this committed outcome; a nested
-marker does not establish completed removal. Mod updates retain its diagnostics
-and continue installing the replacement rather than stopping after the old files
-have already been removed.
+marker does not establish completed removal. This is not installation completion.
+Updates use the owned replacement lifecycle instead of committing a file-only
+removal before installation.
 
 Single/all mod removal commands display the wrapped recovery details, including
 retained paths and instructions to verify database state. A committed cleanup

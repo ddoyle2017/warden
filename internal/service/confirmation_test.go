@@ -28,16 +28,16 @@ func TestConfirmationInput(t *testing.T) {
 		{
 			name: "update mod", yes: "Y", no: "n",
 			before: []string{"get mod", "get package"},
-			work:   []string{"validate install", "remove mod files", "install mod files", "save mod"},
+			work:   []string{"validate install", "replace mod files", "save mod", "commit replacement"},
 		},
 		{
 			name: "update mod by identity", yes: "Y", no: "n",
 			before: []string{"get mod", "get package"},
-			work:   []string{"validate install", "remove mod files", "install mod files", "save mod"},
+			work:   []string{"validate install", "replace mod files", "save mod", "commit replacement"},
 		},
 		{
 			name: "update all mods", yes: "Y", no: "n",
-			work: []string{"list mods", "get package", "validate install", "remove mod files", "install mod files", "save mod"},
+			work: []string{"list mods", "get package", "validate install", "replace mod files", "save mod", "commit replacement"},
 		},
 		{
 			name: "remove mod", yes: "Y", no: "n",
@@ -239,17 +239,19 @@ func confirmationOperation(t *testing.T, operation string, reader io.Reader, cal
 			record("validate install")
 			return nil
 		}
-		fm.RemoveModFunc = func(fullName string) error {
-			if fullName != current.FullName() {
-				t.Fatalf("unexpected removal target %q", fullName)
+		fm.ReplaceModFunc = func(url, oldFullName, newFullName string) (file.ModReplacement, error) {
+			if oldFullName != current.FullName() {
+				t.Fatalf("unexpected replacement target %q", oldFullName)
 			}
-			record("remove mod files")
-			return nil
-		}
-		fm.InstallModFunc = func(url, fullName string) (string, error) {
-			checkRelease(url, fullName)
-			record("install mod files")
-			return "installed-plugin", nil
+			checkRelease(url, newFullName)
+			record("replace mod files")
+			return &mock.ModReplacement{
+				PathFunc: func() string { return "installed-plugin" },
+				CommitFunc: func() error {
+					record("commit replacement")
+					return nil
+				},
+			}, nil
 		}
 		mr.UpsertModFunc = func(m mod.Mod) error {
 			if m.Name != latest.Name || m.Namespace != latest.Namespace || m.Version != latest.VersionNumber || m.FilePath != "installed-plugin" {

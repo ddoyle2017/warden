@@ -10,6 +10,16 @@ func SetModRemovalCleanup(removal ModRemoval, cleanup func(string) error) {
 	removal.(*modRemoval).removeStaged = cleanup
 }
 
+func SetModReplacementCleanup(replacement ModReplacement, cleanup func(string) error) {
+	replacement.(*modReplacement).removeAll = cleanup
+}
+
+func ReplaceModWithOperations(m Manager, url, oldFullName, newFullName string, rename func(string, string) error, removeArchive, removeAll func(string) error) (ModReplacement, error) {
+	return m.(*manager).replaceMod(url, oldFullName, newFullName, modReplacementOperations{
+		rename: rename, removeArchive: removeArchive, removeAll: removeAll,
+	})
+}
+
 func RemoveBepInExWithOperations(m Manager, b Backup, removeFiles func(string) error) error {
 	manager := m.(*manager)
 	manager.backup = b
