@@ -338,9 +338,8 @@ func TestFrameworkFinalizationErrors(t *testing.T) {
 			if !errors.Is(err, tt.expected) || !errors.Is(err, ErrBackupDeleteFailed) || !errors.Is(err, fault) {
 				t.Fatalf("cleanup error was lost: %v", err)
 			}
-			var completed *FrameworkMutationCleanupError
-			if !errors.As(err, &completed) {
-				t.Fatalf("completed framework operation lost its cleanup classification: %v", err)
+			if _, completed := err.(*FrameworkMutationCleanupError); !completed {
+				t.Fatalf("completed framework operation must return a direct cleanup error: %T: %v", err, err)
 			}
 			if artifact == "" || !strings.Contains(err.Error(), artifact) {
 				t.Errorf("cleanup error omits leftover path %q: %v", artifact, err)

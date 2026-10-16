@@ -10,6 +10,7 @@ import (
 	"testing"
 	"warden/internal/data/repo"
 	"warden/internal/domain/framework"
+	"warden/internal/domain/mod"
 
 	"github.com/mattn/go-sqlite3"
 )
@@ -83,11 +84,69 @@ func TestRepositoryStatementCloseFailure(t *testing.T) {
 	}
 }
 
+func TestFrameworkRemovalStatementCloseFailure(t *testing.T) {
+	for name, query := range map[string]string{
+		"given a mod-path statement close failure, when removing framework metadata, then retain both tables":     `SELECT id, filePath FROM mods`,
+		"given a framework-delete statement close failure, when removing metadata, then roll back both deletions": `DELETE FROM frameworks WHERE name = ?`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			cause := errors.New("statement close interrupted")
+			connector := &closeErrorConnector{
+				sqliteDriver: &sqlite3.SQLiteDriver{},
+				path:         filepath.Join(t.TempDir(), "warden-test.db"), closeErr: cause, closeQuery: query,
+			}
+			db := sql.OpenDB(connector)
+			t.Cleanup(func() {
+				if err := db.Close(); err != nil {
+					t.Error(err)
+				}
+			})
+			repo.CreateFrameworksTable(db)
+			repo.CreateModsTable(db)
+			fr, mr := repo.NewFrameworksRepo(db), repo.NewModsRepo(db)
+			f := framework.Framework{Name: framework.BepInEx}
+			if err := fr.InsertFramework(f); err != nil {
+				t.Fatal(err)
+			}
+			f, err := fr.GetFramework(f.Name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			plugins := t.TempDir()
+			m := mod.Mod{Name: "Legacy", FilePath: filepath.Join(plugins, "legacy")}
+			if err := mr.InsertMod(m); err != nil {
+				t.Fatal(err)
+			}
+			m, err = mr.GetMod(m.Name)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			connector.failClose.Store(true)
+			err = fr.DeleteFramework(f.Name, plugins)
+			connector.failClose.Store(false)
+			if !errors.Is(err, cause) {
+				t.Errorf("statement-close diagnostic lost: %v", err)
+			}
+			if actual, err := mr.GetMod(m.Name); err != nil || !actual.Equals(&m) {
+				t.Errorf("plugin deletion escaped rollback: %+v, %v", actual, err)
+			}
+			if actual, err := fr.GetFramework(f.Name); err != nil || actual != f {
+				t.Errorf("framework deletion escaped rollback: %+v, %v", actual, err)
+			}
+			if inUse := db.Stats().InUse; inUse != 0 {
+				t.Errorf("transaction connection leaked: %d", inUse)
+			}
+		})
+	}
+}
+
 type closeErrorConnector struct {
 	sqliteDriver *sqlite3.SQLiteDriver
 	path         string
 	failClose    atomic.Bool
 	closeErr     error
+	closeQuery   string
 }
 
 func (c *closeErrorConnector) Connect(context.Context) (driver.Conn, error) {
@@ -112,17 +171,18 @@ func (c *closeErrorConn) Prepare(query string) (driver.Stmt, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &closeErrorStmt{Stmt: stmt, connector: c.connector}, nil
+	return &closeErrorStmt{Stmt: stmt, connector: c.connector, query: query}, nil
 }
 
 type closeErrorStmt struct {
 	driver.Stmt
 	connector *closeErrorConnector
+	query     string
 }
 
 func (s *closeErrorStmt) Close() error {
 	err := s.Stmt.Close()
-	if s.connector.failClose.Load() {
+	if s.connector.failClose.Load() && (s.connector.closeQuery == "" || s.connector.closeQuery == s.query) {
 		return errors.Join(err, s.connector.closeErr)
 	}
 	return err

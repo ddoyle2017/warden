@@ -78,6 +78,8 @@ func parseRemoveError(err error) {
 	var completed *file.FrameworkMutationCleanupError
 	if errors.As(err, &completed) || errors.Is(err, service.ErrConfirmationInput) {
 		fmt.Printf("... %v ...\n", err)
+	} else if errors.Is(err, service.ErrUnableToRemoveFramework) {
+		fmt.Printf("... unable to remove BepInEx: %v ...\n", err)
 	} else if errors.As(err, &committedModCleanup) {
 		fmt.Printf("... warning: %v ...\n", committedModCleanup)
 	} else if errors.Is(err, service.ErrUnableToRemoveMod) {
@@ -86,8 +88,6 @@ func parseRemoveError(err error) {
 		fmt.Println("... unable to confim mod removal, aborting ...")
 	} else if errors.Is(err, service.ErrModNotInstalled) {
 		fmt.Println("... mod not installed ...")
-	} else if errors.Is(err, service.ErrUnableToRemoveFramework) {
-		fmt.Println("... unable to remove BepInEx ...")
 	}
 }
 

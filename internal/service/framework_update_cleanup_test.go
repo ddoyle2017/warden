@@ -140,7 +140,7 @@ func TestFrameworkUpdateArchiveWithoutPlugins(t *testing.T) {
 
 func TestFrameworkUpdateCompletion(t *testing.T) {
 	for name, tt := range map[string]struct {
-		completed, cleanup, recordFailure, rolledBack, modCleanup bool
+		completed, cleanup, recordFailure, rolledBack, modCleanup, nestedCompletion bool
 	}{
 		"given a completed update, when saving metadata, then record the installed release":                          {completed: true},
 		"given a completed update with cleanup failure, when saving metadata, then record it and retain diagnostics": {completed: true, cleanup: true},
@@ -150,6 +150,7 @@ func TestFrameworkUpdateCompletion(t *testing.T) {
 		"given a rolled-back update with cleanup failure, when returning, then keep the old files and metadata":      {cleanup: true, rolledBack: true},
 		"given an incomplete update, when returning, then keep the old files and metadata":                           {},
 		"given a mod-specific cleanup marker, when a framework update fails, then do not infer framework completion": {cleanup: true, modCleanup: true},
+		"given a nested framework completion marker, when the enclosing update fails, then keep old metadata":        {cleanup: true, nestedCompletion: true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			th := helper.NewHelper(t)
@@ -205,13 +206,16 @@ func TestFrameworkUpdateCompletion(t *testing.T) {
 					if tt.modCleanup {
 						return &file.ModRemovalCleanupError{Err: cleanupErr}
 					}
+					if tt.nestedCompletion {
+						return fmt.Errorf("%w: %w", file.ErrFrameworkUpdateFailed, errors.Join(copyCause, &file.FrameworkMutationCleanupError{Err: cleanupErr}))
+					}
 					return fmt.Errorf("%w: %w", file.ErrFrameworkUpdateFailed, errors.Join(copyCause, cleanupErr))
 				}
 				if err := os.WriteFile(runtime, []byte("new framework"), 0o600); err != nil {
 					t.Fatal(err)
 				}
 				if cleanupErr != nil {
-					return fmt.Errorf("%w: %w", file.ErrFrameworkUpdateFailed, &file.FrameworkMutationCleanupError{Err: cleanupErr})
+					return &file.FrameworkMutationCleanupError{Err: fmt.Errorf("%w: %w", file.ErrFrameworkUpdateFailed, cleanupErr)}
 				}
 				return nil
 			}}
@@ -256,8 +260,8 @@ func TestFrameworkUpdateCompletion(t *testing.T) {
 				t.Errorf("framework bytes = %q, %v; want %q", data, readErr, wantBytes)
 			}
 			var completed *file.FrameworkMutationCleanupError
-			if errors.As(err, &completed) != (tt.completed && tt.cleanup) {
-				t.Errorf("incorrect completed-file classification: %v", err)
+			if errors.As(err, &completed) != ((tt.completed || tt.nestedCompletion) && tt.cleanup) {
+				t.Errorf("completion diagnostic was lost or invented: %v", err)
 			}
 			if tt.cleanup {
 				if !errors.Is(err, cleanupCause) || !errors.Is(err, file.ErrBackupDeleteFailed) || !strings.Contains(err.Error(), recoveryPath) {

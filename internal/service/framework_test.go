@@ -180,9 +180,13 @@ func TestRemoveBepInEx_Happy(t *testing.T) {
 		RemoveBepInExFunc: func() error {
 			return nil
 		},
+		BepInExPluginDirectoryFunc: func() string { return "plugins" },
 	}
 	r := &mock.FrameworksRepo{
-		DeleteFrameworkFunc: func(name string) error {
+		DeleteFrameworkFunc: func(name, pluginDirectory string) error {
+			if name != framework.BepInEx || pluginDirectory != "plugins" {
+				t.Fatalf("unexpected removal scope: %q, %q", name, pluginDirectory)
+			}
 			return nil
 		},
 	}
@@ -216,7 +220,7 @@ func TestRemoveBepInEx_Sad(t *testing.T) {
 		},
 		"if unable to delete BepInEx record from database, return error": {
 			r: &mock.FrameworksRepo{
-				DeleteFrameworkFunc: func(name string) error {
+				DeleteFrameworkFunc: func(name, pluginDirectory string) error {
 					return repo.ErrFrameworkDeleteFailed
 				},
 			},
@@ -224,6 +228,7 @@ func TestRemoveBepInEx_Sad(t *testing.T) {
 				RemoveBepInExFunc: func() error {
 					return nil
 				},
+				BepInExPluginDirectoryFunc: func() string { return "plugins" },
 			},
 			rd:       strings.NewReader("YES I AM"),
 			expected: service.ErrUnableToRemoveFramework,

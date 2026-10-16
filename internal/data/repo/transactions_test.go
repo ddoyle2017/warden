@@ -55,7 +55,7 @@ func TestRepositoryWriteFailures(t *testing.T) {
 		},
 		"deleting a framework": {
 			table: "frameworks", event: "DELETE", execErr: repo.ErrFrameworkDeleteFailed,
-			write: func(db repo.Database) error { return repo.NewFrameworksRepo(db).DeleteFramework(f.Name) },
+			write: func(db repo.Database) error { return repo.NewFrameworksRepo(db).DeleteFramework(f.Name, t.TempDir()) },
 		},
 		"inserting a mod": {
 			table: "mods", event: "INSERT", execErr: repo.ErrModInsertFailed,

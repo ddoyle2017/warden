@@ -59,7 +59,7 @@ func TestConfirmationInput(t *testing.T) {
 		},
 		{
 			name: "remove framework", yes: "YES I AM", no: "no",
-			work: []string{"remove framework files", "delete framework"},
+			work: []string{"remove framework files", "get plugin directory", "delete framework"},
 		},
 	}
 	for _, operation := range operations {
@@ -378,13 +378,18 @@ func confirmationOperation(t *testing.T, operation string, reader io.Reader, cal
 		}
 		return fs.UpdateBepInEx
 	case "remove framework":
+		plugins := filepath.Join(t.TempDir(), "BepInEx", "plugins")
 		fm.RemoveBepInExFunc = func() error {
 			record("remove framework files")
 			return nil
 		}
-		fr.DeleteFrameworkFunc = func(name string) error {
-			if name != framework.BepInEx {
-				t.Fatalf("unexpected framework deletion %q", name)
+		fm.BepInExPluginDirectoryFunc = func() string {
+			record("get plugin directory")
+			return plugins
+		}
+		fr.DeleteFrameworkFunc = func(name, pluginDirectory string) error {
+			if name != framework.BepInEx || pluginDirectory != plugins {
+				t.Fatalf("unexpected framework deletion scope %q, %q", name, pluginDirectory)
 			}
 			record("delete framework")
 			return nil

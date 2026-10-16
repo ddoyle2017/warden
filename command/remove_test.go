@@ -10,6 +10,8 @@ import (
 	"testing"
 	"warden/command"
 	"warden/internal/data/file"
+	"warden/internal/data/repo"
+	"warden/internal/domain/framework"
 	"warden/internal/domain/mod"
 	"warden/internal/service"
 	"warden/internal/test/mock"
@@ -111,6 +113,88 @@ func TestRemoveCommand_Diagnostics(t *testing.T) {
 				}
 			} else if !strings.Contains(output, "verify database state") || !strings.Contains(output, "original mods remain") || !strings.Contains(output, "database driver lost write confirmation") {
 				t.Errorf("recovery instructions were hidden: %q", output)
+			}
+		})
+	}
+}
+
+func TestFrameworkRemovalDiagnostics(t *testing.T) {
+	for name, tt := range map[string]struct{ cleanup, failedFiles, nestedFramework bool }{
+		"given metadata failure after file removal, when reporting, then show the mismatch and verification guidance":        {},
+		"given cleanup and metadata failure after file removal, when reporting, then show both causes and the leftover path": {cleanup: true},
+		"given a failed framework removal with nested mod cleanup, when reporting, then retain the enclosing failure":        {failedFiles: true},
+		"given a failed framework removal with nested framework cleanup, when reporting, then retain the enclosing failure":  {failedFiles: true, nestedFramework: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			plugins, retained := t.TempDir(), t.TempDir()
+			fileCalls, recordCalls := 0, 0
+			fm := &mock.Manager{
+				BepInExPluginDirectoryFunc: func() string { return plugins },
+				RemoveBepInExFunc: func() error {
+					fileCalls++
+					if tt.failedFiles {
+						cleanupCause := fmt.Errorf("nested cleanup interrupted at %q", retained)
+						var nested error = &file.ModRemovalCleanupError{Err: cleanupCause}
+						if tt.nestedFramework {
+							nested = &file.FrameworkMutationCleanupError{Err: cleanupCause}
+						}
+						return fmt.Errorf("%w: removal interrupted: %w", file.ErrFrameworkDeleteFailed, nested)
+					}
+					if tt.cleanup {
+						return &file.FrameworkMutationCleanupError{Err: fmt.Errorf("cleanup interrupted at %q", retained)}
+					}
+					return nil
+				},
+			}
+			fr := &mock.FrameworksRepo{DeleteFrameworkFunc: func(name, directory string) error {
+				recordCalls++
+				if name != framework.BepInEx || directory != plugins {
+					t.Fatalf("unexpected removal scope: %q, %q", name, directory)
+				}
+				return errors.Join(repo.ErrFrameworkDeleteFailed, errors.New("record write interrupted"))
+			}}
+			fs := service.NewFrameworkService(fr, fm, &mock.Thunderstore{}, strings.NewReader("YES I AM\n"))
+			cmd := command.NewRemoveCommand(fs, nil)
+			cmd.SetArgs([]string{"bepinex"})
+			out, err := os.CreateTemp(t.TempDir(), "stdout")
+			if err != nil {
+				t.Fatal(err)
+			}
+			stdout := os.Stdout
+			t.Cleanup(func() {
+				os.Stdout = stdout
+				if err := out.Close(); err != nil {
+					t.Error(err)
+				}
+			})
+			os.Stdout = out
+			if err := cmd.Execute(); err != nil {
+				t.Fatal(err)
+			}
+			os.Stdout = stdout
+			data, err := os.ReadFile(out.Name())
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := []string{"framework files were removed", "record write interrupted", "verify database state"}
+			wantRecordCalls := 1
+			if tt.failedFiles {
+				want = []string{"unable to remove", "removal interrupted", "nested cleanup interrupted", retained}
+				wantRecordCalls = 0
+				if strings.Contains(string(data), "framework files were removed") || strings.Contains(string(data), "warning: mod files removed") {
+					t.Errorf("nested cleanup was classified as completed framework removal: %q", data)
+				}
+			}
+			if tt.cleanup {
+				want = append(want, "cleanup interrupted", retained)
+			}
+			for _, text := range want {
+				if !strings.Contains(string(data), text) {
+					t.Errorf("diagnostic %q was hidden: %q", text, data)
+				}
+			}
+			if fileCalls != 1 || recordCalls != wantRecordCalls || strings.Contains(string(data), "successfully") {
+				t.Errorf("failed metadata handling was retried or reported as success: calls=%d/%d, output=%q", fileCalls, recordCalls, data)
 			}
 		})
 	}

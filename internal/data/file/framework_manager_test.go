@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -662,52 +663,78 @@ func TestInstallBepInEx_Sad(t *testing.T) {
 }
 
 func TestRemoveBepInEx_Happy(t *testing.T) {
-	th := helper.NewHelper(t)
-
-	tests := map[string]struct {
-		setUp func(t *testing.T)
-	}{
-		"if there are no BepInEx files to remove, return successful": {
-			setUp: func(t *testing.T) {},
-		},
-		"if there are BepInEx files, remove everything and return successful": {
-			setUp: func(t *testing.T) {
+	for name, populated := range map[string]bool{
+		"given no framework files, when removing BepInEx, then retain only unrelated server artifacts":    false,
+		"given a populated framework, when removing BepInEx, then retain only unrelated server artifacts": true,
+	} {
+		t.Run(name, func(t *testing.T) {
+			th := helper.NewHelper(t)
+			backups := t.TempDir()
+			t.Setenv("TMPDIR", backups)
+			server := th.GetValheimDirectory()
+			if populated {
 				source := filepath.Join(th.GetDataDirectory(), helper.TestBepInExFullName+file.ZipFileExtension)
-				destination := filepath.Join(th.GetValheimDirectory())
-
-				if err := file.Unzip(source, destination); err != nil {
-					t.Errorf("unexpected error creating test BepInEx install, received error: %+v", err)
+				if err := file.Unzip(source, server); err != nil {
+					t.Fatal(err)
 				}
-
-				path := filepath.Join(th.GetValheimDirectory(), file.BepInExContentsDirectory)
-
-				entries, err := os.ReadDir(path)
+				wrapper := filepath.Join(server, file.BepInExContentsDirectory)
+				entries, err := os.ReadDir(wrapper)
 				if err != nil {
-					t.Errorf("unexpected error reading BepInEx test files, received error: %+v", err)
+					t.Fatal(err)
 				}
 				for _, e := range entries {
-					source := filepath.Join(path, e.Name())
-					dest := filepath.Join(th.GetValheimDirectory(), e.Name())
-
-					if err := os.Rename(source, dest); err != nil {
-						t.Errorf("unexpected error moving BepInEx files, received error: %+v", err)
+					if err := os.Rename(filepath.Join(wrapper, e.Name()), filepath.Join(server, e.Name())); err != nil {
+						t.Fatal(err)
 					}
 				}
-				if err := os.RemoveAll(path); err != nil {
-					t.Errorf("unexpected error cleaning up BepInEx files, received error: %+v", err)
+				if err := os.Remove(wrapper); err != nil {
+					t.Fatal(err)
 				}
-			},
-		},
-	}
+				if _, err := os.Stat(filepath.Join(server, "start_server_bepinex.sh")); err != nil {
+					t.Fatalf("fixture is missing the framework startup script: %v", err)
+				}
+			}
+			sentinels := map[string]string{
+				"worlds/keep.db":  "unrelated world bytes",
+				"start_server.sh": "vanilla startup",
+			}
+			for name, contents := range sentinels {
+				path := filepath.Join(server, name)
+				if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
 
-	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			test.setUp(t)
-
-			m := file.NewManager(&mock.HTTPClient{}, th.GetValheimDirectory())
-
-			if err := m.RemoveBepInEx(); err != nil {
-				t.Errorf("expected a nil error, received: %+v", err)
+			if err := file.NewManager(&mock.HTTPClient{}, server).RemoveBepInEx(); err != nil {
+				t.Fatal(err)
+			}
+			var remaining []string
+			if err := filepath.WalkDir(server, func(path string, _ fs.DirEntry, err error) error {
+				if err != nil {
+					return err
+				}
+				relative, err := filepath.Rel(server, path)
+				if err == nil && relative != "." {
+					remaining = append(remaining, filepath.ToSlash(relative))
+				}
+				return err
+			}); err != nil {
+				t.Fatal(err)
+			}
+			want := []string{"start_server.sh", "worlds", "worlds/keep.db"}
+			if !slices.Equal(remaining, want) {
+				t.Errorf("remaining artifacts = %v; want %v", remaining, want)
+			}
+			for name, contents := range sentinels {
+				if data, err := os.ReadFile(filepath.Join(server, name)); err != nil || string(data) != contents {
+					t.Errorf("unrelated file %q changed: %q, %v", name, data, err)
+				}
+			}
+			if entries, err := os.ReadDir(backups); err != nil || len(entries) != 0 {
+				t.Errorf("removal retained temporary backups: %v, %v", entries, err)
 			}
 		})
 	}
