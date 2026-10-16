@@ -84,6 +84,18 @@ func TestDependencyMetadata_RejectsBeforePublication(t *testing.T) {
 		"whitespace name": {
 			tokens: []string{"Owner- -1.0.0"}, invalidToken: "Owner- -1.0.0",
 		},
+		"non-ASCII namespace letter": {
+			tokens: []string{"Team_42-Dependency_9-1.0.0", "T\u00e9am-Dependency-1.0.0"}, invalidToken: "T\u00e9am-Dependency-1.0.0",
+		},
+		"non-ASCII namespace digit": {
+			tokens: []string{"Team_42-Dependency_9-1.0.0", "Team\u0663-Dependency-1.0.0"}, invalidToken: "Team\u0663-Dependency-1.0.0",
+		},
+		"non-ASCII name letter": {
+			tokens: []string{"Team_42-Dependency_9-1.0.0", "Owner-D\u00e9pendency-1.0.0"}, invalidToken: "Owner-D\u00e9pendency-1.0.0",
+		},
+		"non-ASCII name digit": {
+			tokens: []string{"Team_42-Dependency_9-1.0.0", "Owner-Dependency\u0663-1.0.0"}, invalidToken: "Owner-Dependency\u0663-1.0.0",
+		},
 		"namespace outside the Thunderstore alphabet": {
 			tokens: []string{"Owner/Team-Dependency-1.0.0"}, invalidToken: "Owner/Team-Dependency-1.0.0",
 		},
