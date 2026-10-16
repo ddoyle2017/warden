@@ -112,6 +112,12 @@ func TestConfirmationInput(t *testing.T) {
 				"given a complete affirmative answer with a reader failure, when confirming, then report the failure without work": {
 					steps: []confirmationRead{{text: operation.yes + "\n", err: readFailure}}, wantErr: readFailure, wantReads: 1,
 				},
+				"given a negative answer with a reader failure, when confirming, then preserve the failure without work": {
+					steps: []confirmationRead{{text: operation.no + "\n", err: readFailure}}, wantErr: readFailure, wantReads: 1,
+				},
+				"given a second invalid answer with a reader failure, when confirming, then preserve the failure without work": {
+					steps: []confirmationRead{{text: "invalid\n"}, {text: "invalid\n", err: readFailure}}, wantErr: readFailure, wantReads: 2,
+				},
 				"given immediate EOF, when confirming, then report EOF without work": {
 					steps: []confirmationRead{{err: io.EOF}}, wantErr: io.EOF, wantReads: 1,
 				},
