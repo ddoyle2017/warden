@@ -42,11 +42,6 @@ mods are extracted into individual directories under `BepInEx/plugins`.
 Framework updates preserve plugins and user configuration while replacing
 framework files.
 
-Dependency strings include namespace, name, and version. Current dependency
-handling fetches the latest release for each direct dependency, rather than
-honoring the version in that string or recursively traversing the dependency
-graph. BepInEx is skipped by the mod dependency loop and handled separately.
-
 ## Release version ordering
 
 Single-mod, all-mod, and BepInEx updates compare the recorded version with
@@ -70,6 +65,34 @@ Bulk updates still run sequentially: an invalid version stops the loop without
 undoing earlier successful updates. This comparison policy does not change
 dependency selection or add a prerelease channel filter.
 
+## Direct dependency validation
+
+Dependency tokens use Thunderstore's
+[`namespace-name-version` format](https://wiki.thunderstore.io/mods/creating-a-package#dependencies).
+Namespace and name must be nonempty and use ASCII letters, digits, or underscores,
+following Thunderstore's
+[component alphabet](https://github.com/thunderstore-io/Thunderstore/blob/685b2743035e0ac0786180d10813d67b72fcdc2d/django/thunderstore/repository/consts.py).
+The complete version suffix follows the [release version policy](#release-version-ordering),
+including prerelease hyphens and build metadata.
+
+An add validates the entire direct-dependency list after fetching the root
+package, before downloading its archive, staging files, writing its record, or
+fetching dependencies. Updates validate only when a newer release is selected
+and confirmation succeeds. No-update, declined, and confirmation-input outcomes
+remain unchanged. Bulk updates validate each selected package immediately before
+its replacement, including replacement as an earlier root's dependency, not every
+package before the loop.
+
+Invalid input returns `ErrAddDependenciesFailed` and `ErrInvalidDependency`,
+identifying the root package and offending token. Invalid dependency versions
+also retain `ErrInvalidReleaseVersion` for `errors.Is`. No part of that root's
+plan is installed or recorded, even when a malformed token follows valid ones.
+
+After validation, Warden installs the latest release for each direct dependency,
+not the version declared in its token, and does not traverse dependencies
+recursively. BepInEx tokens are validated too, but skipped during mod dependency
+installation; framework bootstrap remains a separate command step.
+
 ## Operation ordering
 
 The following describes the affirmative path after any required confirmation.
@@ -77,9 +100,9 @@ Earlier completed steps can remain in effect if a later step fails.
 
 | Operation | Ordering and scope |
 | --- | --- |
-| Add a mod | The command first attempts BepInEx installation when its record is missing. If that returns no error, the mod service checks for an existing mod, fetches the latest release, installs files, upserts the record, and then installs direct dependencies. |
-| Update a mod | Fetch the installed record and latest release. If the version compares newer and the user confirms, validate the target, prepare the replacement, retain the original outside plugins, publish the replacement, upsert its record, finalize original-file cleanup, and process dependencies. |
-| Update all mods | Confirm once, then process recorded mods and their direct dependencies. Before fetching each listed mod or selected dependency, reject duplicate namespace/name identities from the original list. Installed dependencies in the selection are replaced immediately when needed. A failure stops the loop; earlier successful updates are not undone. This is not a framework update. |
+| Add a mod | The command first attempts BepInEx installation when its record is missing. If that returns no error, the mod service checks for an existing mod, fetches the latest release, validates its direct-dependency plan, installs files, upserts the record, and then installs direct dependencies. |
+| Update a mod | Fetch the installed record and latest release. If the version compares newer and the user confirms, validate the direct-dependency plan and target, prepare the replacement, retain the original outside plugins, publish the replacement, upsert its record, finalize original-file cleanup, and process dependencies. |
+| Update all mods | Confirm once, then process recorded mods and their direct dependencies. Before fetching each listed mod or selected dependency, reject duplicate namespace/name identities from the original list. Installed dependencies in the selection are validated and replaced immediately when needed. A failure stops the loop; earlier successful updates are not undone. This is not a framework update. |
 | Remove a mod | Confirm, look up the exact namespace and name, take a complete backup and stage that record's versioned directory outside the plugin tree, delete the matching record, then discard staged files and the backup. |
 | Remove all mods | Require the stronger confirmation, back up and stage the plugin directory, recreate an empty plugin directory, delete the records, then discard staged files and the backup. |
 | Install BepInEx | Download and unpack the framework into the server directory, move the archive wrapper's contents into place, then insert the framework record. |
@@ -94,19 +117,21 @@ confirmation, package fetches, downloads, backups, or file and record changes.
 Framework lookup failures retain the repository classification and underlying
 cause through installation and update service errors.
 
-Installing or replacing a root mod can succeed before a dependency fails.
-These requests are not all-or-nothing operations.
+After dependency validation, installing or replacing a root mod can still
+succeed before a dependency lookup, file operation, or metadata write fails.
+These requests are not all-or-nothing operations; an existing root record does
+not establish that its dependencies completed.
 
 Bulk updates coordinate packages by namespace and name within the request. If a
 root needs a newer release of another selected mod, that dependency uses the
 replacement lifecycle immediately, before the next selected package is processed.
 Its confirmed release is reused by later roots and its own bulk turn, so the
 obsolete directory is retired once rather than left beside the new release.
-That selected turn still processes the updated mod's direct dependencies; it does
-not reinstall the package. Already-current selected dependencies are left
-unchanged. Dependencies outside the original selection use ordinary installation
-and are not recursively expanded. This does not change add or single-update
-dependency handling.
+That selected turn still processes the updated mod's retained, validated
+direct-dependency plan; it does not reinstall the package. Already-current
+selected dependencies are left unchanged. Dependencies outside the original
+selection use ordinary installation and are not recursively expanded. This does
+not change add or single-update dependency handling.
 
 Initial and dependency installations write records only after file installation
 completes, including when final backup cleanup reports a warning. An incomplete
@@ -252,10 +277,10 @@ does not authorize record deletion.
 The service returns `ModMutationCleanupError` directly only after the entire
 add or update request finishes, including metadata and direct dependencies
 (and every selected mod for a bulk update). A later file, metadata, dependency,
-package lookup, or version failure keeps earlier cleanup diagnostics but makes
-the request incomplete. Nested completion markers are causes, not evidence that
-the enclosing request completed. Mod installation, mod removal, and framework
-file-completion markers are not interchangeable.
+package lookup, version, or dependency-validation failure keeps earlier cleanup
+diagnostics but makes the request incomplete. Nested completion markers are
+causes, not evidence that the enclosing request completed. Mod installation,
+mod removal, and framework file-completion markers are not interchangeable.
 
 Add and update commands display these diagnostics once. A completed request with
 cleanup warnings is distinguished from an incomplete request; metadata failures

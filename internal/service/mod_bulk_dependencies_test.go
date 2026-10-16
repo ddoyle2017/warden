@@ -22,15 +22,16 @@ import (
 
 func TestBulkUpdate_InstalledDependencyCoordination(t *testing.T) {
 	for name, tt := range map[string]struct {
-		rootDependencies   []string
-		lastDependencies   []string
-		dependencyFirst    bool
-		dependencyCurrent  bool
-		dependencyConflict bool
-		failMiddle         bool
-		cleanupWarning     bool
-		updated            []string
-		downloads          []string
+		rootDependencies       []string
+		lastDependencies       []string
+		dependencyDependencies []string
+		dependencyFirst        bool
+		dependencyCurrent      bool
+		dependencyConflict     bool
+		failMiddle             bool
+		cleanupWarning         bool
+		updated                []string
+		downloads              []string
 	}{
 		"given independent packages, when updating all, then replace each and its direct dependencies": {
 			updated:   []string{"Owner/Root", "Owner/Middle", "Owner/Dependency", "Owner/Last", "Owner/Leaf"},
@@ -51,10 +52,22 @@ func TestBulkUpdate_InstalledDependencyCoordination(t *testing.T) {
 			updated:   []string{"Owner/Root", "Owner/Middle", "Owner/Dependency", "Owner/Last", "Owner/Leaf"},
 			downloads: []string{"Owner/Root", "Owner/Dependency", "Owner/Middle", "Owner/Leaf", "Owner/Last"},
 		},
+		"given a selected dependency with framework and suffixed tokens, when replaced early, then execute its validated direct plan on its turn": {
+			rootDependencies:       []string{"Owner-Dependency-1.0.0"},
+			dependencyDependencies: []string{"denikson-BepInExPack_Valheim-5.4.2202", "Owner-Leaf-1.0.0-rc-1+build-2"},
+			updated:                []string{"Owner/Root", "Owner/Middle", "Owner/Dependency", "Owner/Last", "Owner/Leaf"},
+			downloads:              []string{"Owner/Root", "Owner/Dependency", "Owner/Middle", "Owner/Leaf", "Owner/Last"},
+		},
 		"given a current installed dependency, when updating a root, then do not replace it or recursively install its dependencies": {
 			rootDependencies: []string{"Owner-Dependency-1.0.0"}, dependencyCurrent: true,
 			updated:   []string{"Owner/Root", "Owner/Middle", "Owner/Last"},
 			downloads: []string{"Owner/Root", "Owner/Middle", "Owner/Last"},
+		},
+		"given a current selected dependency with malformed metadata, when updating its root, then preserve its no-update outcome": {
+			rootDependencies: []string{"Owner-Dependency-1.0.0"}, dependencyCurrent: true,
+			dependencyDependencies: []string{"malformed", "denikson-BepInExPack_Valheim-broken"},
+			updated:                []string{"Owner/Root", "Owner/Middle", "Owner/Last"},
+			downloads:              []string{"Owner/Root", "Owner/Middle", "Owner/Last"},
 		},
 		"given an intervening package failure, when updating all, then the earlier root already has its updated dependency": {
 			rootDependencies: []string{"Owner-Dependency-1.0.0"}, failMiddle: true,
@@ -146,6 +159,9 @@ func TestBulkUpdate_InstalledDependencyCoordination(t *testing.T) {
 			releases["Owner/Last"] = last
 			dependency := releases["Owner/Dependency"]
 			dependency.Dependencies = []string{"Owner-Leaf-1.0.0"}
+			if tt.dependencyDependencies != nil {
+				dependency.Dependencies = tt.dependencyDependencies
+			}
 			releases["Owner/Dependency"] = dependency
 			releases["Owner/Leaf"] = thunderstore.Release{
 				Namespace: "Owner", Name: "Leaf", VersionNumber: "2.0.0", FullName: "Owner-Leaf-2.0.0",
