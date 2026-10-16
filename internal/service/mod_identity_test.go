@@ -400,16 +400,28 @@ func TestAddMod_NamespacedIdentity(t *testing.T) {
 
 func TestAddMod_AlreadyInstalledIdentity(t *testing.T) {
 	for name, namespaces := range map[string][]string{
-		"given an installed identity, when adding it again, then stop before fetching or installing":  {"AuthorA"},
-		"given two authors with the same name, when adding an installed identity, then preserve both": {"AuthorB", "AuthorA"},
+		"given an installed identity, when adding it again, then check its exact release without reinstalling": {"AuthorA"},
+		"given two authors with the same name, when adding an installed identity, then preserve both":          {"AuthorB", "AuthorA"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, records, original, backups := newModIdentityFixture(t, namespaces...)
-			fetches, installs := 0, 0
-			ts := &mock.Thunderstore{GetPackageFunc: func(string, string) (thunderstore.Package, error) {
-				fetches++
-				return thunderstore.Package{}, thunderstore.ErrPackageNotFound
-			}}
+			fetches, releases, installs := 0, 0, 0
+			ts := &mock.Thunderstore{
+				GetPackageFunc: func(string, string) (thunderstore.Package, error) {
+					fetches++
+					return thunderstore.Package{}, thunderstore.ErrPackageNotFound
+				},
+				GetReleaseFunc: func(namespace, name, version string) (thunderstore.Release, error) {
+					releases++
+					if namespace != "AuthorA" || name != "Shared" || version != "1.0.0" {
+						t.Fatalf("unexpected installed release %s/%s/%s", namespace, name, version)
+					}
+					return thunderstore.Release{
+						Namespace: namespace, Name: name, VersionNumber: version, FullName: "AuthorA-Shared-1.0.0",
+						Dependencies: []string{},
+					}, nil
+				},
+			}
 			fm := &mock.Manager{InstallModFunc: func(string, string) (string, error) {
 				installs++
 				return "", file.ErrFileWriteFailed
@@ -419,8 +431,8 @@ func TestAddMod_AlreadyInstalledIdentity(t *testing.T) {
 			if err := ms.AddMod("AuthorA", "Shared"); !errors.Is(err, service.ErrModAlreadyInstalled) {
 				t.Errorf("expected already-installed error, got %v", err)
 			}
-			if fetches != 0 || installs != 0 {
-				t.Errorf("already-installed identity triggered %d fetches and %d installs", fetches, installs)
+			if fetches != 0 || releases != 1 || installs != 0 {
+				t.Errorf("latest fetches/exact releases/installs = %d/%d/%d, want 0/1/0", fetches, releases, installs)
 			}
 			assertModIdentityState(t, records, original)
 			if entries, err := os.ReadDir(backups); err != nil || len(entries) != 0 {
