@@ -3,7 +3,6 @@ package command_test
 import (
 	"errors"
 	"io"
-	"os"
 	"strings"
 	"testing"
 	"warden/command"
@@ -31,6 +30,7 @@ func TestConfirmationInputDiagnostics(t *testing.T) {
 				ms := service.NewModService(mr, fm, ts, reader)
 				fs := service.NewFrameworkService(fr, fm, ts, reader)
 				var cmd *cobra.Command
+				var args []string
 				switch operation {
 				case "add":
 					fr.GetFrameworkFunc = func(name string) (framework.Framework, error) {
@@ -40,7 +40,7 @@ func TestConfirmationInputDiagnostics(t *testing.T) {
 						return framework.Framework{}, repo.ErrFrameworkFetchNoResults
 					}
 					cmd = command.NewAddCommand(fs, ms)
-					cmd.SetArgs([]string{"--namespace", "Owner", "--mod", "Plugin"})
+					args = []string{"--namespace", "Owner", "--mod", "Plugin"}
 				case "update mod":
 					mr.GetModFunc = func(name string) (mod.Mod, error) {
 						if name != "Plugin" {
@@ -55,10 +55,10 @@ func TestConfirmationInputDiagnostics(t *testing.T) {
 						return thunderstore.Package{Latest: thunderstore.Release{VersionNumber: "2.0.0"}}, nil
 					}
 					cmd = command.NewUpdateCommand(fs, ms)
-					cmd.SetArgs([]string{"--mod", "Plugin"})
+					args = []string{"--mod", "Plugin"}
 				case "update all":
 					cmd = command.NewUpdateCommand(fs, ms)
-					cmd.SetArgs([]string{"all"})
+					args = []string{"all"}
 				case "update framework":
 					fr.GetFrameworkFunc = func(name string) (framework.Framework, error) {
 						if name != framework.BepInEx {
@@ -73,46 +73,30 @@ func TestConfirmationInputDiagnostics(t *testing.T) {
 						return thunderstore.Package{Latest: thunderstore.Release{VersionNumber: "2.0.0"}}, nil
 					}
 					cmd = command.NewUpdateCommand(fs, ms)
-					cmd.SetArgs([]string{"bepinex"})
+					args = []string{"bepinex"}
 				case "remove mod":
 					cmd = command.NewRemoveCommand(fs, ms)
-					cmd.SetArgs([]string{"--namespace", "Owner", "--mod", "Plugin"})
+					args = []string{"--namespace", "Owner", "--mod", "Plugin"}
 				case "remove all":
 					cmd = command.NewRemoveCommand(fs, ms)
-					cmd.SetArgs([]string{"all"})
+					args = []string{"all"}
 				case "remove framework":
 					cmd = command.NewRemoveCommand(fs, ms)
-					cmd.SetArgs([]string{"bepinex"})
+					args = []string{"bepinex"}
 				}
 
-				output, err := os.CreateTemp(t.TempDir(), "stdout")
-				if err != nil {
-					t.Fatal(err)
-				}
-				stdout := os.Stdout
-				t.Cleanup(func() {
-					os.Stdout = stdout
-					if err := output.Close(); err != nil {
-						t.Error(err)
-					}
-				})
-				os.Stdout = output
-				if err := cmd.Execute(); err != nil {
-					t.Fatal(err)
-				}
-				os.Stdout = stdout
-				data, err := os.ReadFile(output.Name())
-				if err != nil {
-					t.Fatal(err)
+				output, err := runOutcomeCommand(t, cmd, args...)
+				if !errors.Is(err, service.ErrConfirmationInput) || !errors.Is(err, cause) {
+					t.Errorf("command lost the confirmation failure or its cause: %v", err)
 				}
 				if reader.reads != 1 {
 					t.Errorf("confirmation reads = %d, want 1", reader.reads)
 				}
-				if !strings.Contains(string(data), service.ErrConfirmationInput.Error()) || !strings.Contains(string(data), cause.Error()) {
-					t.Errorf("input diagnostic lost its context or cause: %q", data)
+				if strings.Count(output, service.ErrConfirmationInput.Error()) != 1 || strings.Count(output, cause.Error()) != 1 {
+					t.Errorf("input diagnostic lost or repeated its context or cause: %q", output)
 				}
-				if strings.Contains(string(data), "successfully") {
-					t.Errorf("failed confirmation reported success: %q", data)
+				if strings.Contains(output, "successfully") {
+					t.Errorf("failed confirmation reported success: %q", output)
 				}
 			})
 		}

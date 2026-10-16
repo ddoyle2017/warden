@@ -3,7 +3,6 @@ package command_test
 import (
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -64,30 +63,18 @@ func TestStandaloneFrameworkDiagnostics(t *testing.T) {
 					return nil
 				}}
 				cmd := command.NewAddCommand(fs, ms)
-				cmd.SetArgs([]string{"--namespace", "test", "--mod", "plugin"})
+				args := []string{"--namespace", "test", "--mod", "plugin"}
 				if operation == "remove" {
 					cmd = command.NewRemoveCommand(fs, nil)
-					cmd.SetArgs([]string{"bepinex"})
+					args = []string{"bepinex"}
 				}
-				output, err := os.CreateTemp(t.TempDir(), "stdout")
-				if err != nil {
-					t.Fatal(err)
+				output, err := runOutcomeCommand(t, cmd, args...)
+				wantErr := result
+				if tt.cleanup && !tt.recordFailure {
+					wantErr = nil
 				}
-				stdout := os.Stdout
-				t.Cleanup(func() {
-					os.Stdout = stdout
-					if err := output.Close(); err != nil {
-						t.Error(err)
-					}
-				})
-				os.Stdout = output
-				if err := cmd.Execute(); err != nil {
-					t.Fatal(err)
-				}
-				os.Stdout = stdout
-				data, err := os.ReadFile(output.Name())
-				if err != nil {
-					t.Fatal(err)
+				if !errors.Is(err, wantErr) {
+					t.Errorf("command error = %v, want %v", err, wantErr)
 				}
 				wantModCalls := 0
 				if operation == "install" && (result == nil || tt.cleanup && !tt.recordFailure) {
@@ -97,15 +84,15 @@ func TestStandaloneFrameworkDiagnostics(t *testing.T) {
 					t.Errorf("unexpected framework/mod calls: %d/%d", fileCalls, modCalls)
 				}
 				for _, text := range want {
-					if !strings.Contains(string(data), text) {
-						t.Errorf("output %q omits %q", data, text)
+					if strings.Count(output, text) != 1 {
+						t.Errorf("output must contain %q once: %q", text, output)
 					}
 				}
-				if strings.HasPrefix(string(data), "... warning:") != (tt.cleanup && !tt.recordFailure) {
-					t.Errorf("framework request status was misclassified: %q", data)
+				if strings.HasPrefix(output, "... warning:") != (tt.cleanup && !tt.recordFailure) {
+					t.Errorf("framework request status was misclassified: %q", output)
 				}
-				if result != nil && wantModCalls == 0 && strings.Contains(string(data), "successfully") {
-					t.Errorf("diagnostics were reported as ordinary success: %q", data)
+				if result != nil && wantModCalls == 0 && strings.Contains(output, "successfully") {
+					t.Errorf("diagnostics were reported as ordinary success: %q", output)
 				}
 			})
 		}

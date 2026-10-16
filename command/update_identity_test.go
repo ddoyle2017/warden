@@ -5,13 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"testing"
 	"warden/command"
 	"warden/internal/service"
-
-	"github.com/spf13/cobra"
 )
 
 func TestUpdateCommand_IdentitySelection(t *testing.T) {
@@ -93,54 +90,33 @@ func TestUpdateCommand_IdentitySelection(t *testing.T) {
 					return tt.result
 				},
 			}
-			cmd := &cobra.Command{Use: "warden"}
-			cmd.AddCommand(command.NewUpdateCommand(nil, ms))
-			cmd.SetArgs(append([]string{"update"}, tt.args...))
-			output, err := os.CreateTemp(t.TempDir(), "stdout")
-			if err != nil {
-				t.Fatal(err)
-			}
-			stdout := os.Stdout
-			t.Cleanup(func() {
-				os.Stdout = stdout
-				if err := output.Close(); err != nil {
-					t.Error(err)
-				}
-			})
-			os.Stdout = output
-			cmd.SetOut(output)
-			cmd.SetErr(output)
-			err = cmd.Execute()
-			os.Stdout = stdout
+			cmd := command.NewUpdateCommand(nil, ms)
+			output, err := runOutcomeCommand(t, cmd, tt.args...)
 			if tt.invalid {
 				if err == nil || calls != 0 {
 					t.Errorf("expected rejected input and no service calls, got %v and %d calls", err, calls)
 				}
 				return
 			}
-			if err != nil || calls != 1 {
+			if !errors.Is(err, tt.result) || calls != 1 {
 				t.Fatalf("expected one service call, got error %v and %d calls", err, calls)
-			}
-			data, err := os.ReadFile(output.Name())
-			if err != nil {
-				t.Fatal(err)
 			}
 			if tt.result != nil {
 				for _, text := range tt.wantError {
-					if !strings.Contains(string(data), text) {
-						t.Errorf("update diagnostic omits %q: %q", text, data)
+					if strings.Count(output, text) != 1 {
+						t.Errorf("update diagnostic must contain %q once: %q", text, output)
 					}
 				}
 				for _, text := range tt.omitError {
-					if strings.Contains(string(data), text) {
-						t.Errorf("update diagnostic incorrectly includes %q: %q", text, data)
+					if strings.Contains(output, text) {
+						t.Errorf("update diagnostic incorrectly includes %q: %q", text, output)
 					}
 				}
-				if strings.Contains(string(data), "successfully") {
-					t.Errorf("failed update was reported as success: %q", data)
+				if strings.Contains(output, "successfully") {
+					t.Errorf("failed update was reported as success: %q", output)
 				}
-			} else if !strings.Contains(string(data), "mod successfully updated") {
-				t.Errorf("successful update was not reported: %q", data)
+			} else if !strings.Contains(output, "mod successfully updated") {
+				t.Errorf("successful update was not reported: %q", output)
 			}
 		})
 	}

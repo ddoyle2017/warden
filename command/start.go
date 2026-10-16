@@ -20,26 +20,27 @@ func NewStartCommand(server service.Server) *cobra.Command {
 			if server.IsValidGameType(args[0]) {
 				return nil
 			}
-			return service.ErrServerStartFailed
+			return fmt.Errorf("invalid game type %q: %w", args[0], service.ErrInvalidGameType)
 		},
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			output, err := server.Start(args[0])
 			if err != nil {
-				parseStartError(err)
-				fmt.Println(output)
-			} else {
-				fmt.Println("... successfully started server! ...")
-				fmt.Println(output)
+				if output != "" {
+					fmt.Println(output)
+				}
+				return parseStartError(err)
 			}
+			fmt.Println("... successfully started server! ...")
+			fmt.Println(output)
+			return nil
 		},
 	}
 	return cmd
 }
 
-func parseStartError(err error) {
-	if !errors.Is(err, service.ErrInvalidGameType) {
-		fmt.Println("... invalid game type ...")
-	} else if !errors.Is(err, service.ErrServerStartFailed) {
-		fmt.Println("... Valheim server failed to start ...")
+func parseStartError(err error) error {
+	if errors.Is(err, service.ErrInvalidGameType) {
+		return runtimeFailure("... invalid game type: %w ...", err)
 	}
+	return runtimeFailure("... Valheim server failed to start: %w ...", err)
 }

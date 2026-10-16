@@ -6,17 +6,17 @@ import (
 	"warden/internal/service"
 )
 
-func parseFrameworkError(err error, operation string) {
+func parseFrameworkError(err error, operation string) error {
 	if err == service.ErrCancelled || err == service.ErrNoChanges {
-		return
+		return nil
 	}
 	if _, completed := err.(*service.FrameworkMutationCleanupError); completed {
 		fmt.Printf("... warning: %v ...\n", err)
+		return nil
 	} else if errors.Is(err, service.ErrFrameworkNotFound) {
-		fmt.Printf("... unable to find BepInEx: %v ...\n", err)
+		return runtimeFailure("... unable to find BepInEx: %w ...", err)
 	} else if errors.Is(err, service.ErrFrameworkNotInstalled) {
-		fmt.Printf("... BepInEx is not installed: %v ...\n", err)
-	} else {
-		fmt.Printf("... unable to %s BepInEx: %v ...\n", operation, err)
+		return runtimeFailure("... BepInEx is not installed: %w ...", err)
 	}
+	return runtimeFailure("... unable to %s BepInEx: %w ...", operation, err)
 }

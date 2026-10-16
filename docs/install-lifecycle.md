@@ -312,8 +312,9 @@ EOF, reader failures (even alongside a negative answer), exhausted invalid input
 missing targets, lookup failures, and invalid versions remain failures. Wrapped
 causes retain `errors.Is`/`errors.As` compatibility for diagnosis; finding a nested
 outcome does not authorize continuation or declare the enclosing request complete.
-Commands still do not consistently propagate runtime failures to process exit
-status.
+Commands propagate these failures to a nonzero process exit while preserving
+their diagnostic causes. Direct no-work outcomes and completed-request cleanup
+warnings remain nonfatal; see the [command exit policy](../README.md#usage).
 
 The file manager makes a backup available for restoration only after the
 complete copy succeeds. After a failed copy, it attempts to remove the temporary

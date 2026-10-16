@@ -63,6 +63,11 @@ go test -race -shuffle=on -count=1 -ldflags=-linkmode=external ./...
 The same linker flag can be passed to `go build` if needed. This is a local
 toolchain workaround; Linux CI uses the commands above without it.
 
+CLI subprocess tests build an owned temporary executable, use external linking
+and ad-hoc signing on macOS, and require a healthy launch before checking failure
+exits. A loader or signature rejection is not evidence that a CLI failure
+returned the correct status.
+
 ## Tests and fixtures
 
 `internal/test/data` contains read-only mod/framework ZIPs and small shell

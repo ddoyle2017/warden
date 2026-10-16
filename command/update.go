@@ -17,7 +17,7 @@ func NewUpdateCommand(fs service.Framework, ms service.Mod) *cobra.Command {
 		Short: "Updates the targetted mod.",
 		Long:  "Updates an installed mod to the latest version on Thunderstore. Specify --namespace when multiple installed mods share the same name; --mod alone is accepted only for an unambiguous name.",
 		Args:  cobra.NoArgs,
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			var err error
 			if cmd.Flags().Changed(namespaceFlagLong) {
 				err = ms.UpdateModByIdentity(namespace, modPkg)
@@ -25,10 +25,10 @@ func NewUpdateCommand(fs service.Framework, ms service.Mod) *cobra.Command {
 				err = ms.UpdateMod(modPkg)
 			}
 			if err != nil {
-				parseUpdateError(err)
-			} else {
-				fmt.Println("... mod successfully updated! ...")
+				return parseUpdateError(err)
 			}
+			fmt.Println("... mod successfully updated! ...")
+			return nil
 		},
 	}
 
@@ -47,10 +47,11 @@ func newUpdateAllCommand(ms service.Mod) *cobra.Command {
 		Use:   "all",
 		Short: "Updates all mods",
 		Long:  "Installs the latest version of every mod that is currently installed",
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := ms.UpdateAllMods(); err != nil {
-				parseUpdateError(err)
+				return parseUpdateError(err)
 			}
+			return nil
 		},
 	}
 	return cmd
@@ -61,40 +62,40 @@ func newUpdateBepInEx(fs service.Framework) *cobra.Command {
 		Use:   "bepinex",
 		Short: "Updates BepInEx.",
 		Long:  "Updates the current BepInEx installation.",
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			err := fs.UpdateBepInEx()
 			if err != nil {
-				parseFrameworkError(err, "update")
-			} else {
-				fmt.Println("...successfully updated BepInEx!...")
+				return parseFrameworkError(err, "update")
 			}
+			fmt.Println("...successfully updated BepInEx!...")
+			return nil
 		},
 	}
 	return cmd
 }
 
-func parseUpdateError(err error) {
+func parseUpdateError(err error) error {
 	if err == service.ErrCancelled || err == service.ErrNoChanges {
-		return
+		return nil
 	}
 	if _, modCompleted := err.(*service.ModMutationCleanupError); modCompleted {
 		fmt.Printf("... warning: %v ...\n", err)
+		return nil
 	} else if errors.Is(err, service.ErrConfirmationInput) ||
 		errors.Is(err, service.ErrInvalidReleaseVersion) {
-		fmt.Printf("... %v ...\n", err)
+		return runtimeFailure("... %w ...", err)
 	} else if errors.Is(err, service.ErrModNameAmbiguous) || errors.Is(err, service.ErrDuplicateModRecords) {
-		fmt.Printf("... %v, update stopped ...\n", err)
+		return runtimeFailure("... %w, update stopped ...", err)
 	} else if errors.Is(err, service.ErrModNotInstalled) {
-		fmt.Println("... mod not installed, update stopped ...")
+		return runtimeFailure("... %w, update stopped ...", err)
 	} else if errors.Is(err, service.ErrUnableToUpdateMod) {
-		fmt.Printf("... %v ...\n", err)
+		return runtimeFailure("... %w ...", err)
 	} else if errors.Is(err, service.ErrModNotFound) {
-		fmt.Printf("... could not find mod on Thunderstore, stopping update: %v ...\n", err)
+		return runtimeFailure("... could not find mod on Thunderstore, stopping update: %w ...", err)
 	} else if errors.Is(err, service.ErrAddDependenciesFailed) {
-		fmt.Printf("... %v ...\n", err)
+		return runtimeFailure("... %w ...", err)
 	} else if errors.Is(err, service.ErrMaxAttempts) {
-		fmt.Println("... unable to confim update, aborting ...")
-	} else {
-		fmt.Printf("... %v ...\n", err)
+		return runtimeFailure("... unable to confirm update, aborting: %w ...", err)
 	}
+	return runtimeFailure("... %w ...", err)
 }

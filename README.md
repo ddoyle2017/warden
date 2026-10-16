@@ -101,6 +101,18 @@ instead reports failure details, including recovery paths or database-verificati
 guidance; see [recovery and cleanup outcomes](docs/install-lifecycle.md#confirmations-and-backups)
 before retrying or using leftover backup files.
 
+Commands exit with status `0` on success, deliberate cancellation, known
+no-change or already-installed outcomes, and completed requests with cleanup
+warnings. Warnings still need attention even when the exit status is `0`.
+Runtime failures and rejected input exit with status `1` and report the failure
+once on standard error. Runtime failures do not print command usage; invalid
+flags and arguments still do.
+
+A nonzero status does not mean that no files or records changed. In particular,
+a successful BepInEx bootstrap does not turn a later mod failure into success.
+Keep the reported recovery paths and database-verification guidance when
+investigating an incomplete request.
+
 ## Installation
 ![installation-banner](./images/mistlands-exploration.png)
 Proper install process coming soon <sup>TM</sup>.

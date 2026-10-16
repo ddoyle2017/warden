@@ -102,8 +102,10 @@ func TestAddCommandBootstrapConsent(t *testing.T) {
 			in := &countedCommandReader{Reader: strings.NewReader(tt.answer)}
 			frameworks := service.NewFrameworkService(fr, manager, ts, in)
 			cmd := command.NewAddCommand(frameworks, ms)
-			cmd.SetArgs([]string{"--namespace", root.Namespace, "--mod", root.Name})
-			output := runOutcomeCommand(t, cmd)
+			output, err := runOutcomeCommand(t, cmd, "--namespace", root.Namespace, "--mod", root.Name)
+			if err != nil {
+				t.Fatal(err)
+			}
 
 			wantMod, wantFramework, wantReads := 0, 0, 1
 			if tt.wantWork {
@@ -280,8 +282,10 @@ func TestCommandsWithoutMutation(t *testing.T) {
 					cmd = command.NewRemoveCommand(frameworks, ms)
 					args = []string{"bepinex"}
 				}
-				cmd.SetArgs(args)
-				output := runOutcomeCommand(t, cmd)
+				output, err := runOutcomeCommand(t, cmd, args...)
+				if err != nil {
+					t.Fatal(err)
+				}
 				wantFetches, wantReads := 0, 1
 				if strings.HasPrefix(operation, "update") && (operation != "update all" || outcome == "unchanged") {
 					wantFetches = 1
@@ -424,29 +428,30 @@ func assertNoFailureDiagnostic(t *testing.T, output string) {
 	}
 }
 
-func runOutcomeCommand(t *testing.T, cmd *cobra.Command) string {
+func runOutcomeCommand(t *testing.T, cmd *cobra.Command, args ...string) (string, error) {
+	t.Helper()
+	return runRootCommand(t, append([]string{cmd.Name()}, args...), cmd)
+}
+
+func runRootCommand(t *testing.T, args []string, cmds ...*cobra.Command) (string, error) {
 	t.Helper()
 	output, err := os.CreateTemp(t.TempDir(), "stdout")
 	if err != nil {
 		t.Fatal(err)
 	}
-	stdout := os.Stdout
+	stdout, stderr, argv := os.Stdout, os.Stderr, os.Args
 	defer func() {
-		os.Stdout = stdout
+		os.Stdout, os.Stderr, os.Args = stdout, stderr, argv
 		if err := output.Close(); err != nil {
 			t.Error(err)
 		}
 	}()
-	os.Stdout = output
-	cmd.SetOut(output)
-	cmd.SetErr(output)
-	if err := cmd.Execute(); err != nil {
-		t.Fatal(err)
-	}
-	os.Stdout = stdout
+	os.Stdout, os.Stderr = output, output
+	os.Args = append([]string{"warden"}, args...)
+	commandErr := command.Execute(cmds...)
 	data, err := os.ReadFile(output.Name())
 	if err != nil {
 		t.Fatal(err)
 	}
-	return string(data)
+	return string(data), commandErr
 }
