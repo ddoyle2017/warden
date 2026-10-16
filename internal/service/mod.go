@@ -96,16 +96,21 @@ func (ms *modService) AddMod(namespace, name string) error {
 		return fmt.Errorf("%w: %w", ErrModNotFound, err)
 	}
 
+	dependencies, err := planDependencies(pkg.Latest)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrAddDependenciesFailed, err)
+	}
+
 	// Install the mod and it's dependencies
 	cleanupErr, err := ms.installMod(pkg.Latest)
 	if err != nil {
 		return modMutationResult(cleanupErr, fmt.Errorf("%w: %w", ErrModInstallFailed, err))
 	}
 
-	if len(pkg.Latest.Dependencies) > 0 {
-		fmt.Printf("... mod has %d dependencies, installing them ...\n", len(pkg.Latest.Dependencies))
+	if len(dependencies) > 0 {
+		fmt.Printf("... mod has %d dependencies, installing them ...\n", len(dependencies))
 
-		dependencyCleanup, err := ms.addDependencies(pkg.Latest.Dependencies)
+		dependencyCleanup, err := ms.addDependencies(dependencies)
 		cleanupErr = errors.Join(cleanupErr, dependencyCleanup)
 		if err != nil {
 			return modMutationResult(cleanupErr, fmt.Errorf("%w: %w", ErrAddDependenciesFailed, err))
@@ -200,11 +205,15 @@ func (ms *modService) updateInstalledMod(current mod.Mod, err error) error {
 			fmt.Println("... aborting ...")
 			return nil
 		}
+		dependencies, err := planDependencies(pkg.Latest)
+		if err != nil {
+			return fmt.Errorf("%w: %w", ErrAddDependenciesFailed, err)
+		}
 		cleanupErr, err := ms.updateMod(current, pkg.Latest)
 		if err != nil {
 			return modMutationResult(cleanupErr, fmt.Errorf("%w: %w", ErrUnableToUpdateMod, err))
 		}
-		dependencyCleanup, err := ms.addDependencies(pkg.Latest.Dependencies)
+		dependencyCleanup, err := ms.addDependencies(dependencies)
 		cleanupErr = errors.Join(cleanupErr, dependencyCleanup)
 		if err != nil {
 			return modMutationResult(cleanupErr, fmt.Errorf("%w: %w", ErrAddDependenciesFailed, err))
@@ -249,7 +258,7 @@ func (ms *modService) UpdateAllMods() error {
 	for _, m := range mods {
 		selected[[2]string{m.Namespace, m.Name}] = m
 	}
-	updated := make(map[[2]string]thunderstore.Release)
+	updated := make(map[[2]string][]dependency)
 	replace := func(current mod.Mod, latest thunderstore.Release) (cleanupErr, failure error) {
 		if err := validateIdentity(current.Namespace, current.Name); err != nil {
 			return nil, err
@@ -261,9 +270,13 @@ func (ms *modService) UpdateAllMods() error {
 		if !newer {
 			return nil, nil
 		}
+		dependencies, err := planDependencies(latest)
+		if err != nil {
+			return nil, err
+		}
 		cleanupErr, failure = ms.updateMod(current, latest)
 		if failure == nil {
-			updated[[2]string{current.Namespace, current.Name}] = latest
+			updated[[2]string{current.Namespace, current.Name}] = dependencies
 		}
 		return cleanupErr, failure
 	}
@@ -284,7 +297,7 @@ func (ms *modService) UpdateAllMods() error {
 			return modMutationResult(cleanupErr, err)
 		}
 		identity := [2]string{m.Namespace, m.Name}
-		latest, alreadyUpdated := updated[identity]
+		dependencies, alreadyUpdated := updated[identity]
 		if !alreadyUpdated {
 			pkg, err := ms.ts.GetPackage(m.Namespace, m.Name)
 			if err != nil {
@@ -294,16 +307,20 @@ func (ms *modService) UpdateAllMods() error {
 			updateCleanup, err := replace(m, pkg.Latest)
 			cleanupErr = errors.Join(cleanupErr, updateCleanup)
 			if err != nil {
-				return modMutationResult(cleanupErr, fmt.Errorf("%w: %w", ErrUnableToUpdateMod, err))
+				operationErr := ErrUnableToUpdateMod
+				if errors.Is(err, ErrInvalidDependency) {
+					operationErr = ErrAddDependenciesFailed
+				}
+				return modMutationResult(cleanupErr, fmt.Errorf("%w: %w", operationErr, err))
 			}
-			latest, alreadyUpdated = updated[identity]
+			dependencies, alreadyUpdated = updated[identity]
 			if !alreadyUpdated {
 				fmt.Printf("... latest version of %s %s already installed (%s) ...\n", m.Namespace, m.Name, m.Version)
 				continue
 			}
 		}
 		// A dependency may already be replaced, but its own selected turn still owns its direct dependencies.
-		dependencyCleanup, err := ms.addDependenciesWithInstaller(latest.Dependencies, installDependency, validateIdentity)
+		dependencyCleanup, err := ms.addDependenciesWithInstaller(dependencies, installDependency, validateIdentity)
 		cleanupErr = errors.Join(cleanupErr, dependencyCleanup)
 		if err != nil {
 			return modMutationResult(cleanupErr, fmt.Errorf("%w: %w", ErrAddDependenciesFailed, err))
@@ -369,28 +386,25 @@ func (ms *modService) finishModRemoval(removal file.ModRemoval, deleteRecords fu
 	return nil
 }
 
-func (ms *modService) addDependencies(dependencies []string) (cleanupErr, failure error) {
+func (ms *modService) addDependencies(dependencies []dependency) (cleanupErr, failure error) {
 	return ms.addDependenciesWithInstaller(dependencies, ms.installMod, nil)
 }
 
-func (ms *modService) addDependenciesWithInstaller(dependencies []string, install func(thunderstore.Release) (error, error), validateIdentity func(string, string) error) (cleanupErr, failure error) {
+func (ms *modService) addDependenciesWithInstaller(dependencies []dependency, install func(thunderstore.Release) (error, error), validateIdentity func(string, string) error) (cleanupErr, failure error) {
 	for _, dep := range dependencies {
-		details := strings.Split(dep, "-")
-		namespace, name := details[0], details[1]
-
 		// If dep is BepInEx, skip
-		if name == framework.BepInEx {
+		if dep.name == framework.BepInEx {
 			continue
 		}
 		if validateIdentity != nil {
-			if err := validateIdentity(namespace, name); err != nil {
+			if err := validateIdentity(dep.namespace, dep.name); err != nil {
 				return cleanupErr, err
 			}
 		}
 
-		pkg, err := ms.ts.GetPackage(namespace, name)
+		pkg, err := ms.ts.GetPackage(dep.namespace, dep.name)
 		if err != nil {
-			return cleanupErr, fmt.Errorf("%s/%s: %w", namespace, name, err)
+			return cleanupErr, fmt.Errorf("%s/%s: %w", dep.namespace, dep.name, err)
 		}
 		installCleanup, err := install(pkg.Latest)
 		cleanupErr = errors.Join(cleanupErr, installCleanup)
