@@ -346,3 +346,162 @@ func TestUpdateReleaseVersions(t *testing.T) {
 		})
 	}
 }
+
+func TestUpdateAllMods_InvalidVersionPreservesPartialProgress(t *testing.T) {
+	for name, tt := range map[string]struct {
+		installed, latest, invalid string
+	}{
+		"given an invalid installed version after an upgrade, when updating all, then keep progress and stop": {
+			installed: "broken", latest: "1.10.0", invalid: "installed",
+		},
+		"given an invalid latest version after an upgrade, when updating all, then keep progress and stop": {
+			installed: "1.9.0", latest: "broken", invalid: "latest",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			th := helper.NewHelper(t)
+			t.Setenv("TMPDIR", t.TempDir())
+			server := th.GetValheimDirectory()
+			db := th.CreateDatabase()
+			repo.CreateFrameworksTable(db)
+			repo.CreateModsTable(db)
+			th.SeedFrameworksTable(repo.NewFrameworksRepo(db))
+			records := repo.NewModsRepo(db)
+			current := []mod.Mod{
+				{Name: "Earlier", Namespace: "Owned", Version: "1.9.0", FrameworkID: 1},
+				{Name: "Invalid", Namespace: "Owned", Version: tt.installed, FrameworkID: 1},
+				{Name: "Later", Namespace: "Owned", Version: "1.9.0", FrameworkID: 1},
+			}
+			wantFiles := map[string]string{"server-data": "unrelated server bytes"}
+			for i := range current {
+				m := &current[i]
+				pluginPath := filepath.Join("BepInEx", "plugins", m.FullName(), "plugin.dll")
+				m.FilePath = filepath.Join(server, filepath.Dir(pluginPath))
+				wantFiles[pluginPath] = "installed " + m.Name
+				if err := records.InsertMod(*m); err != nil {
+					t.Fatal(err)
+				}
+				stored, err := records.GetMod(m.Name)
+				if err != nil {
+					t.Fatal(err)
+				}
+				*m = stored
+			}
+			for path, contents := range wantFiles {
+				fullPath := filepath.Join(server, path)
+				if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(fullPath, []byte(contents), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			latest := thunderstore.Release{
+				Name: "Earlier", Namespace: "Owned", VersionNumber: "1.10.0",
+				FullName: "Owned-Earlier-1.10.0", DownloadURL: helper.TestDownloadURL,
+			}
+			var payload bytes.Buffer
+			archive := zip.NewWriter(&payload)
+			entry, err := archive.Create("plugin.dll")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := io.WriteString(entry, "replacement Earlier"); err != nil {
+				t.Fatal(err)
+			}
+			if err := archive.Close(); err != nil {
+				t.Fatal(err)
+			}
+			var lookups, removed, installed, written []string
+			downloads := 0
+			client := &mock.HTTPClient{GetFunc: func(url string) (*http.Response, error) {
+				downloads++
+				if url != latest.DownloadURL {
+					t.Fatalf("unexpected download URL %q", url)
+				}
+				return &http.Response{Body: io.NopCloser(bytes.NewReader(payload.Bytes()))}, nil
+			}}
+			files := file.NewManager(client, server)
+			fm := &mock.Manager{
+				ValidateModInstallFunc: files.ValidateModInstall,
+				RemoveModFunc: func(fullName string) error {
+					removed = append(removed, fullName)
+					return files.RemoveMod(fullName)
+				},
+				InstallModFunc: func(url, fullName string) (string, error) {
+					installed = append(installed, fullName)
+					return files.InstallMod(url, fullName)
+				},
+			}
+			mr := &mock.ModsRepo{
+				// ListMods does not promise SQL row order; this scenario requires a fixed sequence.
+				ListModsFunc: func() ([]mod.Mod, error) { return append([]mod.Mod(nil), current...), nil },
+				UpsertModFunc: func(m mod.Mod) error {
+					written = append(written, m.Name)
+					return records.UpsertMod(m)
+				},
+			}
+			ts := &mock.Thunderstore{GetPackageFunc: func(namespace, name string) (thunderstore.Package, error) {
+				lookups = append(lookups, namespace+"/"+name)
+				if namespace != "Owned" {
+					t.Fatalf("unexpected namespace %q", namespace)
+				}
+				switch name {
+				case "Earlier":
+					return thunderstore.Package{Latest: latest}, nil
+				case "Invalid":
+					return thunderstore.Package{Latest: thunderstore.Release{
+						Name: name, Namespace: namespace, VersionNumber: tt.latest,
+						FullName: "Owned-Invalid-" + tt.latest, DownloadURL: helper.TestDownloadURL,
+					}}, nil
+				default:
+					t.Fatalf("unexpected package lookup after invalid version: %q", name)
+					return thunderstore.Package{}, nil
+				}
+			}}
+			err = service.NewModService(mr, fm, ts, strings.NewReader("Y\n")).UpdateAllMods()
+			if !errors.Is(err, service.ErrUnableToUpdateMod) || !errors.Is(err, service.ErrInvalidReleaseVersion) {
+				t.Errorf("expected update and version errors, got %v", err)
+			}
+			for _, text := range []string{"Owned/Invalid", tt.invalid, `"broken"`} {
+				if err == nil || !strings.Contains(err.Error(), text) {
+					t.Errorf("error %v omits %q", err, text)
+				}
+			}
+			if !reflect.DeepEqual(lookups, []string{"Owned/Earlier", "Owned/Invalid"}) {
+				t.Errorf("package lookups = %v, want only Earlier then Invalid", lookups)
+			}
+			if !reflect.DeepEqual(removed, []string{"Owned-Earlier-1.9.0"}) ||
+				!reflect.DeepEqual(installed, []string{"Owned-Earlier-1.10.0"}) ||
+				!reflect.DeepEqual(written, []string{"Earlier"}) || downloads != 1 {
+				t.Errorf("unexpected mutations: removed=%v installed=%v written=%v downloads=%d", removed, installed, written, downloads)
+			}
+			wantRecords := append([]mod.Mod(nil), current...)
+			wantRecords[0].Version = "1.10.0"
+			wantRecords[0].FilePath = filepath.Join(server, "BepInEx", "plugins", "Owned-Earlier-1.10.0")
+			for _, want := range wantRecords {
+				got, err := records.GetMod(want.Name)
+				if err != nil || !reflect.DeepEqual(got, want) {
+					t.Errorf("record for %s = %+v, %v; want %+v", want.Name, got, err, want)
+				}
+			}
+			delete(wantFiles, filepath.Join("BepInEx", "plugins", "Owned-Earlier-1.9.0", "plugin.dll"))
+			wantFiles[filepath.Join("BepInEx", "plugins", "Owned-Earlier-1.10.0", "plugin.dll")] = "replacement Earlier"
+			paths, err := th.GetFileList(server)
+			if err != nil {
+				t.Fatal(err)
+			}
+			gotFiles := make(map[string]string)
+			for relative, path := range paths {
+				data, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				gotFiles[relative] = string(data)
+			}
+			if !reflect.DeepEqual(gotFiles, wantFiles) {
+				t.Errorf("server files = %q, want %q", gotFiles, wantFiles)
+			}
+		})
+	}
+}
