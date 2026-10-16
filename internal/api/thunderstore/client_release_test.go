@@ -58,6 +58,15 @@ func TestGetRelease(t *testing.T) {
 		"a changed latest version": {
 			body: strings.ReplaceAll(metadata, "1.0.0", "2.0.0"), wantErr: thunderstore.ErrThunderstoreAPI,
 		},
+		"a mismatched namespace field with a matching full name": {
+			body: strings.Replace(metadata, `"namespace":"Owner"`, `"namespace":"Other"`, 1), wantErr: thunderstore.ErrThunderstoreAPI,
+		},
+		"a mismatched name field with a matching full name": {
+			body: strings.Replace(metadata, `"name":"Root"`, `"name":"Wrong"`, 1), wantErr: thunderstore.ErrThunderstoreAPI,
+		},
+		"a mismatched version field with a matching full name": {
+			body: strings.Replace(metadata, `"version_number":"1.0.0"`, `"version_number":"2.0.0"`, 1), wantErr: thunderstore.ErrThunderstoreAPI,
+		},
 		"a mismatched full name": {
 			body: strings.Replace(metadata, "Owner-Root-1.0.0", "Owner-Root-2.0.0", 1), wantErr: thunderstore.ErrThunderstoreAPI,
 		},

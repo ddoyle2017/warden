@@ -1,11 +1,13 @@
 package service_test
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"warden/internal/api/thunderstore"
@@ -100,6 +102,64 @@ func TestAddMod_PreservesRecordedDependencies(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestUpdateMod_DependencyBackupFailurePreservesRecordedState(t *testing.T) {
+	t.Run("given a recorded dependency, when its backup is refused during an update, then keep its complete state and the updated root", func(t *testing.T) {
+		f := newModReplacementFixture(t)
+		root := f.latest
+		root.Dependencies = []string{"Other-Unrelated-3.0.0"}
+		blockedTemp := filepath.Join(t.TempDir(), "not-a-directory")
+		if err := os.WriteFile(blockedTemp, []byte("backup creation blocker"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		var packages, downloads []string
+		ts := &mock.Thunderstore{GetPackageFunc: func(namespace, name string) (thunderstore.Package, error) {
+			packages = append(packages, namespace+"/"+name)
+			switch {
+			case namespace == "Owned" && name == "Installed":
+				return thunderstore.Package{Latest: root}, nil
+			case namespace == "Other" && name == "Unrelated":
+				return thunderstore.Package{Latest: thunderstore.Release{
+					Namespace: "Other", Name: "Unrelated", VersionNumber: "4.0.0",
+					FullName: "Other-Unrelated-4.0.0", DownloadURL: "dependency-download",
+				}}, nil
+			default:
+				t.Fatalf("unexpected package %s/%s", namespace, name)
+				return thunderstore.Package{}, nil
+			}
+		}}
+		archive := replacementArchive(t, "success")
+		client := &mock.HTTPClient{GetFunc: func(url string) (*http.Response, error) {
+			downloads = append(downloads, url)
+			switch url {
+			case root.DownloadURL:
+			case "dependency-download":
+				t.Setenv("TMPDIR", blockedTemp)
+			default:
+				t.Fatalf("unexpected download %q", url)
+			}
+			return &http.Response{Body: io.NopCloser(bytes.NewReader(archive))}, nil
+		}}
+		err := service.NewModService(f.records, file.NewManager(client, f.server), ts, strings.NewReader("Y\n")).
+			UpdateModByIdentity(f.original.Namespace, f.original.Name)
+		if !errors.Is(err, service.ErrAddDependenciesFailed) || !errors.Is(err, file.ErrBackupCreateFailed) {
+			t.Fatalf("expected dependency backup refusal, got %v", err)
+		}
+		var pathErr *os.PathError
+		if !errors.As(err, &pathErr) || !strings.HasPrefix(pathErr.Path, blockedTemp+string(os.PathSeparator)) {
+			t.Errorf("controlled backup creation cause was lost: %v", err)
+		}
+		if _, completed := err.(*service.ModMutationCleanupError); completed {
+			t.Errorf("backup refusal reported whole-request completion: %v", err)
+		}
+		if !slices.Equal(packages, []string{"Owned/Installed", "Other/Unrelated"}) ||
+			!slices.Equal(downloads, []string{root.DownloadURL, "dependency-download"}) {
+			t.Errorf("failure was reached through the wrong package/download path: %v/%v", packages, downloads)
+		}
+		assertModReplacementState(t, f.server, f.records, f.updatedFiles(), []mod.Mod{f.updatedRecord(), f.other})
+		f.assertNoArtifacts(t)
+	})
 }
 
 func TestInitialInstallFailure_DoesNotDeleteRecords(t *testing.T) {

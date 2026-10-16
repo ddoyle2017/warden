@@ -183,6 +183,9 @@ func TestAddMod_RetryRejectsUnknownMetadata(t *testing.T) {
 		"the wrong root version": {
 			body: strings.ReplaceAll(metadata, "1.0.0", "2.0.0"), wantErr: thunderstore.ErrThunderstoreAPI,
 		},
+		"the wrong version field with a matching root full name": {
+			body: strings.Replace(metadata, `"version_number":"1.0.0"`, `"version_number":"2.0.0"`, 1), wantErr: thunderstore.ErrThunderstoreAPI,
+		},
 		"an omitted dependency list": {
 			body: strings.Replace(metadata, `,"dependencies":[]`, "", 1), wantErr: thunderstore.ErrThunderstoreAPI,
 		},
