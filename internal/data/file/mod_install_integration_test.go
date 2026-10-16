@@ -135,6 +135,9 @@ func TestModInstallRequestOutcomes(t *testing.T) {
 				continue
 			}
 			t.Run(operation+"/"+name, func(t *testing.T) {
+				if operation == "add" && tt.oldDependency {
+					tt.failAt = "Later"
+				}
 				replacing := operation != "add" && (tt.failAt == "Root" || tt.failAt == "Last" ||
 					(operation == "bulk update" && tt.oldDependency && tt.failAt == "First"))
 				replacementPreparationFailure := replacing && tt.failure == "files"

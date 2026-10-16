@@ -81,6 +81,18 @@ func TestAddMod_Sad(t *testing.T) {
 						ID:        1,
 						Namespace: "Azumatt",
 						Name:      "Sleepover",
+						Version:   "1.0.0",
+					}, nil
+				},
+			},
+			ts: &mock.Thunderstore{
+				GetReleaseFunc: func(namespace, name, version string) (thunderstore.Release, error) {
+					if namespace != "Azumatt" || name != "Sleepover" || version != "1.0.0" {
+						t.Fatalf("unexpected installed release %s/%s/%s", namespace, name, version)
+					}
+					return thunderstore.Release{
+						Namespace: namespace, Name: name, VersionNumber: version, FullName: "Azumatt-Sleepover-1.0.0",
+						Dependencies: []string{},
 					}, nil
 				},
 			},
