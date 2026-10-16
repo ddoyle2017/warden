@@ -279,6 +279,9 @@ func TestFrameworkUpdateLookupFailure(t *testing.T) {
 			if !errors.Is(err, tt.wantErr) || !errors.Is(err, tt.cause) {
 				t.Errorf("update error = %v; want %v and %v", err, tt.wantErr, tt.cause)
 			}
+			if tt.wantErr != service.ErrFrameworkNotInstalled && errors.Is(err, service.ErrFrameworkNotInstalled) {
+				t.Errorf("lookup failure misclassified as not installed: %v", err)
+			}
 			if reader.reads != 0 {
 				t.Errorf("lookup failure read confirmation %d times", reader.reads)
 			}
