@@ -214,9 +214,18 @@ func (ms *modService) UpdateAllMods() error {
 	if err != nil {
 		return ErrUnableToListMods
 	}
+	// Count original records, but reject duplicates only when their package is reached.
+	identityCounts := make(map[[2]string]int, len(mods))
+	for _, m := range mods {
+		identityCounts[[2]string{m.Namespace, m.Name}]++
+	}
 
 	// For each one, check if there's an update and install it if there is
 	for _, m := range mods {
+		if identityCounts[[2]string{m.Namespace, m.Name}] > 1 {
+			return fmt.Errorf("%w: %w for %s/%s; inspect installation records before retrying: %w",
+				ErrUnableToUpdateMod, ErrDuplicateModRecords, m.Namespace, m.Name, repo.ErrModFetchMultipleResults)
+		}
 		pkg, err := ms.ts.GetPackage(m.Namespace, m.Name)
 		if err != nil {
 			return ErrModNotFound
