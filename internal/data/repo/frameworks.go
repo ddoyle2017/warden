@@ -41,13 +41,13 @@ func NewFrameworksRepo(db Database) Frameworks {
 func (fr *frameworks) GetFramework(name string) (framework.Framework, error) {
 	rows, err := fr.db.Query(`SELECT * FROM frameworks WHERE name = ?`, name)
 	if err != nil {
-		return framework.Framework{}, ErrFrameworkFetchFailed
+		return framework.Framework{}, fmt.Errorf("%w: %w", ErrFrameworkFetchFailed, err)
 	}
 	defer rows.Close()
 
 	frameworks, err := mapRowsToFramework(rows)
 	if err != nil {
-		return framework.Framework{}, ErrFrameworkMappingFailed
+		return framework.Framework{}, fmt.Errorf("%w: %w", ErrFrameworkMappingFailed, err)
 	}
 	if len(frameworks) == 0 {
 		return framework.Framework{}, ErrFrameworkFetchNoResults
@@ -170,5 +170,5 @@ func mapRowsToFramework(rows *sql.Rows) ([]framework.Framework, error) {
 		}
 		frameworks = append(frameworks, f)
 	}
-	return frameworks, nil
+	return frameworks, rows.Err()
 }

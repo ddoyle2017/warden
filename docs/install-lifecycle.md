@@ -24,9 +24,9 @@ Name-only updates remain supported when exactly one installed record matches.
 An ambiguous name stops the update before a package fetch or file changes and
 lists the matching namespace/name pairs. Use the namespace-qualified syntax in
 the [README](../README.md#usage) to select a package. If listing the matches
-fails, the error is reported without proceeding. Lookup and mapping errors are
-not evidence that a mod is absent: upsert returns the error rather than
-inserting a new record.
+fails, the error is reported without proceeding. Query, mapping, and row-iteration
+errors are not evidence that a mod is absent: upsert returns the error rather
+than inserting a new record, retaining its database cause.
 
 The existing database schema already stores namespace and name separately, so
 this identity rule requires no schema migration or recreation. Duplicate records
@@ -85,6 +85,14 @@ Earlier completed steps can remain in effect if a later step fails.
 | Install BepInEx | Download and unpack the framework into the server directory, move the archive wrapper's contents into place, then insert the framework record. |
 | Update BepInEx | Take one original-server snapshot, copy plugins to a temporary sibling of the server directory, remove and install framework files, preserve existing configuration over packaged defaults, transfer plugin copies through destination-local staging, finalize the server snapshot, then update the framework record. |
 | Remove BepInEx | Remove the framework's known files, including the plugin directory, then delete matching plugin records and the framework record in one database transaction. |
+
+BepInEx bootstrap prompts for installation only after a complete database lookup
+finds no matching record. An existing record makes bootstrap a no-op; it is not
+a check that framework files are intact. Query, mapping, row-iteration, or
+ambiguous-result errors stop bootstrap and the enclosing add command before
+confirmation, package fetches, downloads, backups, or file and record changes.
+Framework lookup failures retain the repository classification and underlying
+cause through installation and update service errors.
 
 Installing or replacing a root mod can succeed before a dependency fails.
 These requests are not all-or-nothing operations.
