@@ -51,7 +51,7 @@ func TestCopyCompletionFailures(t *testing.T) {
 			}{
 				{func() error { return b.create(source, copySnapshot) }, ErrBackupCreateFailed},
 				{func() error {
-					return b.restore(source, restoreOperations{copy: copySnapshot, rename: os.Rename, removeAll: os.RemoveAll})
+					return b.restore(source, restoreOperations{copy: copySnapshot, chmod: os.Chmod, rename: os.Rename, removeAll: os.RemoveAll})
 				}, ErrBackupRestoreFailed},
 			} {
 				err := operation.run()

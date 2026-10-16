@@ -62,6 +62,7 @@ func TestUpdateBepInExPartialRemoval(t *testing.T) {
 					}
 					assertRestoreTree(t, server, partial)
 					return b.restore(destination, restoreOperations{
+						chmod: os.Chmod,
 						copy: func(source, target string) error {
 							if source != snapshot {
 								t.Fatalf("restoring %q instead of the original snapshot %q", source, snapshot)
@@ -169,6 +170,7 @@ func TestUpdateBepInExRecoveryErrors(t *testing.T) {
 				Backup: b, remove: b.Remove,
 				restore: func(destination string) error {
 					return b.restore(destination, restoreOperations{
+						chmod: os.Chmod,
 						copy: func(source, target string) error {
 							if source != snapshot {
 								t.Fatalf("restoring %q instead of the original snapshot %q", source, snapshot)
@@ -455,7 +457,7 @@ func TestInstallBepInExRollbackCleanup(t *testing.T) {
 		restore: func(destination string) error {
 			snapshot = *b.Path()
 			return b.restore(destination, restoreOperations{
-				copy: copyDirectory, rename: os.Rename,
+				copy: copyDirectory, chmod: os.Chmod, rename: os.Rename,
 				removeAll: func(path string) error {
 					if path == snapshot {
 						if err := os.Remove(filepath.Join(path, "server-data")); err != nil {

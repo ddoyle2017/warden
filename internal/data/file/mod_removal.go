@@ -40,6 +40,28 @@ type modRemoval struct {
 }
 
 func (m *manager) stageModRemoval(target string, recreate bool, operationErr error) (ModRemoval, error) {
+	return m.stageModRemovalWithOperations(target, recreate, operationErr, modRemovalOperations{
+		mkdir:  os.Mkdir,
+		chmod:  os.Chmod,
+		rename: os.Rename,
+	})
+}
+
+type modRemovalOperations struct {
+	mkdir  func(string, os.FileMode) error
+	chmod  func(string, os.FileMode) error
+	rename func(string, string) error
+}
+
+func (m *manager) stageModRemovalWithOperations(target string, recreate bool, operationErr error, ops modRemovalOperations) (ModRemoval, error) {
+	var mode os.FileMode
+	if recreate {
+		info, err := os.Stat(target)
+		if err != nil {
+			return nil, fmt.Errorf("%w: inspect %q: %w", operationErr, target, err)
+		}
+		mode = info.Mode()
+	}
 	r := &modRemoval{backup: NewBackup(), target: target, removeStaged: os.RemoveAll}
 	if err := r.backup.Create(m.modDirectory); err != nil {
 		return nil, fmt.Errorf("%w: %w", operationErr, err)
@@ -51,12 +73,21 @@ func (m *manager) stageModRemoval(target string, recreate bool, operationErr err
 		return nil, errors.Join(fmt.Errorf("%w: %w", operationErr, err), r.cleanup())
 	}
 	r.staging = staging
-	if err := os.Rename(target, filepath.Join(staging, "contents")); err != nil {
+	replacement := filepath.Join(staging, "replacement")
+	if recreate {
+		if err := ops.mkdir(replacement, mode); err != nil {
+			return nil, errors.Join(fmt.Errorf("%w: prepare %q: %w", ErrDirectoryCreateFailed, replacement, err), r.cleanup())
+		}
+		if err := ops.chmod(replacement, mode); err != nil {
+			return nil, errors.Join(fmt.Errorf("%w: set replacement permissions for %q: %w", ErrDirectoryCreateFailed, target, err), r.cleanup())
+		}
+	}
+	if err := ops.rename(target, filepath.Join(staging, "contents")); err != nil {
 		return nil, errors.Join(fmt.Errorf("%w: %w", operationErr, err), r.cleanup())
 	}
 	if recreate {
-		if err := os.MkdirAll(target, os.ModePerm); err != nil {
-			return nil, errors.Join(fmt.Errorf("%w: %w", ErrDirectoryCreateFailed, err), r.Rollback())
+		if err := ops.rename(replacement, target); err != nil {
+			return nil, errors.Join(fmt.Errorf("%w: publish %q: %w", ErrDirectoryCreateFailed, target, err), r.Rollback())
 		}
 		r.recreated = true
 	}

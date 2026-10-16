@@ -13,17 +13,25 @@ import (
 func TestRestoreTransferFailures(t *testing.T) {
 	tests := map[string]struct {
 		copyFailure    bool
+		modeFailure    bool
 		retainFailure  bool
 		publishFailure bool
 		recoverFailure bool
 		cleanupFailure bool
 		missing        bool
+		retryMissing   bool
 	}{
 		"given a partial copy failure, when restoring, then retain the live tree and retryable backup": {
 			copyFailure: true,
 		},
 		"given a copy and cleanup failure, when restoring, then report both errors and the partial copy": {
 			copyFailure: true, cleanupFailure: true,
+		},
+		"given a missing prepared root, when setting permissions fails, then retain the live tree and retryable backup": {
+			modeFailure: true,
+		},
+		"given a missing destination and prepared root, when setting permissions fails, then retain the retryable backup": {
+			modeFailure: true, missing: true,
 		},
 		"given a failed prior-tree rename, when restoring, then leave live files untouched": {
 			retainFailure: true,
@@ -37,6 +45,9 @@ func TestRestoreTransferFailures(t *testing.T) {
 		"given failed publishing and recovery, when restoring, then retain both trees and report their paths": {
 			publishFailure: true, recoverFailure: true,
 		},
+		"given failed publishing and recovery, when retrying the absent destination, then restore the saved root mode": {
+			publishFailure: true, recoverFailure: true, retryMissing: true,
+		},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -45,9 +56,15 @@ func TestRestoreTransferFailures(t *testing.T) {
 			saved := map[string]string{"a-plugin": "saved plugin", "nested/config": "saved configuration"}
 			live := map[string]string{"live-only": "irreplaceable live bytes"}
 			writeRestoreTree(t, source, saved)
+			if err := os.Chmod(source, 0o700); err != nil {
+				t.Fatal(err)
+			}
 			destination := filepath.Join(parent, "server")
 			if !tt.missing {
 				writeRestoreTree(t, destination, live)
+				if err := os.Chmod(destination, 0o775); err != nil {
+					t.Fatal(err)
+				}
 			}
 			b := NewBackup().(*backup)
 			if err := b.Create(source); err != nil {
@@ -57,8 +74,17 @@ func TestRestoreTransferFailures(t *testing.T) {
 			copyErr, recoveryErr, cleanupErr := errors.New("copy interrupted"), errors.New("recovery interrupted"), errors.New("cleanup interrupted")
 			var staging string
 			ops := restoreOperations{
+				chmod: os.Chmod,
 				copy: func(source, target string) error {
 					staging = filepath.Dir(target)
+					for _, path := range []string{snapshot, staging} {
+						if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o700 {
+							t.Fatalf("snapshot or staging container is not private: %v, %v", info, err)
+						}
+					}
+					if tt.modeFailure {
+						return os.Remove(target)
+					}
 					if tt.copyFailure {
 						if err := copyFile(filepath.Join(source, "a-plugin"), filepath.Join(target, "a-plugin")); err != nil {
 							t.Fatal(err)
@@ -68,8 +94,22 @@ func TestRestoreTransferFailures(t *testing.T) {
 					return copyDirectory(source, target)
 				},
 				rename: func(source, target string) error {
-					if tt.copyFailure {
-						t.Fatal("attempted publication after an incomplete copy")
+					if tt.copyFailure || tt.modeFailure {
+						t.Fatal("attempted publication after failed preparation")
+					}
+					for _, path := range []string{snapshot, staging} {
+						if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o700 {
+							t.Fatalf("publication broadened a private container: %v, %v", info, err)
+						}
+					}
+					if filepath.Base(source) == "replacement" {
+						wantMode := os.FileMode(0o775)
+						if tt.missing {
+							wantMode = 0o700
+						}
+						if info, err := os.Stat(source); err != nil || info.Mode().Perm() != wantMode {
+							t.Errorf("replacement mode before publication = %v, %v; want %04o", info, err, wantMode)
+						}
 					}
 					if (tt.retainFailure && source == destination) || (tt.publishFailure && filepath.Base(source) == "replacement") {
 						return &os.LinkError{Op: "rename", Old: source, New: target, Err: syscall.EXDEV}
@@ -94,6 +134,12 @@ func TestRestoreTransferFailures(t *testing.T) {
 			if tt.copyFailure && !errors.Is(err, copyErr) {
 				t.Errorf("copy error was lost: %v", err)
 			}
+			if tt.modeFailure {
+				var pathErr *os.PathError
+				if !errors.Is(err, os.ErrNotExist) || !errors.As(err, &pathErr) || pathErr.Op != "chmod" {
+					t.Errorf("expected a permission-application failure, got %v", err)
+				}
+			}
 			if (tt.retainFailure || tt.publishFailure) && !errors.Is(err, syscall.EXDEV) {
 				t.Errorf("rename error was lost: %v", err)
 			}
@@ -110,6 +156,9 @@ func TestRestoreTransferFailures(t *testing.T) {
 				}
 			} else {
 				assertRestoreTree(t, destination, live)
+				if info, err := os.Stat(destination); err != nil || info.Mode().Perm() != 0o775 {
+					t.Errorf("failed restoration changed the live root's mode: %v, %v", info, err)
+				}
 			}
 			if tt.recoverFailure {
 				previous, replacement := filepath.Join(staging, "previous"), filepath.Join(staging, "replacement")
@@ -123,10 +172,12 @@ func TestRestoreTransferFailures(t *testing.T) {
 				}
 				assertRestoreTree(t, previous, live)
 				assertRestoreTree(t, replacement, saved)
-				if err := os.Rename(previous, destination); err != nil {
-					t.Fatalf("manual recovery from the reported path failed: %v", err)
+				if !tt.retryMissing {
+					if err := os.Rename(previous, destination); err != nil {
+						t.Fatalf("manual recovery from the reported path failed: %v", err)
+					}
+					assertRestoreTree(t, destination, live)
 				}
-				assertRestoreTree(t, destination, live)
 			}
 			if tt.cleanupFailure {
 				assertRestoreTree(t, filepath.Join(staging, "replacement"), map[string]string{"a-plugin": "saved plugin"})
@@ -140,6 +191,20 @@ func TestRestoreTransferFailures(t *testing.T) {
 				t.Fatalf("retry failed: %v", err)
 			}
 			assertRestoreTree(t, destination, saved)
+			wantMode := os.FileMode(0o775)
+			if tt.missing || tt.retryMissing {
+				wantMode = 0o700
+			}
+			if info, err := os.Stat(destination); err != nil || info.Mode().Perm() != wantMode {
+				t.Errorf("successful retry root mode = %v, %v; want %04o", info, err, wantMode)
+			}
+			if tt.retryMissing {
+				assertRestoreTree(t, filepath.Join(staging, "previous"), live)
+				assertRestoreTree(t, filepath.Join(staging, "replacement"), saved)
+				if info, err := os.Stat(staging); err != nil || info.Mode().Perm() != 0o700 {
+					t.Errorf("retry broadened retained recovery staging: %v, %v", info, err)
+				}
+			}
 			if b.Path() != nil {
 				t.Error("successful retry did not consume the backup")
 			}
@@ -160,7 +225,8 @@ func TestRestoreCrossDeviceTransfer(t *testing.T) {
 	}
 	snapshot, renamed := *b.Path(), false
 	err := b.restore(destination, restoreOperations{
-		copy: copyDirectory,
+		copy:  copyDirectory,
+		chmod: os.Chmod,
 		rename: func(source, target string) error {
 			// Treat the backup directory as another device, without mounts.
 			if strings.HasPrefix(source, snapshot+string(os.PathSeparator)) || source == snapshot {
@@ -212,6 +278,7 @@ func TestRestoreCleanupFailures(t *testing.T) {
 			var staging string
 			err := b.restore(destination, restoreOperations{
 				copy:   copyDirectory,
+				chmod:  os.Chmod,
 				rename: os.Rename,
 				removeAll: func(path string) error {
 					if path == snapshot && tt.snapshot {
