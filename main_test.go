@@ -42,9 +42,35 @@ func TestCLIExitStatus(t *testing.T) {
 			args: []string{"update", "--mod", "NotInstalled"}, exit: 1,
 			stderr: []string{"mod not installed, update stopped"},
 		},
-		"given a missing qualified mod, when updating, then exit one without falling back": {
+		"given a same-name mod in another namespace, when updating an empty namespace, then do not fall back": {
 			args: []string{"update", "--namespace", "", "--mod", "NotInstalled"}, exit: 1,
 			stderr: []string{"mod not installed, update stopped"},
+			prepare: func(t *testing.T, f cliFixture) {
+				if err := repo.NewModsRepo(openCLIDatabase(t, f)).InsertMod(mod.Mod{
+					Namespace: "Owner", Name: "NotInstalled", Version: "1.0.0",
+					FilePath: filepath.Join(f.server, "BepInEx", "plugins", "Owner-NotInstalled-1.0.0"),
+				}); err != nil {
+					t.Fatal(err)
+				}
+			},
+			verify: func(t *testing.T, f cliFixture) {
+				records, err := repo.NewModsRepo(openCLIDatabase(t, f)).ListMods()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(records) != 1 || records[0].Namespace != "Owner" ||
+					records[0].Name != "NotInstalled" || records[0].Version != "1.0.0" {
+					t.Errorf("qualified miss changed the other namespace's record: %+v", records)
+				}
+			},
+		},
+		"given a missing mod, when confirming removal, then exit one with one runtime diagnostic": {
+			args: []string{"remove", "--namespace", "Owner", "--mod", "NotInstalled"}, input: "Y\n", exit: 1,
+			stderr: []string{"mod not installed"},
+		},
+		"given no framework record, when updating BepInEx, then exit one with one runtime diagnostic": {
+			args: []string{"update", "bepinex"}, exit: 1,
+			stderr: []string{"BepInEx is not installed"},
 		},
 		"given a missing required flag, when updating, then reject input with usage once": {
 			args: []string{"update"}, exit: 1, usage: true,
@@ -150,8 +176,8 @@ func TestCLIExitStatus(t *testing.T) {
 				}
 			}
 			for _, want := range tt.stderr {
-				if strings.Count(stderr, want) != 1 {
-					t.Errorf("stderr must contain %q once: %q", want, stderr)
+				if strings.Count(stderr, want) != 1 || strings.Count(stdout+stderr, want) != 1 {
+					t.Errorf("diagnostic %q must appear once, only on stderr: stdout=%q, stderr=%q", want, stdout, stderr)
 				}
 			}
 			wantErrors, wantUsage := 0, 0
@@ -166,7 +192,8 @@ func TestCLIExitStatus(t *testing.T) {
 			if tt.usage {
 				wantUsage = 1
 			}
-			if strings.Count(stderr, "Error:") != wantErrors || strings.Count(stdout+stderr, "Usage:") != wantUsage {
+			if strings.Count(stderr, "Error:") != wantErrors || strings.Count(stdout+stderr, "Error:") != wantErrors ||
+				strings.Count(stdout+stderr, "Usage:") != wantUsage {
 				t.Errorf("unexpected error/usage reporting: stdout=%q, stderr=%q", stdout, stderr)
 			}
 			for _, forbidden := range tt.forbidden {

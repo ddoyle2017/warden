@@ -105,8 +105,9 @@ Commands exit with status `0` on success, deliberate cancellation, known
 no-change or already-installed outcomes, and completed requests with cleanup
 warnings. Warnings still need attention even when the exit status is `0`.
 Runtime failures and rejected input exit with status `1` and report the failure
-once on standard error. Runtime failures do not print command usage; invalid
-flags and arguments still do.
+once on standard error. Runtime failures do not print command usage. Cobra flag
+and argument validation errors, such as missing required flags or an invalid
+game type, include usage. An unknown configuration key is reported without usage.
 
 A nonzero status does not mean that no files or records changed. In particular,
 a successful BepInEx bootstrap does not turn a later mod failure into success.

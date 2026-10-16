@@ -51,6 +51,52 @@ func TestCommandRuntimeFailures(t *testing.T) {
 	}
 }
 
+func TestCommandKnownFailures(t *testing.T) {
+	for name, tt := range map[string]struct {
+		operations []string
+		result     error
+	}{
+		"missing mod": {
+			operations: []string{"remove mod", "update mod", "update qualified"},
+			result:     service.ErrModNotInstalled,
+		},
+		"missing framework": {
+			operations: []string{"update framework"}, result: service.ErrFrameworkNotInstalled,
+		},
+		"framework lookup failure": {
+			operations: []string{"bootstrap"}, result: service.ErrFrameworkNotFound,
+		},
+		"mod lookup failure": {
+			operations: []string{"add", "update mod", "update qualified", "update all"},
+			result:     service.ErrModNotFound,
+		},
+		"exhausted confirmation": {
+			operations: []string{"bootstrap", "update mod", "update qualified", "update all", "update framework",
+				"remove mod", "remove all", "remove framework"},
+			result: service.ErrMaxAttempts,
+		},
+	} {
+		for _, operation := range tt.operations {
+			t.Run("given "+name+", when executing "+operation+", then retain the failure and report it once", func(t *testing.T) {
+				calls := 0
+				cmd, args := runtimeCommand(t, operation, func() error {
+					calls++
+					return tt.result
+				})
+				output, err := runOutcomeCommand(t, cmd, args...)
+				if !errors.Is(err, tt.result) || calls != 1 {
+					t.Errorf("command lost the service failure: calls=%d, error=%v", calls, err)
+				}
+				if strings.Count(output, tt.result.Error()) != 1 || strings.Count(output, "Error:") != 1 ||
+					strings.Contains(output, "Usage:") || strings.Contains(output, "successfully") ||
+					strings.Contains(output, "warning:") {
+					t.Errorf("failure was hidden, duplicated or reported as success: %q", output)
+				}
+			})
+		}
+	}
+}
+
 func TestCommandSuccessOutput(t *testing.T) {
 	for operation, want := range map[string]string{
 		"add":              "... successfully installed mod! ...\n",
@@ -303,12 +349,6 @@ func TestConfigCommandPersistence(t *testing.T) {
 
 func TestExecuteReusedCommand(t *testing.T) {
 	cause := errors.New("injected list failure")
-	var result error = cause
-	calls := 0
-	cmd := command.NewListCommand(&listCommandStub{list: func() ([]mod.Mod, error) {
-		calls++
-		return nil, result
-	}})
 	for _, tt := range []struct {
 		name       string
 		args       []string
@@ -318,17 +358,33 @@ func TestExecuteReusedCommand(t *testing.T) {
 		usage      int
 		diagnostic string
 	}{
-		{name: "runtime failure", result: cause, wantErr: true, calls: 1, diagnostic: cause.Error()},
+		{name: "runtime failure after failure", result: cause, wantErr: true, calls: 2, diagnostic: cause.Error()},
 		{name: "invalid flag after failure", args: []string{"--invalid"}, wantErr: true, calls: 1, usage: 1, diagnostic: "unknown flag"},
 		{name: "success after failure", calls: 2, diagnostic: "no mods are installed"},
-		{name: "help after failure", args: []string{"--help"}, calls: 2, usage: 1, diagnostic: "List all currently installed mods"},
+		{name: "help after failure", args: []string{"--help"}, calls: 1, usage: 1, diagnostic: "List all currently installed mods"},
 	} {
 		t.Run("given a reused command, when executing "+tt.name+", then use only the current outcome", func(t *testing.T) {
+			var result error = cause
+			calls := 0
+			cmd := command.NewListCommand(&listCommandStub{list: func() ([]mod.Mod, error) {
+				calls++
+				return nil, result
+			}})
+			initialOutput, initialErr := runOutcomeCommand(t, cmd)
+			if !errors.Is(initialErr, cause) || calls != 1 ||
+				strings.Count(initialOutput, cause.Error()) != 1 || strings.Count(initialOutput, "Error:") != 1 ||
+				strings.Contains(initialOutput, "Usage:") {
+				t.Fatalf("initial runtime failure was not established: calls=%d, error=%v, output=%q", calls, initialErr, initialOutput)
+			}
 			result = tt.result
 			output, err := runOutcomeCommand(t, cmd, tt.args...)
+			wantErrors := 0
+			if tt.wantErr {
+				wantErrors = 1
+			}
 			if (err != nil) != tt.wantErr || (tt.result != nil && !errors.Is(err, tt.result)) ||
 				calls != tt.calls || strings.Count(output, "Usage:") != tt.usage ||
-				strings.Count(output, tt.diagnostic) != 1 {
+				strings.Count(output, "Error:") != wantErrors || strings.Count(output, tt.diagnostic) != 1 {
 				t.Errorf("prior invocation leaked into execution: calls=%d, error=%v, output=%q", calls, err, output)
 			}
 		})
