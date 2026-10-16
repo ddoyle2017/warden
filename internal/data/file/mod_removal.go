@@ -40,6 +40,20 @@ type modRemoval struct {
 }
 
 func (m *manager) stageModRemoval(target string, recreate bool, operationErr error) (ModRemoval, error) {
+	return m.stageModRemovalWithOperations(target, recreate, operationErr, modRemovalOperations{
+		mkdir:  os.Mkdir,
+		chmod:  os.Chmod,
+		rename: os.Rename,
+	})
+}
+
+type modRemovalOperations struct {
+	mkdir  func(string, os.FileMode) error
+	chmod  func(string, os.FileMode) error
+	rename func(string, string) error
+}
+
+func (m *manager) stageModRemovalWithOperations(target string, recreate bool, operationErr error, ops modRemovalOperations) (ModRemoval, error) {
 	var mode os.FileMode
 	if recreate {
 		info, err := os.Stat(target)
@@ -61,18 +75,18 @@ func (m *manager) stageModRemoval(target string, recreate bool, operationErr err
 	r.staging = staging
 	replacement := filepath.Join(staging, "replacement")
 	if recreate {
-		if err := os.Mkdir(replacement, mode); err != nil {
+		if err := ops.mkdir(replacement, mode); err != nil {
 			return nil, errors.Join(fmt.Errorf("%w: prepare %q: %w", ErrDirectoryCreateFailed, replacement, err), r.cleanup())
 		}
-		if err := os.Chmod(replacement, mode); err != nil {
+		if err := ops.chmod(replacement, mode); err != nil {
 			return nil, errors.Join(fmt.Errorf("%w: set replacement permissions for %q: %w", ErrDirectoryCreateFailed, target, err), r.cleanup())
 		}
 	}
-	if err := os.Rename(target, filepath.Join(staging, "contents")); err != nil {
+	if err := ops.rename(target, filepath.Join(staging, "contents")); err != nil {
 		return nil, errors.Join(fmt.Errorf("%w: %w", operationErr, err), r.cleanup())
 	}
 	if recreate {
-		if err := os.Rename(replacement, target); err != nil {
+		if err := ops.rename(replacement, target); err != nil {
 			return nil, errors.Join(fmt.Errorf("%w: publish %q: %w", ErrDirectoryCreateFailed, target, err), r.Rollback())
 		}
 		r.recreated = true

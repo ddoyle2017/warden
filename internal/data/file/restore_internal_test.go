@@ -74,6 +74,7 @@ func TestRestoreTransferFailures(t *testing.T) {
 			copyErr, recoveryErr, cleanupErr := errors.New("copy interrupted"), errors.New("recovery interrupted"), errors.New("cleanup interrupted")
 			var staging string
 			ops := restoreOperations{
+				chmod: os.Chmod,
 				copy: func(source, target string) error {
 					staging = filepath.Dir(target)
 					for _, path := range []string{snapshot, staging} {
@@ -224,7 +225,8 @@ func TestRestoreCrossDeviceTransfer(t *testing.T) {
 	}
 	snapshot, renamed := *b.Path(), false
 	err := b.restore(destination, restoreOperations{
-		copy: copyDirectory,
+		copy:  copyDirectory,
+		chmod: os.Chmod,
 		rename: func(source, target string) error {
 			// Treat the backup directory as another device, without mounts.
 			if strings.HasPrefix(source, snapshot+string(os.PathSeparator)) || source == snapshot {
@@ -276,6 +278,7 @@ func TestRestoreCleanupFailures(t *testing.T) {
 			var staging string
 			err := b.restore(destination, restoreOperations{
 				copy:   copyDirectory,
+				chmod:  os.Chmod,
 				rename: os.Rename,
 				removeAll: func(path string) error {
 					if path == snapshot && tt.snapshot {

@@ -129,20 +129,26 @@ renaming any live files. The snapshot itself is never renamed across
 filesystems. For an existing destination, restoration captures its permission
 mode before preparation; for a missing destination, it uses the source root's
 mode retained with the backup. The existing destination's mode takes precedence
-even when it is more restrictive than the source's. Restoration applies the
-selected mode to the completed replacement inside private staging, independently
-of the process umask and without changing the private containers' permissions.
-Permission inspection or application failure leaves live files and the active
-backup unchanged, as do other preparation failures. Publishing first moves the
-prior tree aside; if publishing fails, restoration moves that tree back.
-If recovery also fails, the error identifies the retained prior tree, prepared
-replacement, and original backup. Keep these paths until the intended tree has
-been recovered and inspected.
+even when it is more restrictive than the source's. The prepared replacement
+retains owner access needed for publication and failed-attempt cleanup; group
+and other permissions follow the selected mode. Backup and staging containers
+remain private. Preparation failures leave live files and the active backup
+unchanged.
 
-Successful publication consumes the active backup before cleanup, even if
-cleanup fails. Explicit backup removal also consumes its handle before deleting
-files. Cleanup errors identify leftover paths; a partially deleted snapshot is
-not offered for another restore. The restored destination remains available.
+Publishing first moves the prior tree aside; if publishing fails, restoration
+moves that tree back. A restrictive final root mode is applied after publication,
+before consuming the backup. If that permission change fails, restoration attempts
+to withdraw the new tree into staging and recover the prior destination, or leave
+the destination absent if it was absent before. The backup remains active. If a
+recovery rename also fails, the error identifies the published or staged
+replacement, any retained prior tree, and the original backup. Keep those paths
+and recover the intended destination before retrying.
+
+Successful publication and root-permission finalization consume the active
+backup before cleanup, even if cleanup fails. Explicit backup removal also
+consumes its handle before deleting files. Cleanup errors identify leftover
+paths; a partially deleted snapshot is not offered for another restore. The
+restored destination remains available.
 Missing destinations and parents are supported, but restoration rejects
 non-directory or symlink targets, filesystem roots, working-directory
 ancestors, and paths overlapping the backup, including resolved aliases.
@@ -169,7 +175,7 @@ installation, configuration-preservation, or incomplete plugin-transfer failure
 triggers restoration of the original framework, plugins, configuration, and
 unrelated server files. Configuration file/directory conflicts and read or copy
 errors fail the update rather than discarding settings. If restoration fails
-before publication, the file-layer error identifies the retained server
+before completion, the file-layer error identifies the retained server
 snapshot for recovery. Standalone framework installation and removal keep their
 own guarded backups and report restoration and cleanup failures.
 

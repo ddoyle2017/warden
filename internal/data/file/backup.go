@@ -24,8 +24,8 @@ type Backup interface {
 	// report leftovers, not a retryable snapshot.
 	Remove() error
 
-	// Restores a complete copy before consuming the backup. Failures before
-	// publication retain the snapshot; cleanup failures report leftover paths.
+	// Restores a complete copy and its root permissions before consuming the
+	// backup. Earlier failures retain the snapshot; cleanup failures report leftovers.
 	// Preserves existing destination permissions, or the saved source root's
 	// permissions when the destination is missing.
 	Restore(destination string) error
@@ -73,6 +73,7 @@ func (b *backup) create(source string, copySnapshot func(string, string) error) 
 func (b *backup) Restore(destination string) error {
 	return b.restore(destination, restoreOperations{
 		copy:      copyDirectory,
+		chmod:     os.Chmod,
 		rename:    os.Rename,
 		removeAll: os.RemoveAll,
 	})
@@ -80,6 +81,7 @@ func (b *backup) Restore(destination string) error {
 
 type restoreOperations struct {
 	copy      func(string, string) error
+	chmod     func(string, os.FileMode) error
 	rename    func(string, string) error
 	removeAll func(string) error
 }
@@ -130,27 +132,45 @@ func (b *backup) restore(destination string, ops restoreOperations) (err error) 
 	if err := ops.copy(snapshot, replacement); err != nil {
 		return fmt.Errorf("%w: copy backup %q: %w", ErrBackupRestoreFailed, snapshot, err)
 	}
-	// The published root's permissions are independent of the private containers.
-	if err := os.Chmod(replacement, rootMode); err != nil {
+	// Cross-parent renames and failed-attempt cleanup still need owner access.
+	preparedMode := rootMode | 0o700
+	if err := ops.chmod(replacement, preparedMode); err != nil {
 		return fmt.Errorf("%w: set replacement permissions for %q: %w", ErrBackupRestoreFailed, destination, err)
 	}
 
 	previous := filepath.Join(staging, "previous")
+	recoverPrevious := func(cause error) error {
+		if hadDestination {
+			if recoveryErr := ops.rename(previous, destination); recoveryErr != nil {
+				preserveStaging = true
+				return errors.Join(cause, fmt.Errorf("recover %q from %q: %w; replacement retained at %q, backup at %q",
+					destination, previous, recoveryErr, replacement, snapshot))
+			}
+		}
+		return cause
+	}
 	if hadDestination {
 		if err := ops.rename(destination, previous); err != nil {
 			return fmt.Errorf("%w: retain prior tree %q: %w", ErrBackupRestoreFailed, destination, err)
 		}
 	}
 	if err := ops.rename(replacement, destination); err != nil {
-		publishErr := fmt.Errorf("%w: publish to %q: %w", ErrBackupRestoreFailed, destination, err)
-		if hadDestination {
-			if recoveryErr := ops.rename(previous, destination); recoveryErr != nil {
+		return recoverPrevious(fmt.Errorf("%w: publish to %q: %w", ErrBackupRestoreFailed, destination, err))
+	}
+	if preparedMode != rootMode {
+		if modeErr := ops.chmod(destination, rootMode); modeErr != nil {
+			restoreErr := fmt.Errorf("%w: finalize root permissions at %q: %w", ErrBackupRestoreFailed, destination, modeErr)
+			if recoveryErr := ops.rename(destination, replacement); recoveryErr != nil {
 				preserveStaging = true
-				return errors.Join(publishErr, fmt.Errorf("recover %q from %q: %w; replacement retained at %q, backup at %q",
-					destination, previous, recoveryErr, replacement, snapshot))
+				recoveryErr = fmt.Errorf("withdraw restored tree %q to %q: %w; backup retained at %q, restore staging retained at %q",
+					destination, replacement, recoveryErr, snapshot, staging)
+				if hadDestination {
+					recoveryErr = fmt.Errorf("%w; prior tree retained at %q", recoveryErr, previous)
+				}
+				return errors.Join(restoreErr, recoveryErr)
 			}
+			return recoverPrevious(restoreErr)
 		}
-		return publishErr
 	}
 
 	published = true
