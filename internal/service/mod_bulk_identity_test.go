@@ -101,7 +101,7 @@ func TestUpdateAllMods_DuplicateIdentityPreservesState(t *testing.T) {
 				releases[identity] = release
 				payloads[release.DownloadURL] = m.Namespace + " 2.0.0 bytes"
 			}
-			var fetched, downloaded, removed, installed, written []string
+			var fetched, downloaded, replacedFrom, replacedTo, written []string
 			client := &mock.HTTPClient{GetFunc: func(url string) (*http.Response, error) {
 				downloaded = append(downloaded, url)
 				contents, ok := payloads[url]
@@ -113,13 +113,10 @@ func TestUpdateAllMods_DuplicateIdentityPreservesState(t *testing.T) {
 			files := file.NewManager(client, server)
 			fm := &mock.Manager{
 				ValidateModInstallFunc: files.ValidateModInstall,
-				RemoveModFunc: func(fullName string) error {
-					removed = append(removed, fullName)
-					return files.RemoveMod(fullName)
-				},
-				InstallModFunc: func(url, fullName string) (string, error) {
-					installed = append(installed, fullName)
-					return files.InstallMod(url, fullName)
+				ReplaceModFunc: func(url, oldFullName, newFullName string) (file.ModReplacement, error) {
+					replacedFrom = append(replacedFrom, oldFullName)
+					replacedTo = append(replacedTo, newFullName)
+					return files.ReplaceMod(url, oldFullName, newFullName)
 				},
 			}
 			r := &mock.ModsRepo{
@@ -149,13 +146,13 @@ func TestUpdateAllMods_DuplicateIdentityPreservesState(t *testing.T) {
 			if err == nil || !strings.Contains(err.Error(), "AuthorA/Shared") {
 				t.Errorf("duplicate error does not identify the package: %v", err)
 			}
-			var wantIdentities, wantDownloads, wantRemoved, wantInstalled []string
+			var wantIdentities, wantDownloads, wantReplacedFrom, wantReplacedTo []string
 			if tt.earlierSuccess {
 				latest := releases["Owned/Earlier"]
 				wantIdentities = []string{"Owned/Earlier"}
 				wantDownloads = []string{latest.DownloadURL}
-				wantRemoved = []string{earlier.FullName()}
-				wantInstalled = []string{latest.FullName}
+				wantReplacedFrom = []string{earlier.FullName()}
+				wantReplacedTo = []string{latest.FullName}
 				delete(wantFiles, pluginPath(earlier.FullName()))
 				wantFiles[pluginPath(latest.FullName)] = "Owned 2.0.0 bytes"
 				for i := range wantRecords {
@@ -173,8 +170,8 @@ func TestUpdateAllMods_DuplicateIdentityPreservesState(t *testing.T) {
 			}{
 				{"package fetches", fetched, wantIdentities},
 				{"downloads", downloaded, wantDownloads},
-				{"removals", removed, wantRemoved},
-				{"installs", installed, wantInstalled},
+				{"replacement sources", replacedFrom, wantReplacedFrom},
+				{"replacement destinations", replacedTo, wantReplacedTo},
 				{"record writes", written, wantIdentities},
 			} {
 				if !slices.Equal(calls.got, calls.want) {

@@ -237,6 +237,13 @@ func (ms *modService) UpdateAllMods() error {
 	for _, m := range mods {
 		identityCounts[[2]string{m.Namespace, m.Name}]++
 	}
+	validateIdentity := func(namespace, name string) error {
+		if identityCounts[[2]string{namespace, name}] > 1 {
+			return fmt.Errorf("%w: %w for %s/%s; inspect installation records before retrying: %w",
+				ErrUnableToUpdateMod, ErrDuplicateModRecords, namespace, name, repo.ErrModFetchMultipleResults)
+		}
+		return nil
+	}
 
 	selected := make(map[[2]string]mod.Mod, len(mods))
 	for _, m := range mods {
@@ -244,6 +251,9 @@ func (ms *modService) UpdateAllMods() error {
 	}
 	updated := make(map[[2]string]thunderstore.Release)
 	replace := func(current mod.Mod, latest thunderstore.Release) (cleanupErr, failure error) {
+		if err := validateIdentity(current.Namespace, current.Name); err != nil {
+			return nil, err
+		}
 		newer, err := hasNewerRelease(current.Version, latest.VersionNumber)
 		if err != nil {
 			return nil, fmt.Errorf("%s/%s: %w", current.Namespace, current.Name, err)
@@ -270,9 +280,8 @@ func (ms *modService) UpdateAllMods() error {
 
 	var cleanupErr error
 	for _, m := range mods {
-		if identityCounts[[2]string{m.Namespace, m.Name}] > 1 {
-			return modMutationResult(cleanupErr, fmt.Errorf("%w: %w for %s/%s; inspect installation records before retrying: %w",
-				ErrUnableToUpdateMod, ErrDuplicateModRecords, m.Namespace, m.Name, repo.ErrModFetchMultipleResults))
+		if err := validateIdentity(m.Namespace, m.Name); err != nil {
+			return modMutationResult(cleanupErr, err)
 		}
 		identity := [2]string{m.Namespace, m.Name}
 		latest, alreadyUpdated := updated[identity]
@@ -294,7 +303,7 @@ func (ms *modService) UpdateAllMods() error {
 			}
 		}
 		// A dependency may already be replaced, but its own selected turn still owns its direct dependencies.
-		dependencyCleanup, err := ms.addDependenciesWithInstaller(latest.Dependencies, installDependency)
+		dependencyCleanup, err := ms.addDependenciesWithInstaller(latest.Dependencies, installDependency, validateIdentity)
 		cleanupErr = errors.Join(cleanupErr, dependencyCleanup)
 		if err != nil {
 			return modMutationResult(cleanupErr, fmt.Errorf("%w: %w", ErrAddDependenciesFailed, err))
@@ -361,10 +370,10 @@ func (ms *modService) finishModRemoval(removal file.ModRemoval, deleteRecords fu
 }
 
 func (ms *modService) addDependencies(dependencies []string) (cleanupErr, failure error) {
-	return ms.addDependenciesWithInstaller(dependencies, ms.installMod)
+	return ms.addDependenciesWithInstaller(dependencies, ms.installMod, nil)
 }
 
-func (ms *modService) addDependenciesWithInstaller(dependencies []string, install func(thunderstore.Release) (error, error)) (cleanupErr, failure error) {
+func (ms *modService) addDependenciesWithInstaller(dependencies []string, install func(thunderstore.Release) (error, error), validateIdentity func(string, string) error) (cleanupErr, failure error) {
 	for _, dep := range dependencies {
 		details := strings.Split(dep, "-")
 		namespace, name := details[0], details[1]
@@ -372,6 +381,11 @@ func (ms *modService) addDependenciesWithInstaller(dependencies []string, instal
 		// If dep is BepInEx, skip
 		if name == framework.BepInEx {
 			continue
+		}
+		if validateIdentity != nil {
+			if err := validateIdentity(namespace, name); err != nil {
+				return cleanupErr, err
+			}
 		}
 
 		pkg, err := ms.ts.GetPackage(namespace, name)
