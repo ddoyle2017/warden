@@ -66,6 +66,9 @@ func load(path string, expandHome func(string) (string, error)) (*Config, error)
 
 	if !viper.IsSet("valheim-directory") {
 		directory := GetInstallPath(cfg.Platform)
+		if directory == "" && viper.InConfig("platform") {
+			return nil, fmt.Errorf("%w: platform %q has no default valheim-directory; edit %q to set platform to linux, darwin or windows, or set valheim-directory explicitly", ErrFailedToReadConfig, cfg.Platform, viper.ConfigFileUsed())
+		}
 		if cfg.Platform == Linux {
 			directory, err = expandHome(directory)
 			if err != nil {

@@ -29,6 +29,8 @@ Plugins are installed under `BepInEx/plugins` inside `valheim-directory`; there 
 
 Explicitly configured paths are used as written, without `~` or environment-variable expansion. If an older configuration contains a literal `~`, use `warden config set valheim-directory "/absolute/path/to/Valheim dedicated server"` to replace it.
 
+If an existing configuration supplies an unknown or empty `platform` and omits `valheim-directory`, startup stops because no default directory can be selected. Edit `$HOME/.warden.yaml` directly to correct `platform` or set `valheim-directory` to the server's path; `config set` cannot run until configuration loading succeeds.
+
 The DB file stores metadata about managed mods and frameworks, including author, version, and installation details. Metadata and files can diverge after a partial failure; `list` does not inspect the installed files.
 
 Warden was built with:

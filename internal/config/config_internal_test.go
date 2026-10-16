@@ -80,24 +80,59 @@ func TestLoadHomeResolutionFailure(t *testing.T) {
 	}
 }
 
-func TestLoadConfiguredPathWithoutHome(t *testing.T) {
-	viper.Reset()
-	t.Cleanup(viper.Reset)
-	directory := t.TempDir()
-	content := "platform: linux\nvalheim-directory: ./configured server\n"
-	if err := os.WriteFile(filepath.Join(directory, WardenConfigFile), []byte(content), 0o600); err != nil {
-		t.Fatal(err)
+func TestLoadWithoutHomeResolution(t *testing.T) {
+	tests := map[string]struct {
+		content          string
+		expected         Config
+		platformOverride string
+	}{
+		"given an explicit directory, when loading, then skip home resolution": {
+			content:  "platform: linux\nvalheim-directory: ./configured server\n",
+			expected: Config{ValheimDirectory: "./configured server", Platform: Linux},
+		},
+		"given a Windows default, when loading, then skip home resolution": {
+			content:  "platform: windows\n",
+			expected: Config{ValheimDirectory: DefaultSteamWindowsInstallPath, Platform: Windows},
+		},
+		"given an unknown platform outside the file, when loading, then preserve the existing default behavior": {
+			content:          "{}\n",
+			expected:         Config{Platform: "unsupported"},
+			platformOverride: "unsupported",
+		},
 	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			viper.Reset()
+			t.Cleanup(viper.Reset)
+			if test.platformOverride != "" {
+				viper.Set("platform", test.platformOverride)
+			}
+			directory := t.TempDir()
+			path := filepath.Join(directory, WardenConfigFile)
+			if err := os.WriteFile(path, []byte(test.content), 0o600); err != nil {
+				t.Fatal(err)
+			}
 
-	cfg, err := load(directory, func(string) (string, error) {
-		t.Fatal("an explicit path must not require home resolution")
-		return "", nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	expected := Config{ValheimDirectory: "./configured server", Platform: Linux}
-	if cfg == nil || *cfg != expected {
-		t.Errorf("expected config %+v, received %+v", expected, cfg)
+			cfg, err := load(directory, func(string) (string, error) {
+				t.Fatal("this configuration must not require home resolution")
+				return "", nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg == nil || *cfg != test.expected {
+				t.Errorf("expected config %+v, received %+v", test.expected, cfg)
+			}
+			if visible := viper.GetString("valheim-directory"); visible != test.expected.ValheimDirectory {
+				t.Errorf("expected visible directory %q, received %q", test.expected.ValheimDirectory, visible)
+			}
+			saved, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(saved) != test.content {
+				t.Errorf("expected unchanged configuration %q, received %q", test.content, saved)
+			}
+		})
 	}
 }

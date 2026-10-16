@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"warden/internal/config"
 
@@ -16,9 +17,11 @@ import (
 func TestLoad(t *testing.T) {
 	absoluteDirectory := filepath.Join(t.TempDir(), "configured server")
 	tests := map[string]struct {
-		content     string
-		expected    config.Config
-		expectedErr error
+		content           string
+		expected          config.Config
+		expectedPersisted *config.Config
+		expectedErr       error
+		relativeHome      bool
 	}{
 		"given no config file, when loading, then persist and return defaults": {
 			expected: config.Config{
@@ -32,6 +35,22 @@ func TestLoad(t *testing.T) {
 				ValheimDirectory: "./server",
 				Platform:         config.Linux,
 			},
+		},
+		"given a Windows platform without a directory, when loading, then use the configured platform default": {
+			content: "platform: windows\n",
+			expected: config.Config{
+				ValheimDirectory: config.DefaultSteamWindowsInstallPath,
+				Platform:         config.Windows,
+			},
+			expectedPersisted: &config.Config{Platform: config.Windows},
+		},
+		"given a directory without a platform, when loading, then default to the host platform": {
+			content: "valheim-directory: ./server\n",
+			expected: config.Config{
+				ValheimDirectory: "./server",
+				Platform:         runtime.GOOS,
+			},
+			expectedPersisted: &config.Config{ValheimDirectory: "./server"},
 		},
 		"given an absolute server path, when loading, then preserve the path": {
 			content: fmt.Sprintf("valheim-directory: %q\nplatform: linux\n", absoluteDirectory),
@@ -67,6 +86,33 @@ func TestLoad(t *testing.T) {
 				Platform: config.Linux,
 			},
 		},
+		"given an unknown platform with a relative directory, when loading, then preserve both values": {
+			content: "platform: linuz\nvalheim-directory: ./server\n",
+			expected: config.Config{
+				ValheimDirectory: "./server",
+				Platform:         "linuz",
+			},
+		},
+		"given an unknown platform with an empty directory, when loading, then preserve both values": {
+			content: "platform: linuz\nvalheim-directory: \"\"\n",
+			expected: config.Config{
+				Platform: "linuz",
+			},
+		},
+		"given an empty platform with an absolute directory, when loading, then preserve both values": {
+			content: fmt.Sprintf("platform: \"\"\nvalheim-directory: %q\n", absoluteDirectory),
+			expected: config.Config{
+				ValheimDirectory: absoluteDirectory,
+			},
+		},
+		"given an empty platform with an empty directory, when loading, then preserve both values": {
+			content: "platform: \"\"\nvalheim-directory: \"\"\n",
+		},
+		"given a relative home and Linux platform, when loading, then reject the default without publishing it": {
+			content:      "platform: linux\n",
+			expectedErr:  config.ErrFailedToReadConfig,
+			relativeHome: true,
+		},
 		"given malformed YAML, when loading, then return a read error": {
 			content:     "valheim-directory: [\n",
 			expectedErr: config.ErrFailedToReadConfig,
@@ -80,6 +126,9 @@ func TestLoad(t *testing.T) {
 			homedir.Reset()
 			t.Cleanup(homedir.Reset)
 			home := t.TempDir()
+			if test.relativeHome {
+				home = "relative-home"
+			}
 			t.Setenv("HOME", home)
 			t.Setenv("USERPROFILE", home)
 			directory := t.TempDir()
@@ -111,6 +160,9 @@ func TestLoad(t *testing.T) {
 				if cfg != nil {
 					t.Errorf("expected nil config, received %+v", cfg)
 				}
+				if viper.IsSet("valheim-directory") {
+					t.Errorf("failed loading published a directory: %q", viper.GetString("valheim-directory"))
+				}
 				return
 			}
 			if cfg == nil {
@@ -128,11 +180,65 @@ func TestLoad(t *testing.T) {
 			if err := saved.Unmarshal(&persisted); err != nil {
 				t.Fatal(err)
 			}
-			if persisted != expected {
-				t.Errorf("expected persisted config %+v, received %+v", expected, persisted)
+			expectedPersisted := expected
+			if test.expectedPersisted != nil {
+				expectedPersisted = *test.expectedPersisted
+			}
+			if persisted != expectedPersisted {
+				t.Errorf("expected persisted config %+v, received %+v", expectedPersisted, persisted)
 			}
 			if directory := viper.GetString("valheim-directory"); directory != expected.ValheimDirectory {
 				t.Errorf("expected visible directory %q, received %q", expected.ValheimDirectory, directory)
+			}
+			if platform := viper.GetString("platform"); platform != expected.Platform {
+				t.Errorf("expected visible platform %q, received %q", expected.Platform, platform)
+			}
+		})
+	}
+}
+
+func TestLoadInvalidPlatformDefault(t *testing.T) {
+	tests := map[string]string{
+		"given an unknown platform without a directory, when loading, then require manual configuration repair": "linuz",
+		"given an empty platform without a directory, when loading, then require manual configuration repair":   "",
+	}
+	for name, platform := range tests {
+		t.Run(name, func(t *testing.T) {
+			viper.Reset()
+			t.Cleanup(viper.Reset)
+			homedir.Reset()
+			t.Cleanup(homedir.Reset)
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("USERPROFILE", home)
+			directory := t.TempDir()
+			path := filepath.Join(directory, config.WardenConfigFile)
+			content := fmt.Sprintf("platform: %q\n", platform)
+			if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			cfg, err := config.Load(directory)
+			if !errors.Is(err, config.ErrFailedToReadConfig) {
+				t.Fatalf("expected configuration error, received %v", err)
+			}
+			if cfg != nil {
+				t.Errorf("expected nil config, received %+v", cfg)
+			}
+			for _, detail := range []string{fmt.Sprintf("platform %q", platform), "edit", path, "valheim-directory"} {
+				if !strings.Contains(err.Error(), detail) {
+					t.Errorf("expected manual-repair detail %q, received %v", detail, err)
+				}
+			}
+			if viper.IsSet("valheim-directory") {
+				t.Errorf("invalid platform published a directory: %q", viper.GetString("valheim-directory"))
+			}
+			saved, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(saved) != content {
+				t.Errorf("expected unchanged configuration %q, received %q", content, saved)
 			}
 		})
 	}
