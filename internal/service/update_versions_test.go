@@ -407,7 +407,7 @@ func TestUpdateAllMods_InvalidVersionPreservesPartialProgress(t *testing.T) {
 			if err := archive.Close(); err != nil {
 				t.Fatal(err)
 			}
-			var lookups, removed, installed, written []string
+			var lookups, replacedFrom, replacedTo, written []string
 			downloads := 0
 			client := &mock.HTTPClient{GetFunc: func(url string) (*http.Response, error) {
 				downloads++
@@ -419,13 +419,10 @@ func TestUpdateAllMods_InvalidVersionPreservesPartialProgress(t *testing.T) {
 			files := file.NewManager(client, server)
 			fm := &mock.Manager{
 				ValidateModInstallFunc: files.ValidateModInstall,
-				RemoveModFunc: func(fullName string) error {
-					removed = append(removed, fullName)
-					return files.RemoveMod(fullName)
-				},
-				InstallModFunc: func(url, fullName string) (string, error) {
-					installed = append(installed, fullName)
-					return files.InstallMod(url, fullName)
+				ReplaceModFunc: func(url, oldFullName, newFullName string) (file.ModReplacement, error) {
+					replacedFrom = append(replacedFrom, oldFullName)
+					replacedTo = append(replacedTo, newFullName)
+					return files.ReplaceMod(url, oldFullName, newFullName)
 				},
 			}
 			mr := &mock.ModsRepo{
@@ -466,10 +463,10 @@ func TestUpdateAllMods_InvalidVersionPreservesPartialProgress(t *testing.T) {
 			if !reflect.DeepEqual(lookups, []string{"Owned/Earlier", "Owned/Invalid"}) {
 				t.Errorf("package lookups = %v, want only Earlier then Invalid", lookups)
 			}
-			if !reflect.DeepEqual(removed, []string{"Owned-Earlier-1.9.0"}) ||
-				!reflect.DeepEqual(installed, []string{"Owned-Earlier-1.10.0"}) ||
+			if !reflect.DeepEqual(replacedFrom, []string{"Owned-Earlier-1.9.0"}) ||
+				!reflect.DeepEqual(replacedTo, []string{"Owned-Earlier-1.10.0"}) ||
 				!reflect.DeepEqual(written, []string{"Earlier"}) || downloads != 1 {
-				t.Errorf("unexpected mutations: removed=%v installed=%v written=%v downloads=%d", removed, installed, written, downloads)
+				t.Errorf("unexpected mutations: replacedFrom=%v replacedTo=%v written=%v downloads=%d", replacedFrom, replacedTo, written, downloads)
 			}
 			wantRecords := append([]mod.Mod(nil), current...)
 			wantRecords[0].Version = "1.10.0"
