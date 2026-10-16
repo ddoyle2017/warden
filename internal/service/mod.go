@@ -238,35 +238,66 @@ func (ms *modService) UpdateAllMods() error {
 		identityCounts[[2]string{m.Namespace, m.Name}]++
 	}
 
-	// For each one, check if there's an update and install it if there is
+	selected := make(map[[2]string]mod.Mod, len(mods))
+	for _, m := range mods {
+		selected[[2]string{m.Namespace, m.Name}] = m
+	}
+	updated := make(map[[2]string]thunderstore.Release)
+	replace := func(current mod.Mod, latest thunderstore.Release) (cleanupErr, failure error) {
+		newer, err := hasNewerRelease(current.Version, latest.VersionNumber)
+		if err != nil {
+			return nil, fmt.Errorf("%s/%s: %w", current.Namespace, current.Name, err)
+		}
+		if !newer {
+			return nil, nil
+		}
+		cleanupErr, failure = ms.updateMod(current, latest)
+		if failure == nil {
+			updated[[2]string{current.Namespace, current.Name}] = latest
+		}
+		return cleanupErr, failure
+	}
+	installDependency := func(latest thunderstore.Release) (cleanupErr, failure error) {
+		identity := [2]string{latest.Namespace, latest.Name}
+		if _, done := updated[identity]; done {
+			return nil, nil
+		}
+		if current, installed := selected[identity]; installed {
+			return replace(current, latest)
+		}
+		return ms.installMod(latest)
+	}
+
 	var cleanupErr error
 	for _, m := range mods {
 		if identityCounts[[2]string{m.Namespace, m.Name}] > 1 {
 			return modMutationResult(cleanupErr, fmt.Errorf("%w: %w for %s/%s; inspect installation records before retrying: %w",
 				ErrUnableToUpdateMod, ErrDuplicateModRecords, m.Namespace, m.Name, repo.ErrModFetchMultipleResults))
 		}
-		pkg, err := ms.ts.GetPackage(m.Namespace, m.Name)
-		if err != nil {
-			return modMutationResult(cleanupErr, fmt.Errorf("%w: %s/%s: %w", ErrModNotFound, m.Namespace, m.Name, err))
-		}
+		identity := [2]string{m.Namespace, m.Name}
+		latest, alreadyUpdated := updated[identity]
+		if !alreadyUpdated {
+			pkg, err := ms.ts.GetPackage(m.Namespace, m.Name)
+			if err != nil {
+				return modMutationResult(cleanupErr, fmt.Errorf("%w: %s/%s: %w", ErrModNotFound, m.Namespace, m.Name, err))
+			}
 
-		newer, err := hasNewerRelease(m.Version, pkg.Latest.VersionNumber)
-		if err != nil {
-			return modMutationResult(cleanupErr, fmt.Errorf("%w: %s/%s: %w", ErrUnableToUpdateMod, m.Namespace, m.Name, err))
-		}
-		if newer {
-			updateCleanup, err := ms.updateMod(m, pkg.Latest)
+			updateCleanup, err := replace(m, pkg.Latest)
 			cleanupErr = errors.Join(cleanupErr, updateCleanup)
 			if err != nil {
 				return modMutationResult(cleanupErr, fmt.Errorf("%w: %w", ErrUnableToUpdateMod, err))
 			}
-			dependencyCleanup, err := ms.addDependencies(pkg.Latest.Dependencies)
-			cleanupErr = errors.Join(cleanupErr, dependencyCleanup)
-			if err != nil {
-				return modMutationResult(cleanupErr, fmt.Errorf("%w: %w", ErrAddDependenciesFailed, err))
+			latest, alreadyUpdated = updated[identity]
+			if !alreadyUpdated {
+				fmt.Printf("... latest version of %s %s already installed (%s) ...\n", m.Namespace, m.Name, m.Version)
+				continue
 			}
-		} else {
-			fmt.Printf("... latest version of %s %s already installed (%s) ...\n", m.Namespace, m.Name, m.Version)
+		}
+		// A dependency may already be replaced, but its own selected turn still owns its direct dependencies.
+		dependencyCleanup, err := ms.addDependenciesWithInstaller(latest.Dependencies, installDependency)
+		cleanupErr = errors.Join(cleanupErr, dependencyCleanup)
+		if err != nil {
+			return modMutationResult(cleanupErr, fmt.Errorf("%w: %w", ErrAddDependenciesFailed, err))
 		}
 	}
 	return modMutationResult(cleanupErr, nil)
@@ -330,6 +361,10 @@ func (ms *modService) finishModRemoval(removal file.ModRemoval, deleteRecords fu
 }
 
 func (ms *modService) addDependencies(dependencies []string) (cleanupErr, failure error) {
+	return ms.addDependenciesWithInstaller(dependencies, ms.installMod)
+}
+
+func (ms *modService) addDependenciesWithInstaller(dependencies []string, install func(thunderstore.Release) (error, error)) (cleanupErr, failure error) {
 	for _, dep := range dependencies {
 		details := strings.Split(dep, "-")
 		namespace, name := details[0], details[1]
@@ -343,7 +378,7 @@ func (ms *modService) addDependencies(dependencies []string) (cleanupErr, failur
 		if err != nil {
 			return cleanupErr, fmt.Errorf("%s/%s: %w", namespace, name, err)
 		}
-		installCleanup, err := ms.installMod(pkg.Latest)
+		installCleanup, err := install(pkg.Latest)
 		cleanupErr = errors.Join(cleanupErr, installCleanup)
 		if err != nil {
 			return cleanupErr, err

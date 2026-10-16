@@ -120,7 +120,14 @@ func (m *manager) replaceMod(url, oldFullName, newFullName string, ops modReplac
 	}
 
 	retain = true
-	return &modReplacement{path: destination, staging: staging, hadOriginal: hadOriginal, removeAll: ops.removeAll}, nil
+	replacement := &modReplacement{path: destination, staging: staging, hadOriginal: hadOriginal, removeAll: ops.removeAll}
+	if !hadOriginal {
+		replacement.staging = ""
+		if err := cleanupModReplacement(staging, ops.removeAll); err != nil {
+			return replacement, &ModInstallCleanupError{Err: err}
+		}
+	}
+	return replacement, nil
 }
 
 func (m *manager) downloadModReplacement(url, archive string) (err error) {
@@ -162,6 +169,9 @@ func (r *modReplacement) Commit() error {
 	}
 	// Cleanup may partly delete the original, so consume ownership before starting.
 	r.finished = true
+	if r.staging == "" {
+		return nil
+	}
 	if err := cleanupModReplacement(r.staging, r.removeAll); err != nil {
 		return &ModInstallCleanupError{Err: err}
 	}

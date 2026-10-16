@@ -79,7 +79,7 @@ Earlier completed steps can remain in effect if a later step fails.
 | --- | --- |
 | Add a mod | The command first attempts BepInEx installation when its record is missing. If that returns no error, the mod service checks for an existing mod, fetches the latest release, installs files, upserts the record, and then installs direct dependencies. |
 | Update a mod | Fetch the installed record and latest release. If the version compares newer and the user confirms, validate the target, prepare the replacement, retain the original outside plugins, publish the replacement, upsert its record, finalize original-file cleanup, and process dependencies. |
-| Update all mods | Confirm once, then process recorded mods sequentially. Before fetching each listed mod, reject duplicate namespace/name identities from the original list. A failure stops the loop; earlier successful updates are not undone. This is not a framework update. |
+| Update all mods | Confirm once, then process recorded mods and their direct dependencies. Before fetching each listed mod, reject duplicate namespace/name identities from the original list. Installed dependencies in the selection are replaced immediately when needed. A failure stops the loop; earlier successful updates are not undone. This is not a framework update. |
 | Remove a mod | Confirm, look up the exact namespace and name, take a complete backup and stage that record's versioned directory outside the plugin tree, delete the matching record, then discard staged files and the backup. |
 | Remove all mods | Require the stronger confirmation, back up and stage the plugin directory, recreate an empty plugin directory, delete the records, then discard staged files and the backup. |
 | Install BepInEx | Download and unpack the framework into the server directory, move the archive wrapper's contents into place, then insert the framework record. |
@@ -88,6 +88,17 @@ Earlier completed steps can remain in effect if a later step fails.
 
 Installing or replacing a root mod can succeed before a dependency fails.
 These requests are not all-or-nothing operations.
+
+Bulk updates coordinate packages by namespace and name within the request. If a
+root needs a newer release of another selected mod, that dependency uses the
+replacement lifecycle immediately, before the next selected package is processed.
+Its confirmed release is reused by later roots and its own bulk turn, so the
+obsolete directory is retired once rather than left beside the new release.
+That selected turn still processes the updated mod's direct dependencies; it does
+not reinstall the package. Already-current selected dependencies are left
+unchanged. Dependencies outside the original selection use ordinary installation
+and are not recursively expanded. This does not change add or single-update
+dependency handling.
 
 Initial and dependency installations write records only after file installation
 completes, including when final backup cleanup reports a warning. An incomplete
@@ -152,6 +163,13 @@ rollback. The diagnostic includes the installed path, the original recovery
 path (or its prior absence), and the complete original record for reference.
 That record is reported, not saved as a database backup. Verify both installed
 files and database state before retrying or restoring anything.
+
+When the original directory was absent, the now-empty preparation directory is
+cleaned after publication, before metadata handling. A failed cleanup returns the
+published handle with a direct `ModInstallCleanupError` and the leftover path;
+metadata must still be written. The handle has no original recovery to finalize,
+and a later metadata failure does not leave unreported empty staging. This early
+cleanup never applies to a handle containing original files.
 
 Final cleanup consumes the recovery handle before deleting staging. A cleanup
 failure after confirmed publication and recording is a completed file operation

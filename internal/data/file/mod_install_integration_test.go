@@ -97,15 +97,30 @@ func TestModInstallRequestOutcomes(t *testing.T) {
 				warning: "Root", failure: "commit", failAt: "Last", onlyBulk: true,
 				published: []string{"Root", "First", "Later", "Last"}, recorded: []string{"Root", "First", "Later", "Last"},
 			},
+			"given an installed bulk dependency, when its metadata is rejected, then retain its original and earlier cleanup diagnostics": {
+				warning: "Root", failure: "record", failAt: "First", oldDependency: true, onlyBulk: true,
+				published: []string{"Root", "First"}, recorded: []string{"Root"},
+			},
+			"given an installed bulk dependency, when commit acknowledgement fails, then retain its original without compensating metadata": {
+				warning: "Root", failure: "commit", failAt: "First", oldDependency: true, onlyBulk: true,
+				published: []string{"Root", "First"}, recorded: []string{"Root", "First"},
+			},
+			"given an installed bulk dependency cleanup warning, when a later direct dependency fails, then keep completed replacement without request completion": {
+				warning: "First", failure: "files", failAt: "Later", oldDependency: true, onlyBulk: true,
+				published: []string{"Root", "First"}, recorded: []string{"Root", "First"},
+			},
 		} {
 			if tt.onlyBulk && operation != "bulk update" {
 				continue
 			}
 			t.Run(operation+"/"+name, func(t *testing.T) {
-				replacing := operation != "add" && (tt.failAt == "Root" || tt.failAt == "Last")
+				replacing := operation != "add" && (tt.failAt == "Root" || tt.failAt == "Last" ||
+					(operation == "bulk update" && tt.oldDependency && tt.failAt == "First"))
 				replacementPreparationFailure := replacing && tt.failure == "files"
 				unconfirmedReplacement := replacing && (tt.failure == "record" || tt.failure == "commit")
 				warned := tt.warning != "" && !(unconfirmedReplacement && tt.warning == tt.failAt)
+				warningReplacement := operation != "add" && (tt.warning == "Root" ||
+					(operation == "bulk update" && tt.oldDependency && tt.warning == "First"))
 				th := helper.NewHelper(t)
 				server := th.GetValheimDirectory()
 				plugins := filepath.Join(server, "BepInEx", "plugins")
@@ -358,7 +373,7 @@ func TestModInstallRequestOutcomes(t *testing.T) {
 						t.Errorf("cleanup diagnostics lost: %v", err)
 					}
 					leftovers := map[string]string{}
-					if tt.warning != "Root" || operation == "add" {
+					if !warningReplacement {
 						leftovers["z-unrelated.dll"] = "second unrelated plugin"
 						if tt.warning == "First" {
 							leftovers[root.FullName+"/plugin.dll"] = "replacement plugin"
@@ -507,7 +522,7 @@ func TestModInstallRequestOutcomes(t *testing.T) {
 				}
 				entries, readErr := os.ReadDir(backups)
 				wantBackups := 0
-				if warned && (operation == "add" || tt.warning != "Root") {
+				if warned && !warningReplacement {
 					wantBackups++
 				}
 				if tt.failure == "files" && !replacementPreparationFailure {
