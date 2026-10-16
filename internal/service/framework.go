@@ -17,7 +17,7 @@ var (
 	ErrUnableToRemoveFramework  = errors.New("unable to remove mod framework")
 
 	ErrFrameworkNotInstalled = errors.New("framework is not installed")
-	ErrFrameworkNotFound     = errors.New("unable to delete record from frameworks table")
+	ErrFrameworkNotFound     = errors.New("framework package lookup failed")
 )
 
 // FrameworkMutationCleanupError marks a completed framework request, including

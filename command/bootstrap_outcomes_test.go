@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 	"warden/command"
+	"warden/internal/api"
 	"warden/internal/api/thunderstore"
 	"warden/internal/data/file"
 	"warden/internal/data/repo"
@@ -210,6 +211,7 @@ func TestAddCommandReadinessOutcomes(t *testing.T) {
 				if frameworks.result != service.ErrNoChanges {
 					t.Errorf("recorded framework readiness = %v, want no changes", frameworks.result)
 				}
+				assertNoFailureDiagnostic(t, output)
 			} else {
 				_, completed := frameworks.result.(*service.FrameworkMutationCleanupError)
 				if completed != (tt.metadataFailure == "") || !errors.Is(frameworks.result, cleanupCause) {
@@ -291,6 +293,7 @@ func TestAddCommandReadinessOutcomes(t *testing.T) {
 					strings.Contains(retryOutput, "successfully") || strings.Contains(retryOutput, "warning:") {
 					t.Errorf("healthy repeat was not a no-op: %v, %v, %q", frameworks.result, ms.result, retryOutput)
 				}
+				assertNoFailureDiagnostic(t, retryOutput)
 				if commandDatabaseChanges(t, db) != beforeChanges || !reflect.DeepEqual(commandTree(t, server), beforeFiles) ||
 					exactFetches != 2 || packages[dependency.Name] != 1 || downloads[dependency.DownloadURL] != 1 || downloads[root.DownloadURL] != 0 {
 					t.Errorf("healthy repeat performed work: fetches=%v, downloads=%v", packages, downloads)
@@ -368,6 +371,67 @@ func TestAddCommandBootstrapBoundary(t *testing.T) {
 			}
 			if wantAdd && strings.Count(output, "requested dependency unavailable") != 1 {
 				t.Errorf("framework readiness hid the mod failure: %q", output)
+			}
+			if outcome == "cancelled" && output != "" {
+				t.Errorf("cancelled bootstrap stub should not produce a command diagnostic: %q", output)
+			}
+			if outcome == "already recorded" && (strings.Contains(output, service.ErrNoChanges.Error()) || strings.Contains(output, "unable to install BepInEx")) {
+				t.Errorf("recorded framework was reported as a bootstrap failure: %q", output)
+			}
+		})
+	}
+}
+
+func TestAddCommandFrameworkLookupDiagnostics(t *testing.T) {
+	for name, cause := range map[string]error{
+		"given a missing framework package, when adding, then report the lookup without mod work": thunderstore.ErrPackageNotFound,
+		"given a transport failure, when adding, then report the lookup without mod work":         api.ErrHTTPClient,
+		"given a registry failure, when adding, then report the lookup without mod work":          thunderstore.ErrThunderstoreAPI,
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			packageErr := fmt.Errorf("package lookup interrupted: %w", cause)
+			fetches, modCalls := 0, 0
+			fr := &mock.FrameworksRepo{GetFrameworkFunc: func(name string) (framework.Framework, error) {
+				if name != framework.BepInEx {
+					t.Fatalf("unexpected framework lookup %q", name)
+				}
+				return framework.Framework{}, repo.ErrFrameworkFetchNoResults
+			}}
+			ts := &mock.Thunderstore{GetPackageFunc: func(namespace, name string) (thunderstore.Package, error) {
+				fetches++
+				if namespace != framework.BepInExNamespace || name != framework.BepInEx {
+					t.Fatalf("unexpected package lookup %s/%s", namespace, name)
+				}
+				return thunderstore.Package{}, packageErr
+			}}
+			in := &countedCommandReader{Reader: strings.NewReader("Y\n")}
+			frameworks := &observedOutcomeFramework{Framework: service.NewFrameworkService(fr, &mock.Manager{}, ts, in)}
+			mods := &completionModStub{add: func(string, string) error {
+				modCalls++
+				t.Fatal("failed bootstrap lookup authorized mod work")
+				return nil
+			}}
+			cmd := command.NewAddCommand(frameworks, mods)
+			cmd.SetArgs([]string{"--namespace", "Owner", "--mod", "Root"})
+			output := runOutcomeCommand(t, cmd)
+			if fetches != 1 || in.reads != 1 || modCalls != 0 {
+				t.Errorf("fetches/reads/mod calls = %d/%d/%d, want 1/1/0", fetches, in.reads, modCalls)
+			}
+			for _, expected := range []error{service.ErrFrameworkNotFound, packageErr, cause} {
+				if !errors.Is(frameworks.result, expected) {
+					t.Errorf("bootstrap lookup error %v lost %v", frameworks.result, expected)
+				}
+			}
+			for _, text := range []string{"unable to find BepInEx", "package lookup interrupted", cause.Error()} {
+				if strings.Count(output, text) != 1 {
+					t.Errorf("lookup diagnostic %q must appear once: %q", text, output)
+				}
+			}
+			for _, text := range []string{"delete record", "frameworks table", "successfully", "warning:"} {
+				if strings.Contains(output, text) {
+					t.Errorf("lookup failure contains misleading diagnostic %q: %q", text, output)
+				}
 			}
 		})
 	}

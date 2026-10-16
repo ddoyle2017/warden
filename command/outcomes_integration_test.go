@@ -171,6 +171,7 @@ func TestAddCommandBootstrapConsent(t *testing.T) {
 				if strings.Count(output, "aborting") != 1 || strings.Contains(output, "successfully") {
 					t.Errorf("declined bootstrap reported success: %q", output)
 				}
+				assertNoFailureDiagnostic(t, output)
 			}
 			if data, err := os.ReadFile(filepath.Join(server, "world.db")); err != nil || string(data) != "unrelated world" {
 				t.Errorf("unrelated world changed: %q, %v", data, err)
@@ -317,6 +318,7 @@ func TestCommandsWithoutMutation(t *testing.T) {
 				if strings.Contains(output, "successfully") || strings.Contains(output, "warning:") {
 					t.Errorf("no-work command claimed a completed mutation: %q", output)
 				}
+				assertNoFailureDiagnostic(t, output)
 				if entries, err := os.ReadDir(backups); err != nil || len(entries) != 0 {
 					t.Errorf("no-work command left backup artifacts: %v, %v", entries, err)
 				}
@@ -411,6 +413,15 @@ func commandArchive(t *testing.T, entries map[string]string) []byte {
 		t.Fatal(err)
 	}
 	return body.Bytes()
+}
+
+func assertNoFailureDiagnostic(t *testing.T, output string) {
+	t.Helper()
+	for _, text := range []string{"unable to", "error:", service.ErrCancelled.Error(), service.ErrNoChanges.Error()} {
+		if strings.Contains(strings.ToLower(output), text) {
+			t.Errorf("benign outcome contains failure diagnostic %q: %q", text, output)
+		}
+	}
 }
 
 func runOutcomeCommand(t *testing.T, cmd *cobra.Command) string {
