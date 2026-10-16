@@ -242,8 +242,8 @@ func (ms *modService) UpdateAllMods() error {
 	var cleanupErr error
 	for _, m := range mods {
 		if identityCounts[[2]string{m.Namespace, m.Name}] > 1 {
-			return fmt.Errorf("%w: %w for %s/%s; inspect installation records before retrying: %w",
-				ErrUnableToUpdateMod, ErrDuplicateModRecords, m.Namespace, m.Name, repo.ErrModFetchMultipleResults)
+			return modMutationResult(cleanupErr, fmt.Errorf("%w: %w for %s/%s; inspect installation records before retrying: %w",
+				ErrUnableToUpdateMod, ErrDuplicateModRecords, m.Namespace, m.Name, repo.ErrModFetchMultipleResults))
 		}
 		pkg, err := ms.ts.GetPackage(m.Namespace, m.Name)
 		if err != nil {
