@@ -31,6 +31,11 @@ func TestConfirmationInput(t *testing.T) {
 			work:   []string{"validate install", "remove mod files", "install mod files", "save mod"},
 		},
 		{
+			name: "update mod by identity", yes: "Y", no: "n",
+			before: []string{"get mod", "get package"},
+			work:   []string{"validate install", "remove mod files", "install mod files", "save mod"},
+		},
+		{
 			name: "update all mods", yes: "Y", no: "n",
 			work: []string{"list mods", "get package", "validate install", "remove mod files", "install mod files", "save mod"},
 		},
@@ -228,7 +233,7 @@ func confirmationOperation(t *testing.T, operation string, reader io.Reader, cal
 	}}
 	ms := service.NewModService(mr, fm, ts, reader)
 	switch operation {
-	case "update mod", "update all mods":
+	case "update mod", "update mod by identity", "update all mods":
 		ts.GetPackageFunc = getPackage
 		fm.ValidateModInstallFunc = func() error {
 			record("validate install")
@@ -256,6 +261,15 @@ func confirmationOperation(t *testing.T, operation string, reader io.Reader, cal
 		if operation == "update mod" {
 			mr.GetModFunc = getMod
 			return func() error { return ms.UpdateMod(current.Name) }
+		}
+		if operation == "update mod by identity" {
+			mr.GetModByIdentityFunc = func(namespace, name string) (mod.Mod, error) {
+				if namespace != current.Namespace {
+					t.Fatalf("unexpected namespace %q", namespace)
+				}
+				return getMod(name)
+			}
+			return func() error { return ms.UpdateModByIdentity(current.Namespace, current.Name) }
 		}
 		mr.ListModsFunc = func() ([]mod.Mod, error) {
 			record("list mods")

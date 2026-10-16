@@ -15,7 +15,7 @@ import (
 
 func TestRemoveMod_Happy(t *testing.T) {
 	r := &mock.ModsRepo{
-		GetModFunc: func(name string) (mod.Mod, error) {
+		GetModByIdentityFunc: func(namespace, name string) (mod.Mod, error) {
 			return mod.Mod{
 				ID:        1,
 				Namespace: "Azumatt",
@@ -70,7 +70,7 @@ func TestRemoveMod_Sad(t *testing.T) {
 		},
 		"return error if mod isn't installed": {
 			r: &mock.ModsRepo{
-				GetModFunc: func(name string) (mod.Mod, error) {
+				GetModByIdentityFunc: func(namespace, name string) (mod.Mod, error) {
 					return mod.Mod{}, repo.ErrModFetchNoResults
 				},
 			},
@@ -79,7 +79,7 @@ func TestRemoveMod_Sad(t *testing.T) {
 		},
 		"return error if mod fetch fails": {
 			r: &mock.ModsRepo{
-				GetModFunc: func(name string) (mod.Mod, error) {
+				GetModByIdentityFunc: func(namespace, name string) (mod.Mod, error) {
 					return mod.Mod{}, repo.ErrModFetchFailed
 				},
 			},
@@ -88,7 +88,7 @@ func TestRemoveMod_Sad(t *testing.T) {
 		},
 		"return an error if unable to delete record of mod": {
 			r: &mock.ModsRepo{
-				GetModFunc: func(name string) (mod.Mod, error) {
+				GetModByIdentityFunc: func(namespace, name string) (mod.Mod, error) {
 					return mod.Mod{
 						ID:        1,
 						Namespace: "Azumatt",
@@ -109,7 +109,7 @@ func TestRemoveMod_Sad(t *testing.T) {
 		},
 		"return an error if unable to remove mod files": {
 			r: &mock.ModsRepo{
-				GetModFunc: func(name string) (mod.Mod, error) {
+				GetModByIdentityFunc: func(namespace, name string) (mod.Mod, error) {
 					return mod.Mod{
 						ID:        1,
 						Namespace: "Azumatt",

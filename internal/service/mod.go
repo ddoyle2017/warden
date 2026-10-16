@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"warden/internal/api/thunderstore"
 	"warden/internal/data/file"
@@ -14,10 +15,12 @@ import (
 )
 
 var (
-	ErrUnableToListMods  = errors.New("unable to list mods")
-	ErrUnableToRemoveMod = errors.New("unable to remove mod")
-	ErrUnableToUpdateMod = errors.New("unable to update mod")
-	ErrModNotInstalled   = errors.New("mod not installed")
+	ErrUnableToListMods    = errors.New("unable to list mods")
+	ErrUnableToRemoveMod   = errors.New("unable to remove mod")
+	ErrUnableToUpdateMod   = errors.New("unable to update mod")
+	ErrModNotInstalled     = errors.New("mod not installed")
+	ErrModNameAmbiguous    = errors.New("multiple installed mods have this name")
+	ErrDuplicateModRecords = errors.New("duplicate installation records")
 
 	ErrModAlreadyInstalled = errors.New("mod is already installed")
 	ErrModInstallFailed    = errors.New("unable to install new mod")
@@ -32,6 +35,7 @@ type Mod interface {
 	ListMods() ([]mod.Mod, error)
 	AddMod(namespace, name string) error
 	UpdateMod(name string) error
+	UpdateModByIdentity(namespace, name string) error
 	UpdateAllMods() error
 	RemoveMod(namespace, name string) error
 	RemoveAllMods() error
@@ -59,7 +63,7 @@ func (ms *modService) ListMods() ([]mod.Mod, error) {
 
 func (ms *modService) AddMod(namespace, name string) error {
 	// Check if the mod is already installed
-	current, err := ms.r.GetMod(name)
+	current, err := ms.r.GetModByIdentity(namespace, name)
 
 	if err == nil && !current.Equals(&mod.Mod{}) {
 		// Mod already installed
@@ -95,13 +99,67 @@ func (ms *modService) AddMod(namespace, name string) error {
 }
 
 func (ms *modService) UpdateMod(name string) error {
-	// Find the current installation of the mod
 	current, err := ms.r.GetMod(name)
+	if errors.Is(err, repo.ErrModFetchMultipleResults) {
+		return ms.describeModAmbiguity(name, err)
+	}
+	return ms.updateInstalledMod(current, err)
+}
+
+func (ms *modService) UpdateModByIdentity(namespace, name string) error {
+	current, err := ms.r.GetModByIdentity(namespace, name)
+	if errors.Is(err, repo.ErrModFetchMultipleResults) {
+		return fmt.Errorf("%w: %w for %s/%s; inspect installation records before retrying: %w",
+			ErrUnableToUpdateMod, ErrDuplicateModRecords, namespace, name, err)
+	}
+	return ms.updateInstalledMod(current, err)
+}
+
+func (ms *modService) describeModAmbiguity(name string, lookupErr error) error {
+	mods, err := ms.r.ListMods()
+	if err != nil {
+		return fmt.Errorf("%w: %w; unable to list matching installations: %w: %w",
+			ErrUnableToUpdateMod, ErrModNameAmbiguous, err, lookupErr)
+	}
+	counts := make(map[string]int)
+	matches := 0
+	for _, m := range mods {
+		if m.Name == name {
+			counts[m.Namespace]++
+			matches++
+		}
+	}
+	if matches < 2 {
+		return fmt.Errorf("%w: %w; matching installation records changed during lookup; retry: %w",
+			ErrUnableToUpdateMod, ErrModNameAmbiguous, lookupErr)
+	}
+	var identities, duplicates []string
+	for namespace, count := range counts {
+		identity := namespace + "/" + name
+		identities = append(identities, identity)
+		if count > 1 {
+			duplicates = append(duplicates, identity)
+		}
+	}
+	slices.Sort(identities)
+	slices.Sort(duplicates)
+	detail := "matching packages: " + strings.Join(identities, ", ")
+	if len(identities) > 1 {
+		detail += "; specify --namespace to select a package"
+	}
+	if len(duplicates) > 0 {
+		return fmt.Errorf("%w: %w; %s; %w for %s; inspect installation records before retrying: %w",
+			ErrUnableToUpdateMod, ErrModNameAmbiguous, detail, ErrDuplicateModRecords, strings.Join(duplicates, ", "), lookupErr)
+	}
+	return fmt.Errorf("%w: %w; %s: %w", ErrUnableToUpdateMod, ErrModNameAmbiguous, detail, lookupErr)
+}
+
+func (ms *modService) updateInstalledMod(current mod.Mod, err error) error {
 	if err != nil && errors.Is(err, repo.ErrModFetchNoResults) {
 		return ErrModNotInstalled
 	}
 	if err != nil {
-		return ErrUnableToUpdateMod
+		return fmt.Errorf("%w: %w", ErrUnableToUpdateMod, err)
 	}
 
 	// Fetch the latest version from online
@@ -156,9 +214,18 @@ func (ms *modService) UpdateAllMods() error {
 	if err != nil {
 		return ErrUnableToListMods
 	}
+	// Count original records, but reject duplicates only when their package is reached.
+	identityCounts := make(map[[2]string]int, len(mods))
+	for _, m := range mods {
+		identityCounts[[2]string{m.Namespace, m.Name}]++
+	}
 
 	// For each one, check if there's an update and install it if there is
 	for _, m := range mods {
+		if identityCounts[[2]string{m.Namespace, m.Name}] > 1 {
+			return fmt.Errorf("%w: %w for %s/%s; inspect installation records before retrying: %w",
+				ErrUnableToUpdateMod, ErrDuplicateModRecords, m.Namespace, m.Name, repo.ErrModFetchMultipleResults)
+		}
 		pkg, err := ms.ts.GetPackage(m.Namespace, m.Name)
 		if err != nil {
 			return ErrModNotFound
@@ -196,12 +263,12 @@ func (ms *modService) RemoveMod(namespace, name string) error {
 		return nil
 	}
 	// Find the current installation of the mod
-	current, err := ms.r.GetMod(name)
+	current, err := ms.r.GetModByIdentity(namespace, name)
 	if err != nil && errors.Is(err, repo.ErrModFetchNoResults) {
 		return ErrModNotInstalled
 	}
 	if err != nil {
-		return ErrUnableToRemoveMod
+		return fmt.Errorf("%w: %w", ErrUnableToRemoveMod, err)
 	}
 
 	removal, err := ms.fm.StageModRemoval(current.FullName())
@@ -209,7 +276,7 @@ func (ms *modService) RemoveMod(namespace, name string) error {
 		return fmt.Errorf("%w: %w", ErrUnableToRemoveMod, err)
 	}
 	return ms.finishModRemoval(removal, func() error {
-		return ms.r.DeleteMod(name, namespace)
+		return ms.r.DeleteMod(current.Name, current.Namespace)
 	})
 }
 

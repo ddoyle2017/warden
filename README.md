@@ -69,12 +69,21 @@ Example syntax, after setting the intended server directory:
 ```sh
 warden config set valheim-directory /absolute/path/to/valheim
 warden add --namespace Azumatt --mod Where_You_At
-warden update --mod Where_You_At
+warden update --namespace Azumatt --mod Where_You_At
 warden remove --namespace Azumatt --mod Where_You_At
 warden update all
 warden update bepinex
 warden start modded
 ```
+
+`add` and `remove` require both `--namespace` and `--mod`. For `update`,
+`warden update --mod Where_You_At` still works when exactly one installed
+record has that name. If multiple installed mods share a name, Warden stops
+before downloading or changing files and lists the matching `namespace/name`
+choices; specify `--namespace` to select the intended author's package.
+Duplicate records for one exact identity are reported separately and cannot
+be resolved by namespace qualification; see the
+[identity and recovery guidance](docs/install-lifecycle.md#package-release-and-framework-identity).
 
 These are real installation commands, not a smoke test. Back up an existing server before changing its mods. Even `--help` initializes Warden's configuration and database; use the [isolated CLI procedure](CONTRIBUTING.md#isolated-cli-smoke-check) for development.
 

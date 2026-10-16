@@ -12,12 +12,29 @@ of atomic installation or automatic recovery.
 
 A Thunderstore package has a namespace (its author or owner) and a name. A
 release adds a version; its full name is `namespace-name-version`. Installed
-mod directories use this versioned full name, while CLI flags accept package
-name and, for add/remove, namespace separately.
+mod directories use this versioned full name, while CLI flags accept namespace
+and package name separately.
 
-Repository reads and upserts currently identify mods by name; single-mod
-deletion also includes namespace. Do not assume every operation distinguishes
-two authors publishing a package with the same name.
+Lookup, installation/upsert, and single-mod removal identify a package by both
+namespace and name. Two authors' same-name packages have separate records and
+release directories; updating one retains its record ID. An explicitly
+qualified lookup never falls back to another namespace.
+
+Name-only updates remain supported when exactly one installed record matches.
+An ambiguous name stops the update before a package fetch or file changes and
+lists the matching namespace/name pairs. Use the namespace-qualified syntax in
+the [README](../README.md#usage) to select a package. If listing the matches
+fails, the error is reported without proceeding. Lookup and mapping errors are
+not evidence that a mod is absent: upsert returns the error rather than
+inserting a new record.
+
+The existing database schema already stores namespace and name separately, so
+this identity rule requires no schema migration or recreation. Duplicate records
+for the same namespace and name are not automatically reconciled; exact lookups
+and upserts reject them rather than selecting or overwriting one. Updates
+identify duplicated packages and direct the user to inspect installation records
+before retrying, rather than suggesting that namespace qualification can repair
+duplicate rows.
 
 BepInEx is a framework, not an ordinary plugin. Its archive contains a wrapper
 directory whose contents are moved into the Valheim server directory. Ordinary
@@ -62,8 +79,8 @@ Earlier completed steps can remain in effect if a later step fails.
 | --- | --- |
 | Add a mod | The command first attempts BepInEx installation when its record is missing. If that returns no error, the mod service checks for an existing mod, fetches the latest release, installs files, upserts the record, and then installs direct dependencies. |
 | Update a mod | Fetch the installed record and latest release. If the version compares newer and the user confirms, validate the installation target before removing the old release directory, then install the new files, upsert the record, and process dependencies. |
-| Update all mods | Confirm once, then process recorded mods sequentially. A failure stops the loop; earlier successful updates are not undone. This is not a framework update. |
-| Remove a mod | Confirm, take a complete backup and stage its versioned directory outside the plugin tree, delete its record, then discard staged files and the backup. |
+| Update all mods | Confirm once, then process recorded mods sequentially. Before fetching each listed mod, reject duplicate namespace/name identities from the original list. A failure stops the loop; earlier successful updates are not undone. This is not a framework update. |
+| Remove a mod | Confirm, look up the exact namespace and name, take a complete backup and stage that record's versioned directory outside the plugin tree, delete the matching record, then discard staged files and the backup. |
 | Remove all mods | Require the stronger confirmation, back up and stage the plugin directory, recreate an empty plugin directory, delete the records, then discard staged files and the backup. |
 | Install BepInEx | Download and unpack the framework into the server directory, move the archive wrapper's contents into place, then insert the framework record. |
 | Update BepInEx | Take one original-server snapshot, copy plugins to a temporary sibling of the server directory, remove and install framework files, preserve existing configuration over packaged defaults, transfer plugin copies through destination-local staging, finalize the server snapshot, then update the framework record. |

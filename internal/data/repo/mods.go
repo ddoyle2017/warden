@@ -26,6 +26,7 @@ var (
 type Mods interface {
 	ListMods() ([]mod.Mod, error)
 	GetMod(name string) (mod.Mod, error)
+	GetModByIdentity(namespace, name string) (mod.Mod, error)
 	InsertMod(m mod.Mod) error
 	UpdateMod(m mod.Mod) error
 	UpsertMod(m mod.Mod) error
@@ -57,8 +58,18 @@ func (r *mods) ListMods() ([]mod.Mod, error) {
 	return mods, nil
 }
 
+func (r *mods) GetModByIdentity(namespace, name string) (mod.Mod, error) {
+	return r.getMod(`SELECT id, name, namespace, filePath, version, websiteUrl, description, frameworkId
+		FROM mods WHERE namespace = ? AND name = ?`, namespace, name)
+}
+
 func (r *mods) GetMod(name string) (mod.Mod, error) {
-	rows, err := r.db.Query(`SELECT * FROM mods WHERE name = ?`, name)
+	return r.getMod(`SELECT id, name, namespace, filePath, version, websiteUrl, description, frameworkId
+		FROM mods WHERE name = ?`, name)
+}
+
+func (r *mods) getMod(query string, args ...any) (mod.Mod, error) {
+	rows, err := r.db.Query(query, args...)
 	if err != nil {
 		return mod.Mod{}, ErrModFetchFailed
 	}
@@ -93,16 +104,15 @@ func (r *mods) UpdateMod(m mod.Mod) error {
 }
 
 func (r *mods) UpsertMod(m mod.Mod) error {
-	current, err := r.GetMod(m.Name)
-	// If mod doesn't exist, insert new. If it does exist, update it
-	if errors.Is(err, sql.ErrNoRows) || current.Equals(&mod.Mod{}) {
+	current, err := r.GetModByIdentity(m.Namespace, m.Name)
+	if errors.Is(err, ErrModFetchNoResults) {
 		return r.InsertMod(m)
-	} else if err == nil {
-		m.ID = current.ID
-		return r.UpdateMod(m)
-	} else {
+	}
+	if err != nil {
 		return err
 	}
+	m.ID = current.ID
+	return r.UpdateMod(m)
 }
 
 func (r *mods) DeleteMod(modName, namespace string) error {
@@ -148,5 +158,5 @@ func mapRowsToMod(rows *sql.Rows) ([]mod.Mod, error) {
 		}
 		mods = append(mods, m)
 	}
-	return mods, nil
+	return mods, rows.Err()
 }
