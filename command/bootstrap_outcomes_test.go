@@ -181,8 +181,16 @@ func TestAddCommandReadinessOutcomes(t *testing.T) {
 			frameworks := &observedOutcomeFramework{Framework: service.NewFrameworkService(records, fm, ts, strings.NewReader("Y\n"))}
 			ms := &observedOutcomeAdd{Mod: service.NewModService(mr, fm, ts, strings.NewReader(""))}
 			cmd := command.NewAddCommand(frameworks, ms)
-			cmd.SetArgs([]string{"--namespace", root.Namespace, "--mod", root.Name})
-			output := runOutcomeCommand(t, cmd)
+			output, commandErr := runOutcomeCommand(t, cmd, "--namespace", root.Namespace, "--mod", root.Name)
+			var wantCommandErr error
+			if tt.metadataFailure != "" {
+				wantCommandErr = frameworks.result
+			} else if tt.packageFailure {
+				wantCommandErr = ms.result
+			}
+			if !errors.Is(commandErr, wantCommandErr) {
+				t.Errorf("command error = %v, want %v", commandErr, wantCommandErr)
+			}
 
 			wantBootstrap := 1
 			if tt.existing {
@@ -286,8 +294,10 @@ func TestAddCommandReadinessOutcomes(t *testing.T) {
 				}
 				beforeChanges, beforeFiles := commandDatabaseChanges(t, db), commandTree(t, server)
 				cmd := command.NewAddCommand(frameworks, ms)
-				cmd.SetArgs([]string{"--namespace", root.Namespace, "--mod", root.Name})
-				retryOutput := runOutcomeCommand(t, cmd)
+				retryOutput, retryErr := runOutcomeCommand(t, cmd, "--namespace", root.Namespace, "--mod", root.Name)
+				if retryErr != nil {
+					t.Errorf("healthy repeat returned failure: %v", retryErr)
+				}
 				if ms.result != service.ErrModAlreadyInstalled || frameworks.result != service.ErrNoChanges ||
 					!strings.Contains(retryOutput, "mod already installed") ||
 					strings.Contains(retryOutput, "successfully") || strings.Contains(retryOutput, "warning:") {
@@ -349,16 +359,25 @@ func TestAddCommandBootstrapBoundary(t *testing.T) {
 				result = &service.ModRemovalCleanupError{Err: cause}
 			}
 			calls := 0
+			modFailure := fmt.Errorf("%w: requested dependency unavailable", service.ErrAddDependenciesFailed)
 			ms := &completionModStub{add: func(namespace, name string) error {
 				calls++
 				if namespace != "Owner" || name != "Root" {
 					t.Fatalf("unexpected mod request %s/%s", namespace, name)
 				}
-				return fmt.Errorf("%w: requested dependency unavailable", service.ErrAddDependenciesFailed)
+				return modFailure
 			}}
 			cmd := command.NewAddCommand(&standaloneFrameworkStub{install: func() error { return result }}, ms)
-			cmd.SetArgs([]string{"--namespace", "Owner", "--mod", "Root"})
-			output := runOutcomeCommand(t, cmd)
+			output, err := runOutcomeCommand(t, cmd, "--namespace", "Owner", "--mod", "Root")
+			wantErr := result
+			if wantAdd {
+				wantErr = modFailure
+			} else if outcome == "cancelled" {
+				wantErr = nil
+			}
+			if !errors.Is(err, wantErr) {
+				t.Errorf("command error = %v, want %v", err, wantErr)
+			}
 			wantCalls := 0
 			if wantAdd {
 				wantCalls = 1
@@ -413,15 +432,17 @@ func TestAddCommandFrameworkLookupDiagnostics(t *testing.T) {
 				return nil
 			}}
 			cmd := command.NewAddCommand(frameworks, mods)
-			cmd.SetArgs([]string{"--namespace", "Owner", "--mod", "Root"})
-			output := runOutcomeCommand(t, cmd)
+			output, commandErr := runOutcomeCommand(t, cmd, "--namespace", "Owner", "--mod", "Root")
 			if fetches != 1 || in.reads != 1 || modCalls != 0 {
 				t.Errorf("fetches/reads/mod calls = %d/%d/%d, want 1/1/0", fetches, in.reads, modCalls)
 			}
 			for _, expected := range []error{service.ErrFrameworkNotFound, packageErr, cause} {
-				if !errors.Is(frameworks.result, expected) {
-					t.Errorf("bootstrap lookup error %v lost %v", frameworks.result, expected)
+				if !errors.Is(frameworks.result, expected) || !errors.Is(commandErr, expected) {
+					t.Errorf("bootstrap lookup errors %v / %v lost %v", frameworks.result, commandErr, expected)
 				}
+			}
+			if strings.Count(output, "Error:") != 1 || strings.Contains(output, "Usage:") {
+				t.Errorf("lookup failure was not reported once as a runtime failure: %q", output)
 			}
 			for _, text := range []string{"unable to find BepInEx", "package lookup interrupted", cause.Error()} {
 				if strings.Count(output, text) != 1 {

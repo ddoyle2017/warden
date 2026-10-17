@@ -35,14 +35,14 @@ func newConfigGetCommand() *cobra.Command {
 		Short: "Print the configuration value.",
 		Long:  "Print the value of the given configuration key.",
 		Args:  cobra.MinimumNArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			value := viper.Get(args[0])
 
 			if value == nil {
-				fmt.Println("configuration key does not exist")
-			} else {
-				fmt.Println(value)
+				return runtimeFailure("configuration key does not exist: %q", args[0])
 			}
+			fmt.Println(value)
+			return nil
 		},
 	}
 	return cmd
@@ -54,12 +54,11 @@ func newConfigSetCommand() *cobra.Command {
 		Short: "Updates the config value.",
 		Long:  "Updates the configuration value for the given key. Changes are saved to .warden.yaml.",
 		Args:  cobra.MinimumNArgs(2),
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			key, value := args[0], args[1]
 
 			if !isValidConfigKey(key) {
-				fmt.Printf("'%s' is not a valid config setting\n", key)
-				return
+				return runtimeFailure("'%s' is not a valid config setting", key)
 			}
 			// Save updated key in memory
 			viper.Set(key, value)
@@ -67,8 +66,9 @@ func newConfigSetCommand() *cobra.Command {
 			// Write change to file
 			err := viper.WriteConfig()
 			if err != nil {
-				fmt.Println("unable to save configuration")
+				return runtimeFailure("unable to save configuration: %w", err)
 			}
+			return nil
 		},
 	}
 	return cmd

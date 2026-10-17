@@ -149,29 +149,35 @@ func TestAddMod_RetryCleanupOutcomes(t *testing.T) {
 			observed := &observedRetryAdd{Mod: svc}
 			fs := service.NewFrameworkService(repo.NewFrameworksRepo(f.db), manager, ts, strings.NewReader(""))
 			cmd := command.NewAddCommand(fs, observed)
-			cmd.SetArgs([]string{"--namespace", "Owned", "--mod", "Installed"})
 			output, err := os.CreateTemp(t.TempDir(), "add-output")
 			if err != nil {
 				t.Fatal(err)
 			}
-			stdout := os.Stdout
+			stdout, stderr, args := os.Stdout, os.Stderr, os.Args
 			t.Cleanup(func() {
-				os.Stdout = stdout
+				os.Stdout, os.Stderr, os.Args = stdout, stderr, args
 				if err := output.Close(); err != nil {
 					t.Error(err)
 				}
 			})
-			os.Stdout = output
-			if err := cmd.Execute(); err != nil {
-				t.Fatal(err)
-			}
-			os.Stdout = stdout
+			os.Stdout, os.Stderr = output, output
+			os.Args = []string{"warden", "add", "--namespace", "Owned", "--mod", "Installed"}
+			commandErr := command.Execute(cmd)
+			os.Stdout, os.Stderr, os.Args = stdout, stderr, args
 			err = observed.result
 			data, readErr := os.ReadFile(output.Name())
 			if readErr != nil {
 				t.Fatal(readErr)
 			}
 			completed := tt.failure == ""
+			wantCommandErr, wantErrors := err, 1
+			if completed {
+				wantCommandErr, wantErrors = nil, 0
+			}
+			if !errors.Is(commandErr, wantCommandErr) || strings.Count(string(data), "Error:") != wantErrors ||
+				strings.Contains(string(data), "Usage:") {
+				t.Errorf("command lost or duplicated the whole-request outcome: error=%v, output=%q", commandErr, data)
+			}
 			if _, direct := err.(*service.ModMutationCleanupError); direct != completed {
 				t.Errorf("whole-request completion = %v, want %v: %v", direct, completed, err)
 			}
@@ -179,6 +185,10 @@ func TestAddMod_RetryCleanupOutcomes(t *testing.T) {
 				t.Errorf("earlier cleanup diagnostics were lost: %v", err)
 			}
 			if !completed {
+				var fileCleanup *file.ModInstallCleanupError
+				if !errors.As(commandErr, &fileCleanup) || fileCleanup != cleanup {
+					t.Errorf("command lost the inspectable cleanup cause: %v", commandErr)
+				}
 				wantCause := laterCause
 				if tt.failure == "files" {
 					wantCause = file.ErrZipReadFailed

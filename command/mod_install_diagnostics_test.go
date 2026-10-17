@@ -3,7 +3,6 @@ package command_test
 import (
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -77,50 +76,39 @@ func TestModInstallDiagnostics(t *testing.T) {
 					all:       func() error { return run("bulk update", "", "") },
 				}
 				cmd := command.NewUpdateCommand(nil, ms)
+				var args []string
 				switch operation {
 				case "add":
 					cmd = command.NewAddCommand(&standaloneFrameworkStub{install: func() error { return nil }}, ms)
-					cmd.SetArgs([]string{"--namespace", "Owner", "--mod", "Root"})
+					args = []string{"--namespace", "Owner", "--mod", "Root"}
 				case "single update":
-					cmd.SetArgs([]string{"--mod", "Root"})
+					args = []string{"--mod", "Root"}
 				case "qualified update":
-					cmd.SetArgs([]string{"--namespace", "Owner", "--mod", "Root"})
+					args = []string{"--namespace", "Owner", "--mod", "Root"}
 				case "bulk update":
-					cmd.SetArgs([]string{"all"})
+					args = []string{"all"}
 				}
-				output, err := os.CreateTemp(t.TempDir(), "stdout")
-				if err != nil {
-					t.Fatal(err)
+				output, err := runOutcomeCommand(t, cmd, args...)
+				wantErr := result
+				if outcome == "completed cleanup" {
+					wantErr = nil
 				}
-				stdout := os.Stdout
-				t.Cleanup(func() {
-					os.Stdout = stdout
-					if err := output.Close(); err != nil {
-						t.Error(err)
-					}
-				})
-				os.Stdout = output
-				if err := cmd.Execute(); err != nil {
-					t.Fatal(err)
-				}
-				os.Stdout = stdout
-				data, err := os.ReadFile(output.Name())
-				if err != nil {
-					t.Fatal(err)
+				if !errors.Is(err, wantErr) {
+					t.Errorf("command error = %v, want %v", err, wantErr)
 				}
 				if calls != 1 {
 					t.Errorf("service calls = %d, want 1", calls)
 				}
 				for _, text := range want {
-					if strings.Count(string(data), text) != 1 {
-						t.Errorf("output must contain %q exactly once: %q", text, data)
+					if strings.Count(output, text) != 1 {
+						t.Errorf("output must contain %q exactly once: %q", text, output)
 					}
 				}
-				if strings.HasPrefix(string(data), "... warning:") != (outcome == "completed cleanup") {
-					t.Errorf("whole-request warning status misclassified: %q", data)
+				if strings.HasPrefix(output, "... warning:") != (outcome == "completed cleanup") {
+					t.Errorf("whole-request warning status misclassified: %q", output)
 				}
-				if strings.Contains(string(data), "successfully") {
-					t.Errorf("diagnostic reported as ordinary success: %q", data)
+				if strings.Contains(output, "successfully") {
+					t.Errorf("diagnostic reported as ordinary success: %q", output)
 				}
 			})
 		}

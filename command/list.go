@@ -12,12 +12,13 @@ func NewListCommand(ms service.Mod) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List all currently installed mods and their versions",
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			mods, err := ms.ListMods()
 			if err != nil {
-				fmt.Println("... unable to retrieve list of mods ...")
+				return runtimeFailure("... unable to retrieve list of mods: %w ...", err)
 			}
 			prettyPrint(mods)
+			return nil
 		},
 	}
 	return cmd

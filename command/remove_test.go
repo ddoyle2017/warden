@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"warden/command"
@@ -33,6 +31,7 @@ func TestRemoveCommand_Diagnostics(t *testing.T) {
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			retained := t.TempDir()
+			recordCause := errors.New("database driver lost write confirmation")
 			removal := &mock.ModRemoval{
 				CommitFunc: func() error {
 					if tt.success {
@@ -48,7 +47,7 @@ func TestRemoveCommand_Diagnostics(t *testing.T) {
 				if tt.committed || tt.success {
 					return nil
 				}
-				return errors.New("database driver lost write confirmation")
+				return recordCause
 			}
 			r := &mock.ModsRepo{
 				GetModByIdentityFunc: func(string, string) (mod.Mod, error) {
@@ -69,31 +68,14 @@ func TestRemoveCommand_Diagnostics(t *testing.T) {
 			}
 			ms := service.NewModService(r, fm, &mock.Thunderstore{}, strings.NewReader(answer))
 			cmd := command.NewRemoveCommand(nil, ms)
-			cmd.SetArgs(args)
-			outputPath := filepath.Join(t.TempDir(), "output")
-			out, err := os.Create(outputPath)
-			if err != nil {
-				t.Fatal(err)
-			}
-			stdout := os.Stdout
-			t.Cleanup(func() {
-				os.Stdout = stdout
-				if err := out.Close(); err != nil {
-					t.Error(err)
+			output, err := runOutcomeCommand(t, cmd, args...)
+			if tt.success || tt.committed {
+				if err != nil {
+					t.Errorf("completed removal returned failure: %v", err)
 				}
-			})
-			os.Stdout = out
-			cmd.SetOut(out)
-			cmd.SetErr(out)
-			if err := cmd.Execute(); err != nil {
-				t.Fatal(err)
+			} else if !errors.Is(err, recordCause) || !errors.Is(err, service.ErrUnableToRemoveMod) {
+				t.Errorf("command lost removal failure causes: %v", err)
 			}
-			os.Stdout = stdout
-			data, err := os.ReadFile(outputPath)
-			if err != nil {
-				t.Fatal(err)
-			}
-			output := string(data)
 			if tt.success {
 				want := "mod successfully removed"
 				if tt.all {
@@ -155,46 +137,32 @@ func TestFrameworkRemovalDiagnostics(t *testing.T) {
 			}}
 			fs := service.NewFrameworkService(fr, fm, &mock.Thunderstore{}, strings.NewReader("YES I AM\n"))
 			cmd := command.NewRemoveCommand(fs, nil)
-			cmd.SetArgs([]string{"bepinex"})
-			out, err := os.CreateTemp(t.TempDir(), "stdout")
-			if err != nil {
-				t.Fatal(err)
+			output, err := runOutcomeCommand(t, cmd, "bepinex")
+			if !errors.Is(err, service.ErrUnableToRemoveFramework) {
+				t.Errorf("command lost framework removal failure: %v", err)
 			}
-			stdout := os.Stdout
-			t.Cleanup(func() {
-				os.Stdout = stdout
-				if err := out.Close(); err != nil {
-					t.Error(err)
-				}
-			})
-			os.Stdout = out
-			if err := cmd.Execute(); err != nil {
-				t.Fatal(err)
-			}
-			os.Stdout = stdout
-			data, err := os.ReadFile(out.Name())
-			if err != nil {
-				t.Fatal(err)
+			if !tt.failedFiles && !errors.Is(err, repo.ErrFrameworkDeleteFailed) {
+				t.Errorf("command lost metadata failure: %v", err)
 			}
 			want := []string{"framework files were removed", "record write interrupted", "verify database state"}
 			wantRecordCalls := 1
 			if tt.failedFiles {
-				want = []string{"unable to remove", "removal interrupted", "nested cleanup interrupted", retained}
+				want = []string{"unable to remove BepInEx", "removal interrupted", "nested cleanup interrupted", retained}
 				wantRecordCalls = 0
-				if strings.Contains(string(data), "framework files were removed") || strings.Contains(string(data), "warning: mod files removed") {
-					t.Errorf("nested cleanup was classified as completed framework removal: %q", data)
+				if strings.Contains(output, "framework files were removed") || strings.Contains(output, "warning: mod files removed") {
+					t.Errorf("nested cleanup was classified as completed framework removal: %q", output)
 				}
 			}
 			if tt.cleanup {
 				want = append(want, "cleanup interrupted", retained)
 			}
 			for _, text := range want {
-				if !strings.Contains(string(data), text) {
-					t.Errorf("diagnostic %q was hidden: %q", text, data)
+				if strings.Count(output, text) != 1 {
+					t.Errorf("diagnostic %q was hidden or duplicated: %q", text, output)
 				}
 			}
-			if fileCalls != 1 || recordCalls != wantRecordCalls || strings.Contains(string(data), "successfully") {
-				t.Errorf("failed metadata handling was retried or reported as success: calls=%d/%d, output=%q", fileCalls, recordCalls, data)
+			if fileCalls != 1 || recordCalls != wantRecordCalls || strings.Contains(output, "successfully") {
+				t.Errorf("failed metadata handling was retried or reported as success: calls=%d/%d, output=%q", fileCalls, recordCalls, output)
 			}
 		})
 	}
@@ -275,9 +243,15 @@ func TestRemovalCompletionBoundary(t *testing.T) {
 				}
 				ms := &observedOutcomeRemoval{Mod: service.NewModService(mr, fm, &mock.Thunderstore{}, strings.NewReader(answer))}
 				cmd := command.NewRemoveCommand(nil, ms)
-				cmd.SetArgs(args)
-				output := runOutcomeCommand(t, cmd)
+				output, err := runOutcomeCommand(t, cmd, args...)
 				completed := phase == "completed"
+				wantErr := ms.result
+				if completed {
+					wantErr = nil
+				}
+				if !errors.Is(err, wantErr) {
+					t.Errorf("command error = %v, want %v", err, wantErr)
+				}
 				if _, direct := ms.result.(*service.ModRemovalCleanupError); direct != completed {
 					t.Errorf("service removal boundary misclassified: %v", ms.result)
 				}

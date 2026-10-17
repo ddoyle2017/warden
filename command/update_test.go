@@ -1,12 +1,12 @@
-package command
+package command_test
 
 import (
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"warden/command"
 	"warden/internal/data/file"
 	"warden/internal/service"
 )
@@ -48,41 +48,28 @@ func TestFrameworkUpdateDiagnostics(t *testing.T) {
 				calls++
 				return result
 			}}
-			output, err := os.CreateTemp(t.TempDir(), "stdout")
-			if err != nil {
-				t.Fatal(err)
+			cmd := command.NewUpdateCommand(fs, nil)
+			output, err := runOutcomeCommand(t, cmd, "bepinex")
+			wantErr := result
+			if tt.completed && !tt.recordFailure {
+				wantErr = nil
 			}
-			stdout := os.Stdout
-			t.Cleanup(func() {
-				os.Stdout = stdout
-				if err := output.Close(); err != nil {
-					t.Error(err)
-				}
-			})
-			os.Stdout = output
-			cmd := NewUpdateCommand(fs, nil)
-			cmd.SetArgs([]string{"bepinex"})
-			if err := cmd.Execute(); err != nil {
-				t.Fatal(err)
-			}
-			os.Stdout = stdout
-			data, err := os.ReadFile(output.Name())
-			if err != nil {
-				t.Fatal(err)
+			if !errors.Is(err, wantErr) {
+				t.Errorf("command error = %v, want %v", err, wantErr)
 			}
 			if calls != 1 {
 				t.Errorf("framework update calls = %d, want 1", calls)
 			}
 			for _, text := range want {
-				if !strings.Contains(string(data), text) {
-					t.Errorf("output %q omits %q", data, text)
+				if strings.Count(output, text) != 1 {
+					t.Errorf("output must contain %q once: %q", text, output)
 				}
 			}
-			if strings.HasPrefix(string(data), "... warning:") != (tt.completed && !tt.recordFailure) {
-				t.Errorf("framework request status was misclassified: %q", data)
+			if strings.HasPrefix(output, "... warning:") != (tt.completed && !tt.recordFailure) {
+				t.Errorf("framework request status was misclassified: %q", output)
 			}
-			if result != nil && strings.Contains(string(data), "successfully") {
-				t.Errorf("diagnostics reported as ordinary success: %q", data)
+			if result != nil && strings.Contains(output, "successfully") {
+				t.Errorf("diagnostics reported as ordinary success: %q", output)
 			}
 		})
 	}
@@ -132,36 +119,19 @@ func TestUpdateVersionDiagnostics(t *testing.T) {
 				updateAll: func() error { return result("all") },
 			}
 			fs := &updateFrameworkStub{update: func() error { return result("framework") }}
-			output, err := os.CreateTemp(t.TempDir(), "stdout")
-			if err != nil {
-				t.Fatal(err)
-			}
-			stdout := os.Stdout
-			t.Cleanup(func() {
-				os.Stdout = stdout
-				if err := output.Close(); err != nil {
-					t.Error(err)
-				}
-			})
-			os.Stdout = output
-			cmd := NewUpdateCommand(fs, ms)
-			cmd.SetArgs(tt.args)
-			if err := cmd.Execute(); err != nil {
-				t.Fatal(err)
-			}
-			os.Stdout = stdout
-			data, err := os.ReadFile(output.Name())
-			if err != nil {
-				t.Fatal(err)
+			cmd := command.NewUpdateCommand(fs, ms)
+			output, err := runOutcomeCommand(t, cmd, tt.args...)
+			if !errors.Is(err, tt.sentinel) || !errors.Is(err, service.ErrInvalidReleaseVersion) {
+				t.Errorf("command lost version error causes: %v", err)
 			}
 			if calls != 1 {
 				t.Errorf("update calls = %d, want 1", calls)
 			}
-			if !strings.Contains(string(data), `invalid release version: latest version "1.2"`) {
-				t.Errorf("output omits the validation cause: %q", data)
+			if strings.Count(output, `invalid release version: latest version "1.2"`) != 1 {
+				t.Errorf("output omits or duplicates the validation cause: %q", output)
 			}
-			if strings.Contains(string(data), "successfully") {
-				t.Errorf("failed update reported success: %q", data)
+			if strings.Contains(output, "successfully") {
+				t.Errorf("failed update reported success: %q", output)
 			}
 		})
 	}
