@@ -3,7 +3,6 @@ package command_test
 import (
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -38,6 +37,13 @@ func TestStandaloneFrameworkDiagnostics(t *testing.T) {
 					result = errors.Join(result, fmt.Errorf("%w: record write interrupted", sentinel))
 					want = append(want, "record write interrupted")
 				}
+				if tt.cleanup && !tt.recordFailure {
+					result = &service.FrameworkMutationCleanupError{Err: result}
+					want = append(want, "framework request completed")
+					if operation == "install" {
+						want = append(want, success)
+					}
+				}
 				fileCalls, modCalls := 0, 0
 				fs := &standaloneFrameworkStub{}
 				run := func() error {
@@ -57,41 +63,36 @@ func TestStandaloneFrameworkDiagnostics(t *testing.T) {
 					return nil
 				}}
 				cmd := command.NewAddCommand(fs, ms)
-				cmd.SetArgs([]string{"--namespace", "test", "--mod", "plugin"})
+				args := []string{"--namespace", "test", "--mod", "plugin"}
 				if operation == "remove" {
 					cmd = command.NewRemoveCommand(fs, nil)
-					cmd.SetArgs([]string{"bepinex"})
+					args = []string{"bepinex"}
 				}
-				output, err := os.CreateTemp(t.TempDir(), "stdout")
-				if err != nil {
-					t.Fatal(err)
+				output, err := runOutcomeCommand(t, cmd, args...)
+				wantErr := result
+				if tt.cleanup && !tt.recordFailure {
+					wantErr = nil
 				}
-				stdout := os.Stdout
-				t.Cleanup(func() {
-					os.Stdout = stdout
-					if err := output.Close(); err != nil {
-						t.Error(err)
-					}
-				})
-				os.Stdout = output
-				if err := cmd.Execute(); err != nil {
-					t.Fatal(err)
+				if !errors.Is(err, wantErr) {
+					t.Errorf("command error = %v, want %v", err, wantErr)
 				}
-				os.Stdout = stdout
-				data, err := os.ReadFile(output.Name())
-				if err != nil {
-					t.Fatal(err)
+				wantModCalls := 0
+				if operation == "install" && (result == nil || tt.cleanup && !tt.recordFailure) {
+					wantModCalls = 1
 				}
-				if fileCalls != 1 || (operation == "install" && result == nil && modCalls != 1) || (result != nil && modCalls != 0) {
+				if fileCalls != 1 || modCalls != wantModCalls {
 					t.Errorf("unexpected framework/mod calls: %d/%d", fileCalls, modCalls)
 				}
 				for _, text := range want {
-					if !strings.Contains(string(data), text) {
-						t.Errorf("output %q omits %q", data, text)
+					if strings.Count(output, text) != 1 {
+						t.Errorf("output must contain %q once: %q", text, output)
 					}
 				}
-				if result != nil && strings.Contains(string(data), "successfully") {
-					t.Errorf("diagnostics were reported as ordinary success: %q", data)
+				if strings.HasPrefix(output, "... warning:") != (tt.cleanup && !tt.recordFailure) {
+					t.Errorf("framework request status was misclassified: %q", output)
+				}
+				if result != nil && wantModCalls == 0 && strings.Contains(output, "successfully") {
+					t.Errorf("diagnostics were reported as ordinary success: %q", output)
 				}
 			})
 		}

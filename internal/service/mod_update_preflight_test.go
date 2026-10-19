@@ -35,24 +35,20 @@ func TestModUpdate_PreflightPreservesInstallation(t *testing.T) {
 			answer: "Y\n", version: "2.0.0", updated: true,
 		},
 		"given cwd inside plugins, when no update is available, then leave the installation unchanged": {
-			inside: true, answer: "Y\n", version: "1.0.0",
+			inside: true, answer: "Y\n", version: "1.0.0", wantErr: service.ErrNoChanges,
 		},
 		"given cwd inside plugins, when declining an update, then leave the installation unchanged": {
-			inside: true, answer: "n\n", version: "2.0.0",
+			inside: true, answer: "n\n", version: "2.0.0", wantErr: service.ErrCancelled,
 		},
 		"given cwd inside plugins, when input is exhausted, then leave the installation unchanged": {
-			inside: true, version: "2.0.0",
+			inside: true, version: "2.0.0", wantErr: io.EOF,
 		},
 		"given cwd inside plugins, when confirmation is invalid, then report it without mutation": {
 			inside: true, answer: "invalid\ninvalid\ninvalid\n", version: "2.0.0", wantErr: service.ErrMaxAttempts,
 		},
 	}
 	for name, tt := range tests {
-		for _, all := range []bool{false, true} {
-			mode := "single"
-			if all {
-				mode = "all"
-			}
+		for _, mode := range []string{"single", "qualified", "all"} {
 			t.Run(name+"/"+mode, func(t *testing.T) {
 				th, mr, original, backups := newUpdatePreflightFixture(t)
 				plugins := filepath.Dir(original.FilePath)
@@ -90,8 +86,10 @@ func TestModUpdate_PreflightPreservesInstallation(t *testing.T) {
 					return thunderstore.Package{Latest: latest}, nil
 				}}
 				ms := service.NewModService(mr, file.NewManager(client, th.GetValheimDirectory()), ts, strings.NewReader(tt.answer))
-				if all {
+				if mode == "all" {
 					err = ms.UpdateAllMods()
+				} else if mode == "qualified" {
+					err = ms.UpdateModByIdentity(original.Namespace, original.Name)
 				} else {
 					err = ms.UpdateMod(original.Name)
 				}

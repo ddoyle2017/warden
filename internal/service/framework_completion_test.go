@@ -19,20 +19,22 @@ import (
 func TestStandaloneFrameworkCompletion(t *testing.T) {
 	for _, operation := range []string{"install", "remove"} {
 		for name, tt := range map[string]struct {
-			completed, cleanup, recordFailure, rolledBack, modCleanup bool
+			completed, cleanup, recordFailure, rolledBack, modCleanup, nestedCompletion bool
 		}{
-			"given completed files, when persisting, then record the mutation":                                        {completed: true},
-			"given completed files and cleanup failure, when persisting, then record the mutation and report cleanup": {completed: true, cleanup: true},
-			"given completed files and record failure, when returning, then preserve the record error and live state": {completed: true, recordFailure: true},
-			"given cleanup and record failures, when returning, then preserve both diagnostics":                       {completed: true, cleanup: true, recordFailure: true},
-			"given an incomplete mutation with cleanup failure, when returning, then leave metadata unchanged":        {cleanup: true},
-			"given a rolled-back mutation with cleanup failure, when returning, then leave metadata unchanged":        {cleanup: true, rolledBack: true},
-			"given a mod-specific cleanup marker, when returning, then do not infer framework completion":             {cleanup: true, modCleanup: true},
+			"given completed files, when persisting, then record the mutation":                                             {completed: true},
+			"given completed files and cleanup failure, when persisting, then record the mutation and report cleanup":      {completed: true, cleanup: true},
+			"given completed files and record failure, when returning, then preserve the record error and live state":      {completed: true, recordFailure: true},
+			"given cleanup and record failures, when returning, then preserve both diagnostics":                            {completed: true, cleanup: true, recordFailure: true},
+			"given an incomplete mutation with cleanup failure, when returning, then leave metadata unchanged":             {cleanup: true},
+			"given a rolled-back mutation with cleanup failure, when returning, then leave metadata unchanged":             {cleanup: true, rolledBack: true},
+			"given a mod-specific cleanup marker, when returning, then do not infer framework completion":                  {cleanup: true, modCleanup: true},
+			"given a nested framework completion marker, when the enclosing mutation fails, then leave metadata unchanged": {cleanup: true, nestedCompletion: true},
 		} {
 			t.Run(operation+"/"+name, func(t *testing.T) {
 				th := helper.NewHelper(t)
 				db := th.CreateDatabase()
 				repo.CreateFrameworksTable(db)
+				repo.CreateModsTable(db)
 				stored := repo.NewFrameworksRepo(db)
 				runtime := filepath.Join(th.GetValheimDirectory(), "runtime")
 				old := framework.Framework{Name: framework.BepInEx, Namespace: framework.BepInExNamespace, Version: "1.0.0"}
@@ -94,11 +96,14 @@ func TestStandaloneFrameworkCompletion(t *testing.T) {
 						if tt.modCleanup {
 							return &file.ModRemovalCleanupError{Err: cleanupErr}
 						}
+						if tt.nestedCompletion {
+							return fmt.Errorf("%w: %w", fileSentinel, errors.Join(operationCause, &file.FrameworkMutationCleanupError{Err: cleanupErr}))
+						}
 						return fmt.Errorf("%w: %w", fileSentinel, errors.Join(operationCause, cleanupErr))
 					}
 					mutate()
 					if cleanupErr != nil {
-						return fmt.Errorf("%w: %w", fileSentinel, &file.FrameworkMutationCleanupError{Err: cleanupErr})
+						return &file.FrameworkMutationCleanupError{Err: fmt.Errorf("%w: %w", fileSentinel, cleanupErr)}
 					}
 					return nil
 				}
@@ -123,15 +128,17 @@ func TestStandaloneFrameworkCompletion(t *testing.T) {
 					}
 				} else {
 					fm.RemoveBepInExFunc = perform
-					fr.DeleteFrameworkFunc = func(name string) error {
-						if name != framework.BepInEx {
-							t.Fatalf("unexpected framework %q", name)
+					plugins := filepath.Join(th.GetValheimDirectory(), "BepInEx", "plugins")
+					fm.BepInExPluginDirectoryFunc = func() string { return plugins }
+					fr.DeleteFrameworkFunc = func(name, pluginDirectory string) error {
+						if name != framework.BepInEx || pluginDirectory != plugins {
+							t.Fatalf("unexpected framework removal scope: %q, %q", name, pluginDirectory)
 						}
 						recordCalls++
 						if tt.recordFailure {
 							return errors.Join(recordSentinel, recordCause)
 						}
-						return stored.DeleteFramework(name)
+						return stored.DeleteFramework(name, pluginDirectory)
 					}
 				}
 				ts := &mock.Thunderstore{GetPackageFunc: func(namespace, name string) (thunderstore.Package, error) {
@@ -194,8 +201,11 @@ func TestStandaloneFrameworkCompletion(t *testing.T) {
 					}
 				}
 				var completed *file.FrameworkMutationCleanupError
-				if errors.As(err, &completed) != (tt.completed && tt.cleanup) {
-					t.Errorf("incorrect completion classification: %v", err)
+				if errors.As(err, &completed) != ((tt.completed || tt.nestedCompletion) && tt.cleanup) {
+					t.Errorf("completion diagnostic was lost or invented: %v", err)
+				}
+				if _, requestCompleted := err.(*service.FrameworkMutationCleanupError); requestCompleted != (tt.completed && tt.cleanup && !tt.recordFailure) {
+					t.Errorf("incorrect framework request completion: %v", err)
 				}
 				if !tt.completed || tt.cleanup || tt.recordFailure {
 					if !errors.Is(err, serviceSentinel) {
@@ -217,7 +227,7 @@ func TestStandaloneFrameworkCompletion(t *testing.T) {
 					t.Errorf("recovery artifact changed: %q, %v", data, err)
 				}
 				if operation == "install" && tt.completed && !tt.recordFailure {
-					if err := service.NewFrameworkService(fr, fm, ts, strings.NewReader("Y\n")).InstallBepInEx(); err != nil || fileCalls != 1 || packageCalls != 1 {
+					if err := service.NewFrameworkService(fr, fm, ts, strings.NewReader("Y\n")).InstallBepInEx(); err != service.ErrNoChanges || fileCalls != 1 || packageCalls != 1 {
 						t.Errorf("recorded framework was installed again: calls=%d/%d, error=%v", fileCalls, packageCalls, err)
 					}
 				}

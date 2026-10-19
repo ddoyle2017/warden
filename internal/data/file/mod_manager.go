@@ -18,7 +18,13 @@ type modManager interface {
 	//
 	// URL is the download link for a specific release.
 	// FullName is the namespace + mod name + version string that Thunderstore provides.
+	// A direct ModInstallCleanupError returns the published path, not a failed installation.
 	InstallMod(url, fullName string) (string, error)
+
+	// Prepares and publishes a replacement, retaining the original until Commit.
+	// Failures leave it intact, restore it, or report retained recovery paths.
+	// A direct ModInstallCleanupError with a handle still requires recording and Commit.
+	ReplaceMod(url, oldFullName, newFullName string) (ModReplacement, error)
 
 	// Deletes the folder and contents for a mod. `FullName` is a
 	// value provided by Thunderstore that contains the name, namespace, and version of a
@@ -33,11 +39,30 @@ type modManager interface {
 	StageAllModsRemoval() (ModRemoval, error)
 }
 
+// ModInstallCleanupError reports completed file installation with failed cleanup.
+// Only a direct return establishes completion; a nested marker is just a cause.
+// Metadata and dependencies are the caller's responsibility.
+type ModInstallCleanupError struct {
+	Err error
+}
+
+func (e *ModInstallCleanupError) Error() string {
+	return fmt.Sprintf("mod files installed; cleanup failed: %v", e.Err)
+}
+
+func (e *ModInstallCleanupError) Unwrap() error {
+	return e.Err
+}
+
 func (m *manager) ValidateModInstall() error {
 	return preflightRestore(m.modDirectory)
 }
 
 func (m *manager) InstallMod(url, fullName string) (string, error) {
+	return m.installMod(url, fullName, os.Remove)
+}
+
+func (m *manager) installMod(url, fullName string, removeArchive func(string) error) (string, error) {
 	if err := m.ValidateModInstall(); err != nil {
 		return "", err
 	}
@@ -45,7 +70,7 @@ func (m *manager) InstallMod(url, fullName string) (string, error) {
 	// Get the data
 	resp, err := m.client.Get(url)
 	if err != nil {
-		return "", api.ErrHTTPClient
+		return "", fmt.Errorf("%w: %w", api.ErrHTTPClient, err)
 	}
 	defer resp.Body.Close()
 
@@ -59,43 +84,56 @@ func (m *manager) InstallMod(url, fullName string) (string, error) {
 	// Create the zip archive
 	zipPath := filepath.Join(m.modDirectory, fullName+".zip")
 	if err := createFile(zipPath, resp.Body); err != nil {
-		m.backup.Restore(m.modDirectory)
-		return "", err
+		return "", errors.Join(err, m.restoreBackup(m.modDirectory))
 	}
 
 	// Extract zip files into a new folder for the mod
 	destination := filepath.Join(m.modDirectory, fullName)
 	if err := Unzip(zipPath, destination); err != nil {
-		m.backup.Restore(m.modDirectory)
-		return "", err
+		return "", errors.Join(err, m.restoreBackup(m.modDirectory))
 	}
 
 	// Remove zip file after finishing extraction
-	if err := os.Remove(zipPath); err != nil {
-		m.backup.Restore(m.modDirectory)
-		return "", ErrZipDeleteFailed
+	if err := removeArchive(zipPath); err != nil {
+		return "", errors.Join(fmt.Errorf("%w: %w", ErrZipDeleteFailed, err), m.restoreBackup(m.modDirectory))
 	}
-	m.backup.Remove()
+	if err := m.backup.Remove(); err != nil {
+		return destination, &ModInstallCleanupError{Err: err}
+	}
 	return destination, nil
 }
 
 func (m *manager) RemoveMod(fullName string) error {
+	return m.removeMod(fullName, ModRemoval.Commit)
+}
+
+func (m *manager) removeMod(fullName string, commit func(ModRemoval) error) error {
 	removal, err := m.StageModRemoval(fullName)
 	if err != nil {
 		return err
 	}
-	if err := removal.Commit(); err != nil {
+	if err := commit(removal); err != nil {
+		if cleanupErr, completed := err.(*ModRemovalCleanupError); completed {
+			return &ModRemovalCleanupError{Err: fmt.Errorf("%w: %w", ErrModDeleteFailed, cleanupErr.Err)}
+		}
 		return fmt.Errorf("%w: %w", ErrModDeleteFailed, err)
 	}
 	return nil
 }
 
 func (m *manager) RemoveAllMods() error {
+	return m.removeAllMods(ModRemoval.Commit)
+}
+
+func (m *manager) removeAllMods(commit func(ModRemoval) error) error {
 	removal, err := m.StageAllModsRemoval()
 	if err != nil {
 		return err
 	}
-	if err := removal.Commit(); err != nil {
+	if err := commit(removal); err != nil {
+		if cleanupErr, completed := err.(*ModRemovalCleanupError); completed {
+			return &ModRemovalCleanupError{Err: fmt.Errorf("%w: %w", ErrDeleteAllModsFailed, cleanupErr.Err)}
+		}
 		return fmt.Errorf("%w: %w", ErrDeleteAllModsFailed, err)
 	}
 	return nil

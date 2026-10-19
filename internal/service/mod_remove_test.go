@@ -15,7 +15,7 @@ import (
 
 func TestRemoveMod_Happy(t *testing.T) {
 	r := &mock.ModsRepo{
-		GetModFunc: func(name string) (mod.Mod, error) {
+		GetModByIdentityFunc: func(namespace, name string) (mod.Mod, error) {
 			return mod.Mod{
 				ID:        1,
 				Namespace: "Azumatt",
@@ -33,13 +33,14 @@ func TestRemoveMod_Happy(t *testing.T) {
 	}
 
 	tests := map[string]struct {
-		rd io.Reader
+		rd      io.Reader
+		wantErr error
 	}{
 		"if user confirms delete, remove the mod and return success": {
 			rd: strings.NewReader("Y"),
 		},
-		"if user denies delete, cancel mod removal and return success": {
-			rd: strings.NewReader("n"),
+		"given a negative answer, when removing a mod, then return cancellation": {
+			rd: strings.NewReader("n"), wantErr: service.ErrCancelled,
 		},
 	}
 
@@ -48,8 +49,8 @@ func TestRemoveMod_Happy(t *testing.T) {
 			ms := service.NewModService(r, fm, &mock.Thunderstore{}, test.rd)
 
 			err := ms.RemoveMod("Azumatt", "Sleepover")
-			if err != nil {
-				t.Errorf("expected a nil error, received: %+v", err)
+			if !errors.Is(err, test.wantErr) {
+				t.Errorf("removal outcome = %v, want %v", err, test.wantErr)
 			}
 		})
 	}
@@ -70,7 +71,7 @@ func TestRemoveMod_Sad(t *testing.T) {
 		},
 		"return error if mod isn't installed": {
 			r: &mock.ModsRepo{
-				GetModFunc: func(name string) (mod.Mod, error) {
+				GetModByIdentityFunc: func(namespace, name string) (mod.Mod, error) {
 					return mod.Mod{}, repo.ErrModFetchNoResults
 				},
 			},
@@ -79,7 +80,7 @@ func TestRemoveMod_Sad(t *testing.T) {
 		},
 		"return error if mod fetch fails": {
 			r: &mock.ModsRepo{
-				GetModFunc: func(name string) (mod.Mod, error) {
+				GetModByIdentityFunc: func(namespace, name string) (mod.Mod, error) {
 					return mod.Mod{}, repo.ErrModFetchFailed
 				},
 			},
@@ -88,7 +89,7 @@ func TestRemoveMod_Sad(t *testing.T) {
 		},
 		"return an error if unable to delete record of mod": {
 			r: &mock.ModsRepo{
-				GetModFunc: func(name string) (mod.Mod, error) {
+				GetModByIdentityFunc: func(namespace, name string) (mod.Mod, error) {
 					return mod.Mod{
 						ID:        1,
 						Namespace: "Azumatt",
@@ -109,7 +110,7 @@ func TestRemoveMod_Sad(t *testing.T) {
 		},
 		"return an error if unable to remove mod files": {
 			r: &mock.ModsRepo{
-				GetModFunc: func(name string) (mod.Mod, error) {
+				GetModByIdentityFunc: func(namespace, name string) (mod.Mod, error) {
 					return mod.Mod{
 						ID:        1,
 						Namespace: "Azumatt",
@@ -158,13 +159,14 @@ func TestRemoveAllMods_Happy(t *testing.T) {
 	}
 
 	tests := map[string]struct {
-		rd io.Reader
+		rd      io.Reader
+		wantErr error
 	}{
 		"if user confirms delete, remove all mods and return success": {
 			rd: strings.NewReader("YES I AM"),
 		},
-		"if user denies delete, cancel mod removal and return success": {
-			rd: strings.NewReader("no"),
+		"given a negative answer, when removing all mods, then return cancellation": {
+			rd: strings.NewReader("no"), wantErr: service.ErrCancelled,
 		},
 	}
 
@@ -173,8 +175,8 @@ func TestRemoveAllMods_Happy(t *testing.T) {
 			ms := service.NewModService(r, fm, &mock.Thunderstore{}, test.rd)
 
 			err := ms.RemoveAllMods()
-			if err != nil {
-				t.Errorf("expected a nil error, received: %+v", err)
+			if !errors.Is(err, test.wantErr) {
+				t.Errorf("removal outcome = %v, want %v", err, test.wantErr)
 			}
 		})
 	}

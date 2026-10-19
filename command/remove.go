@@ -3,7 +3,6 @@ package command
 import (
 	"errors"
 	"fmt"
-	"warden/internal/data/file"
 	"warden/internal/service"
 
 	"github.com/spf13/cobra"
@@ -17,13 +16,13 @@ func NewRemoveCommand(fs service.Framework, ms service.Mod) *cobra.Command {
 		Use:   "remove",
 		Short: "Removes the specified mod.",
 		Long:  "Deletes the mod from your mod folder and removes it from the local data storage.",
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			err := ms.RemoveMod(namespace, modPkg)
 			if err != nil {
-				parseRemoveError(err)
-			} else {
-				fmt.Println("... mod successfully removed! ...")
+				return parseRemoveError(err)
 			}
+			fmt.Println("... mod successfully removed! ...")
+			return nil
 		},
 	}
 	cmd.Flags().StringVarP(&namespace, namespaceFlagLong, namespaceFlagShort, "", namespaceFlagDesc)
@@ -44,13 +43,13 @@ func newRemoveAllCommand(ms service.Mod) *cobra.Command {
 		Use:   "all",
 		Short: "Removes all mods.",
 		Long:  "Deletes all mods from your mod folder, and removes records of them from the local data storage.",
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			err := ms.RemoveAllMods()
 			if err != nil {
-				parseRemoveAllError(err)
-			} else {
-				fmt.Println("... all mods were removed successfully! ...")
+				return parseRemoveAllError(err)
 			}
+			fmt.Println("... all mods were removed successfully! ...")
+			return nil
 		},
 	}
 	return cmd
@@ -61,43 +60,46 @@ func newRemoveBepInEx(fs service.Framework) *cobra.Command {
 		Use:   "bepinex",
 		Short: "Removes BepInEx installation.",
 		Long:  "Removes BepInEx and all mods installed under it.",
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			err := fs.RemoveBepInEx()
 			if err != nil {
-				parseRemoveError(err)
-			} else {
-				fmt.Println("... BepInEx and mods were removed successfully! ...")
+				return parseFrameworkError(err, "remove")
 			}
+			fmt.Println("... BepInEx and mods were removed successfully! ...")
+			return nil
 		},
 	}
 	return cmd
 }
 
-func parseRemoveError(err error) {
-	var committedModCleanup *file.ModRemovalCleanupError
-	var completed *file.FrameworkMutationCleanupError
-	if errors.As(err, &completed) {
-		fmt.Printf("... %v ...\n", err)
-	} else if errors.As(err, &committedModCleanup) {
-		fmt.Printf("... warning: %v ...\n", committedModCleanup)
-	} else if errors.Is(err, service.ErrUnableToRemoveMod) {
-		fmt.Printf("... %v ...\n", err)
-	} else if errors.Is(err, service.ErrMaxAttempts) {
-		fmt.Println("... unable to confim mod removal, aborting ...")
-	} else if errors.Is(err, service.ErrModNotInstalled) {
-		fmt.Println("... mod not installed ...")
-	} else if errors.Is(err, service.ErrUnableToRemoveFramework) {
-		fmt.Println("... unable to remove BepInEx ...")
+func parseRemoveError(err error) error {
+	if err == service.ErrCancelled || err == service.ErrNoChanges {
+		return nil
 	}
+	if _, completed := err.(*service.ModRemovalCleanupError); completed {
+		fmt.Printf("... warning: %v ...\n", err)
+		return nil
+	} else if errors.Is(err, service.ErrUnableToRemoveMod) || errors.Is(err, service.ErrConfirmationInput) {
+		return runtimeFailure("... %w ...", err)
+	} else if errors.Is(err, service.ErrMaxAttempts) {
+		return runtimeFailure("... unable to confirm mod removal, aborting: %w ...", err)
+	} else if errors.Is(err, service.ErrModNotInstalled) {
+		return runtimeFailure("... %w ...", err)
+	}
+	return runtimeFailure("... unable to remove mod: %w ...", err)
 }
 
-func parseRemoveAllError(err error) {
-	var committedModCleanup *file.ModRemovalCleanupError
-	if errors.As(err, &committedModCleanup) {
-		fmt.Printf("... warning: %v ...\n", committedModCleanup)
-	} else if errors.Is(err, service.ErrUnableToRemoveMod) {
-		fmt.Printf("... %v ...\n", err)
-	} else if errors.Is(err, service.ErrMaxAttempts) {
-		fmt.Println("... unable to confim mod removal, aborting ...")
+func parseRemoveAllError(err error) error {
+	if err == service.ErrCancelled || err == service.ErrNoChanges {
+		return nil
 	}
+	if _, completed := err.(*service.ModRemovalCleanupError); completed {
+		fmt.Printf("... warning: %v ...\n", err)
+		return nil
+	} else if errors.Is(err, service.ErrUnableToRemoveMod) || errors.Is(err, service.ErrConfirmationInput) {
+		return runtimeFailure("... %w ...", err)
+	} else if errors.Is(err, service.ErrMaxAttempts) {
+		return runtimeFailure("... unable to confirm mod removal, aborting: %w ...", err)
+	}
+	return runtimeFailure("... unable to remove mods: %w ...", err)
 }

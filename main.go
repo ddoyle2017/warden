@@ -53,5 +53,7 @@ func main() {
 	configCmd := command.NewConfigCommand(*cfg)
 	startCmd := command.NewStartCommand(ss)
 
-	command.Execute(listCmd, addCmd, removeCmd, updateCmd, configCmd, startCmd)
+	if err := command.Execute(listCmd, addCmd, removeCmd, updateCmd, configCmd, startCmd); err != nil {
+		os.Exit(1)
+	}
 }

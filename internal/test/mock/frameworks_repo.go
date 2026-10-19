@@ -6,7 +6,7 @@ type FrameworksRepo struct {
 	GetFrameworkFunc    func(name string) (framework.Framework, error)
 	InsertFrameworkFunc func(f framework.Framework) error
 	UpdateFrameworkFunc func(f framework.Framework) error
-	DeleteFrameworkFunc func(name string) error
+	DeleteFrameworkFunc func(name, pluginDirectory string) error
 }
 
 func (r *FrameworksRepo) GetFramework(name string) (framework.Framework, error) {
@@ -21,6 +21,6 @@ func (r *FrameworksRepo) UpdateFramework(f framework.Framework) error {
 	return r.UpdateFrameworkFunc(f)
 }
 
-func (r *FrameworksRepo) DeleteFramework(name string) error {
-	return r.DeleteFrameworkFunc(name)
+func (r *FrameworksRepo) DeleteFramework(name, pluginDirectory string) error {
+	return r.DeleteFrameworkFunc(name, pluginDirectory)
 }

@@ -2,6 +2,7 @@ package service_test
 
 import (
 	"errors"
+	"io"
 	"slices"
 	"strings"
 	"testing"
@@ -48,7 +49,7 @@ func TestModRemoval_ReportsFinalizationErrors(t *testing.T) {
 				return nil
 			}
 			r := &mock.ModsRepo{
-				GetModFunc: func(string) (mod.Mod, error) {
+				GetModByIdentityFunc: func(string, string) (mod.Mod, error) {
 					return mod.Mod{Namespace: "Owned", Name: "Installed", Version: "1.0.0"}, nil
 				},
 				DeleteModFunc:     func(string, string) error { return deleteRecord() },
@@ -86,19 +87,23 @@ func TestModRemoval_ReportsFinalizationErrors(t *testing.T) {
 			if errors.As(err, &committed) == tt.rollback {
 				t.Errorf("incorrect committed-removal classification: %v", err)
 			}
+			if _, completed := err.(*service.ModRemovalCleanupError); completed == tt.rollback {
+				t.Errorf("incorrect service-removal completion: %v", err)
+			}
 		})
 	}
 }
 
 func TestModRemoval_DoesNotStageWithoutConfirmation(t *testing.T) {
 	tests := map[string]struct {
-		all    bool
-		answer string
+		all     bool
+		answer  string
+		wantErr error
 	}{
-		"given a declined single removal, when returning, then perform no operations":      {answer: "n"},
-		"given declined all-mod removal, when returning, then perform no operations":       {all: true, answer: "no"},
-		"given exhausted single-removal input, when returning, then perform no operations": {},
-		"given exhausted all-mod input, when returning, then perform no operations":        {all: true},
+		"given a declined single removal, when returning, then perform no operations":      {answer: "n", wantErr: service.ErrCancelled},
+		"given declined all-mod removal, when returning, then perform no operations":       {all: true, answer: "no", wantErr: service.ErrCancelled},
+		"given exhausted single-removal input, when returning, then perform no operations": {wantErr: io.EOF},
+		"given exhausted all-mod input, when returning, then perform no operations":        {all: true, wantErr: io.EOF},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -106,7 +111,7 @@ func TestModRemoval_DoesNotStageWithoutConfirmation(t *testing.T) {
 				t.Fatal("removal accessed files or records without confirmation")
 			}
 			r := &mock.ModsRepo{
-				GetModFunc: func(string) (mod.Mod, error) {
+				GetModByIdentityFunc: func(string, string) (mod.Mod, error) {
 					unexpected()
 					return mod.Mod{}, nil
 				},
@@ -124,8 +129,8 @@ func TestModRemoval_DoesNotStageWithoutConfirmation(t *testing.T) {
 			} else {
 				err = ms.RemoveMod("Owned", "Installed")
 			}
-			if err != nil {
-				t.Errorf("cancellation changed its result: %v", err)
+			if !errors.Is(err, tt.wantErr) {
+				t.Errorf("confirmation error = %v, want %v", err, tt.wantErr)
 			}
 		})
 	}

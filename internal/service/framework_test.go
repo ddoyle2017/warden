@@ -15,12 +15,14 @@ import (
 
 func TestInstallBepInEx_Happy(t *testing.T) {
 	tests := map[string]struct {
-		r  repo.Frameworks
-		fm file.Manager
-		ts thunderstore.Thunderstore
-		rd io.Reader
+		r       repo.Frameworks
+		fm      file.Manager
+		ts      thunderstore.Thunderstore
+		rd      io.Reader
+		wantErr error
 	}{
-		"if BepInEx is already installed, skip installation and return success": {
+		"given a recorded framework, when installing, then report no changes": {
+			wantErr: service.ErrNoChanges,
 			r: &mock.FrameworksRepo{
 				GetFrameworkFunc: func(name string) (framework.Framework, error) {
 					return framework.Framework{
@@ -66,8 +68,8 @@ func TestInstallBepInEx_Happy(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			fs := service.NewFrameworkService(test.r, test.fm, test.ts, test.rd)
 
-			if err := fs.InstallBepInEx(); err != nil {
-				t.Errorf("expected a nil error, received: %+v", err)
+			if err := fs.InstallBepInEx(); !errors.Is(err, test.wantErr) {
+				t.Errorf("framework install outcome = %v, want %v", err, test.wantErr)
 			}
 		})
 	}
@@ -180,9 +182,13 @@ func TestRemoveBepInEx_Happy(t *testing.T) {
 		RemoveBepInExFunc: func() error {
 			return nil
 		},
+		BepInExPluginDirectoryFunc: func() string { return "plugins" },
 	}
 	r := &mock.FrameworksRepo{
-		DeleteFrameworkFunc: func(name string) error {
+		DeleteFrameworkFunc: func(name, pluginDirectory string) error {
+			if name != framework.BepInEx || pluginDirectory != "plugins" {
+				t.Fatalf("unexpected removal scope: %q, %q", name, pluginDirectory)
+			}
 			return nil
 		},
 	}
@@ -216,7 +222,7 @@ func TestRemoveBepInEx_Sad(t *testing.T) {
 		},
 		"if unable to delete BepInEx record from database, return error": {
 			r: &mock.FrameworksRepo{
-				DeleteFrameworkFunc: func(name string) error {
+				DeleteFrameworkFunc: func(name, pluginDirectory string) error {
 					return repo.ErrFrameworkDeleteFailed
 				},
 			},
@@ -224,6 +230,7 @@ func TestRemoveBepInEx_Sad(t *testing.T) {
 				RemoveBepInExFunc: func() error {
 					return nil
 				},
+				BepInExPluginDirectoryFunc: func() string { return "plugins" },
 			},
 			rd:       strings.NewReader("YES I AM"),
 			expected: service.ErrUnableToRemoveFramework,

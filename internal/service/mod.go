@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"warden/internal/api/thunderstore"
 	"warden/internal/data/file"
@@ -14,10 +15,12 @@ import (
 )
 
 var (
-	ErrUnableToListMods  = errors.New("unable to list mods")
-	ErrUnableToRemoveMod = errors.New("unable to remove mod")
-	ErrUnableToUpdateMod = errors.New("unable to update mod")
-	ErrModNotInstalled   = errors.New("mod not installed")
+	ErrUnableToListMods    = errors.New("unable to list mods")
+	ErrUnableToRemoveMod   = errors.New("unable to remove mod")
+	ErrUnableToUpdateMod   = errors.New("unable to update mod")
+	ErrModNotInstalled     = errors.New("mod not installed")
+	ErrModNameAmbiguous    = errors.New("multiple installed mods have this name")
+	ErrDuplicateModRecords = errors.New("duplicate installation records")
 
 	ErrModAlreadyInstalled = errors.New("mod is already installed")
 	ErrModInstallFailed    = errors.New("unable to install new mod")
@@ -26,12 +29,46 @@ var (
 	ErrAddDependenciesFailed = errors.New("unable to install mod's dependencies")
 )
 
+// ModMutationCleanupError marks a completed add/update request, including metadata
+// and direct dependencies, with cleanup warnings. Only a direct return establishes
+// whole-request completion; nested file/removal markers do not.
+type ModMutationCleanupError struct {
+	Err error
+}
+
+func (e *ModMutationCleanupError) Error() string {
+	return fmt.Sprintf("mod request completed; cleanup failed: %v", e.Err)
+}
+
+func (e *ModMutationCleanupError) Unwrap() error {
+	return e.Err
+}
+
+// ModRemovalCleanupError marks a completed service removal, including metadata.
+// Only a direct return establishes completion; file-only and nested markers do not.
+type ModRemovalCleanupError struct {
+	Err error
+}
+
+func (e *ModRemovalCleanupError) Error() string {
+	return fmt.Sprintf("mod removal completed; %v", e.Err)
+}
+
+func (e *ModRemovalCleanupError) Unwrap() error {
+	return e.Err
+}
+
+func (e *ModRemovalCleanupError) Is(target error) bool {
+	return target == ErrUnableToRemoveMod
+}
+
 // Encapsulates all the business logic for managing mods. It coordinates both the mods
 // database and file management to make sure they're updated together.
 type Mod interface {
 	ListMods() ([]mod.Mod, error)
 	AddMod(namespace, name string) error
 	UpdateMod(name string) error
+	UpdateModByIdentity(namespace, name string) error
 	UpdateAllMods() error
 	RemoveMod(namespace, name string) error
 	RemoveAllMods() error
@@ -58,193 +95,343 @@ func (ms *modService) ListMods() ([]mod.Mod, error) {
 }
 
 func (ms *modService) AddMod(namespace, name string) error {
-	// Check if the mod is already installed
-	current, err := ms.r.GetMod(name)
-
-	if err == nil && !current.Equals(&mod.Mod{}) {
-		// Mod already installed
-		return ErrModAlreadyInstalled
-	}
+	current, err := ms.r.GetModByIdentity(namespace, name)
 	if err != nil && !errors.Is(err, repo.ErrModFetchNoResults) {
-		// If repo fetch returns any error BESIDES no results,
-		// return mod install failure
-		return ErrModInstallFailed
+		return fmt.Errorf("%w: %w", ErrModInstallFailed, err)
 	}
+	installed := err == nil
 
-	// Find the requested mod online
-	pkg, err := ms.ts.GetPackage(namespace, name)
-	if err != nil {
-		return ErrModNotFound
-	}
-
-	// Install the mod and it's dependencies
-	err = ms.installMod(pkg.Latest)
-	if err != nil {
-		return ErrModInstallFailed
-	}
-
-	if len(pkg.Latest.Dependencies) > 0 {
-		fmt.Printf("... mod has %d dependencies, installing them ...\n", len(pkg.Latest.Dependencies))
-
-		err = ms.addDependencies(pkg.Latest.Dependencies)
+	var release thunderstore.Release
+	if installed {
+		if err := validateReleaseVersion("installed", current.Version); err != nil {
+			return fmt.Errorf("%w: %s/%s: %w", ErrAddDependenciesFailed, namespace, name, err)
+		}
+		release, err = ms.ts.GetRelease(current.Namespace, current.Name, current.Version)
 		if err != nil {
-			return ErrAddDependenciesFailed
+			return fmt.Errorf("%w: cannot determine dependencies for installed %s; root left unchanged; retry when its exact-version metadata is available: %w",
+				ErrAddDependenciesFailed, current.FullName(), err)
+		}
+	} else {
+		pkg, err := ms.ts.GetPackage(namespace, name)
+		if err != nil {
+			return fmt.Errorf("%w: %w", ErrModNotFound, err)
+		}
+		release = pkg.Latest
+	}
+
+	dependencies, err := planDependencies(release)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrAddDependenciesFailed, err)
+	}
+
+	var cleanupErr error
+	if !installed {
+		cleanupErr, err = ms.installMod(release)
+		if err != nil {
+			return modMutationResult(cleanupErr, fmt.Errorf("%w: %w", ErrModInstallFailed, err))
 		}
 	}
-	return nil
+	missing, err := ms.missingDependencies(dependencies)
+	if err != nil {
+		return modMutationResult(cleanupErr, fmt.Errorf("%w: %w", ErrAddDependenciesFailed, err))
+	}
+	if installed && len(missing) == 0 {
+		return ErrModAlreadyInstalled
+	}
+
+	if len(missing) > 0 {
+		if installed {
+			fmt.Printf("... keeping installed %s; repairing %d missing direct dependencies ...\n", current.FullName(), len(missing))
+		} else {
+			fmt.Printf("... mod has %d missing direct dependencies, installing them ...\n", len(missing))
+		}
+
+		dependencyCleanup, err := ms.addDependencies(missing)
+		cleanupErr = errors.Join(cleanupErr, dependencyCleanup)
+		if err != nil {
+			return modMutationResult(cleanupErr, fmt.Errorf("%w: %w", ErrAddDependenciesFailed, err))
+		}
+	}
+	return modMutationResult(cleanupErr, nil)
+}
+
+func (ms *modService) missingDependencies(dependencies []dependency) ([]dependency, error) {
+	missing := make([]dependency, 0, len(dependencies))
+	seen := make(map[dependency]bool, len(dependencies))
+	for _, dep := range dependencies {
+		if dep.name == framework.BepInEx || seen[dep] {
+			continue
+		}
+		seen[dep] = true
+		_, err := ms.r.GetModByIdentity(dep.namespace, dep.name)
+		if errors.Is(err, repo.ErrModFetchNoResults) {
+			missing = append(missing, dep)
+		} else if err != nil {
+			return nil, fmt.Errorf("%s/%s: %w", dep.namespace, dep.name, err)
+		}
+	}
+	return missing, nil
 }
 
 func (ms *modService) UpdateMod(name string) error {
-	// Find the current installation of the mod
 	current, err := ms.r.GetMod(name)
+	if errors.Is(err, repo.ErrModFetchMultipleResults) {
+		return ms.describeModAmbiguity(name, err)
+	}
+	return ms.updateInstalledMod(current, err)
+}
+
+func (ms *modService) UpdateModByIdentity(namespace, name string) error {
+	current, err := ms.r.GetModByIdentity(namespace, name)
+	if errors.Is(err, repo.ErrModFetchMultipleResults) {
+		return fmt.Errorf("%w: %w for %s/%s; inspect installation records before retrying: %w",
+			ErrUnableToUpdateMod, ErrDuplicateModRecords, namespace, name, err)
+	}
+	return ms.updateInstalledMod(current, err)
+}
+
+func (ms *modService) describeModAmbiguity(name string, lookupErr error) error {
+	mods, err := ms.r.ListMods()
+	if err != nil {
+		return fmt.Errorf("%w: %w; unable to list matching installations: %w: %w",
+			ErrUnableToUpdateMod, ErrModNameAmbiguous, err, lookupErr)
+	}
+	counts := make(map[string]int)
+	matches := 0
+	for _, m := range mods {
+		if m.Name == name {
+			counts[m.Namespace]++
+			matches++
+		}
+	}
+	if matches < 2 {
+		return fmt.Errorf("%w: %w; matching installation records changed during lookup; retry: %w",
+			ErrUnableToUpdateMod, ErrModNameAmbiguous, lookupErr)
+	}
+	var identities, duplicates []string
+	for namespace, count := range counts {
+		identity := namespace + "/" + name
+		identities = append(identities, identity)
+		if count > 1 {
+			duplicates = append(duplicates, identity)
+		}
+	}
+	slices.Sort(identities)
+	slices.Sort(duplicates)
+	detail := "matching packages: " + strings.Join(identities, ", ")
+	if len(identities) > 1 {
+		detail += "; specify --namespace to select a package"
+	}
+	if len(duplicates) > 0 {
+		return fmt.Errorf("%w: %w; %s; %w for %s; inspect installation records before retrying: %w",
+			ErrUnableToUpdateMod, ErrModNameAmbiguous, detail, ErrDuplicateModRecords, strings.Join(duplicates, ", "), lookupErr)
+	}
+	return fmt.Errorf("%w: %w; %s: %w", ErrUnableToUpdateMod, ErrModNameAmbiguous, detail, lookupErr)
+}
+
+func (ms *modService) updateInstalledMod(current mod.Mod, err error) error {
 	if err != nil && errors.Is(err, repo.ErrModFetchNoResults) {
 		return ErrModNotInstalled
 	}
 	if err != nil {
-		return ErrUnableToUpdateMod
+		return fmt.Errorf("%w: %w", ErrUnableToUpdateMod, err)
 	}
 
 	// Fetch the latest version from online
 	pkg, err := ms.ts.GetPackage(current.Namespace, current.Name)
 	if err != nil {
-		return ErrModNotFound
+		return fmt.Errorf("%w: %w", ErrModNotFound, err)
 	}
 
-	if current.Version < pkg.Latest.VersionNumber {
+	newer, err := hasNewerRelease(current.Version, pkg.Latest.VersionNumber)
+	if err != nil {
+		return fmt.Errorf("%w: %s/%s: %w", ErrUnableToUpdateMod, current.Namespace, current.Name, err)
+	}
+	if newer {
 		fmt.Printf("... found a new version (%s) of %s %s ...\n", pkg.Latest.VersionNumber, current.Namespace, current.Name)
 		fmt.Printf("did you want to update this mod? %s\n", yesOrNo)
 
-		tries := 0
-		for ms.in.Scan() && tries < 2 {
-			if ms.in.Text() == yes {
-				err = ms.updateMod(current.FullName(), pkg.Latest)
-				if err != nil {
-					return fmt.Errorf("%w: %w", ErrUnableToUpdateMod, err)
-				}
-				err = ms.addDependencies(pkg.Latest.Dependencies)
-				if err != nil {
-					return ErrAddDependenciesFailed
-				}
-				return nil
-			} else if ms.in.Text() == no {
-				fmt.Println("... aborting ...")
-				return nil
-			} else {
-				tries++
-			}
+		accepted, err := confirm(ms.in, yes, no)
+		if err != nil {
+			return err
 		}
-		if tries >= 2 {
-			return ErrMaxAttempts
+		if !accepted {
+			fmt.Println("... aborting ...")
+			return ErrCancelled
 		}
+		dependencies, err := planDependencies(pkg.Latest)
+		if err != nil {
+			return fmt.Errorf("%w: %w", ErrAddDependenciesFailed, err)
+		}
+		cleanupErr, err := ms.updateMod(current, pkg.Latest)
+		if err != nil {
+			return modMutationResult(cleanupErr, fmt.Errorf("%w: %w", ErrUnableToUpdateMod, err))
+		}
+		dependencyCleanup, err := ms.addDependencies(dependencies)
+		cleanupErr = errors.Join(cleanupErr, dependencyCleanup)
+		if err != nil {
+			return modMutationResult(cleanupErr, fmt.Errorf("%w: %w", ErrAddDependenciesFailed, err))
+		}
+		return modMutationResult(cleanupErr, nil)
 	} else {
 		fmt.Printf("... latest version of %s %s already installed (%s) ...\n", current.Namespace, current.Name, current.Version)
 	}
-	return nil
+	return ErrNoChanges
 }
 
 func (ms *modService) UpdateAllMods() error {
 	fmt.Printf("are you sure you wanted to update ALL mods? %s\n", yesOrNo)
 
-	tries := 0
-	for ms.in.Scan() && tries < 2 {
-		if ms.in.Text() == yes {
-			// Get all installed mods
-			mods, err := ms.r.ListMods()
+	accepted, err := confirm(ms.in, yes, no)
+	if err != nil {
+		return err
+	}
+	if !accepted {
+		fmt.Println("... aborting ...")
+		return ErrCancelled
+	}
+	// Get all installed mods
+	mods, err := ms.r.ListMods()
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrUnableToListMods, err)
+	}
+	// Count original records, but reject duplicates only when their package is reached.
+	identityCounts := make(map[[2]string]int, len(mods))
+	for _, m := range mods {
+		identityCounts[[2]string{m.Namespace, m.Name}]++
+	}
+	validateIdentity := func(namespace, name string) error {
+		if identityCounts[[2]string{namespace, name}] > 1 {
+			return fmt.Errorf("%w: %w for %s/%s; inspect installation records before retrying: %w",
+				ErrUnableToUpdateMod, ErrDuplicateModRecords, namespace, name, repo.ErrModFetchMultipleResults)
+		}
+		return nil
+	}
+
+	selected := make(map[[2]string]mod.Mod, len(mods))
+	for _, m := range mods {
+		selected[[2]string{m.Namespace, m.Name}] = m
+	}
+	updated := make(map[[2]string][]dependency)
+	replace := func(current mod.Mod, latest thunderstore.Release) (cleanupErr, failure error) {
+		if err := validateIdentity(current.Namespace, current.Name); err != nil {
+			return nil, err
+		}
+		newer, err := hasNewerRelease(current.Version, latest.VersionNumber)
+		if err != nil {
+			return nil, fmt.Errorf("%s/%s: %w", current.Namespace, current.Name, err)
+		}
+		if !newer {
+			return nil, nil
+		}
+		dependencies, err := planDependencies(latest)
+		if err != nil {
+			return nil, err
+		}
+		cleanupErr, failure = ms.updateMod(current, latest)
+		if failure == nil {
+			updated[[2]string{current.Namespace, current.Name}] = dependencies
+		}
+		return cleanupErr, failure
+	}
+	installDependency := func(latest thunderstore.Release) (cleanupErr, failure error) {
+		identity := [2]string{latest.Namespace, latest.Name}
+		if _, done := updated[identity]; done {
+			return nil, nil
+		}
+		if current, installed := selected[identity]; installed {
+			return replace(current, latest)
+		}
+		return ms.installMod(latest)
+	}
+
+	var cleanupErr error
+	for _, m := range mods {
+		if err := validateIdentity(m.Namespace, m.Name); err != nil {
+			return modMutationResult(cleanupErr, err)
+		}
+		identity := [2]string{m.Namespace, m.Name}
+		dependencies, alreadyUpdated := updated[identity]
+		if !alreadyUpdated {
+			pkg, err := ms.ts.GetPackage(m.Namespace, m.Name)
 			if err != nil {
-				return ErrUnableToListMods
+				return modMutationResult(cleanupErr, fmt.Errorf("%w: %s/%s: %w", ErrModNotFound, m.Namespace, m.Name, err))
 			}
 
-			// For each one, check if there's an update and install it if there is
-			for _, m := range mods {
-				pkg, err := ms.ts.GetPackage(m.Namespace, m.Name)
-				if err != nil {
-					return ErrModNotFound
+			updateCleanup, err := replace(m, pkg.Latest)
+			cleanupErr = errors.Join(cleanupErr, updateCleanup)
+			if err != nil {
+				operationErr := ErrUnableToUpdateMod
+				if errors.Is(err, ErrInvalidDependency) {
+					operationErr = ErrAddDependenciesFailed
 				}
-
-				if m.Version < pkg.Latest.VersionNumber {
-					err = ms.updateMod(m.FullName(), pkg.Latest)
-					if err != nil {
-						return fmt.Errorf("%w: %w", ErrUnableToUpdateMod, err)
-					}
-					err = ms.addDependencies(pkg.Latest.Dependencies)
-					if err != nil {
-						return ErrAddDependenciesFailed
-					}
-				} else {
-					fmt.Printf("... latest version of %s %s already installed (%s) ...\n", m.Namespace, m.Name, m.Version)
-				}
+				return modMutationResult(cleanupErr, fmt.Errorf("%w: %w", operationErr, err))
 			}
-			return nil
-		} else if ms.in.Text() == no {
-			fmt.Println("... aborting ...")
-			return nil
-		} else {
-			tries++
+			dependencies, alreadyUpdated = updated[identity]
+			if !alreadyUpdated {
+				fmt.Printf("... latest version of %s %s already installed (%s) ...\n", m.Namespace, m.Name, m.Version)
+				continue
+			}
+		}
+		// A dependency may already be replaced, but its own selected turn still owns its direct dependencies.
+		dependencyCleanup, err := ms.addDependenciesWithInstaller(dependencies, installDependency, validateIdentity)
+		cleanupErr = errors.Join(cleanupErr, dependencyCleanup)
+		if err != nil {
+			return modMutationResult(cleanupErr, fmt.Errorf("%w: %w", ErrAddDependenciesFailed, err))
 		}
 	}
-	if tries >= 2 {
-		return ErrMaxAttempts
+	if len(updated) == 0 {
+		fmt.Println("... no mods need updating ...")
+		return ErrNoChanges
 	}
-	return nil
+	return modMutationResult(cleanupErr, nil)
 }
 
 func (ms *modService) RemoveMod(namespace, name string) error {
 	fmt.Printf("are you sure you want to remove this mod? %s\n", yesOrNo)
 
-	tries := 0
-	for ms.in.Scan() && tries < 2 {
-		if ms.in.Text() == yes {
-			// Find the current installation of the mod
-			current, err := ms.r.GetMod(name)
-			if err != nil && errors.Is(err, repo.ErrModFetchNoResults) {
-				return ErrModNotInstalled
-			}
-			if err != nil {
-				return ErrUnableToRemoveMod
-			}
+	accepted, err := confirm(ms.in, yes, no)
+	if err != nil {
+		return err
+	}
+	if !accepted {
+		fmt.Println("... aborting ...")
+		return ErrCancelled
+	}
+	// Find the current installation of the mod
+	current, err := ms.r.GetModByIdentity(namespace, name)
+	if err != nil && errors.Is(err, repo.ErrModFetchNoResults) {
+		return ErrModNotInstalled
+	}
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrUnableToRemoveMod, err)
+	}
 
-			removal, err := ms.fm.StageModRemoval(current.FullName())
-			if err != nil {
-				return fmt.Errorf("%w: %w", ErrUnableToRemoveMod, err)
-			}
-			return ms.finishModRemoval(removal, func() error {
-				return ms.r.DeleteMod(name, namespace)
-			})
-		} else if ms.in.Text() == no {
-			fmt.Println("... aborting ...")
-			return nil
-		} else {
-			tries++
-		}
+	removal, err := ms.fm.StageModRemoval(current.FullName())
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrUnableToRemoveMod, err)
 	}
-	if tries >= 2 {
-		return ErrMaxAttempts
-	}
-	return nil
+	return ms.finishModRemoval(removal, func() error {
+		return ms.r.DeleteMod(current.Name, current.Namespace)
+	})
 }
 
 func (ms *modService) RemoveAllMods() error {
 	fmt.Printf("are you sure you want to remove ALL mods? %s\n", yesOrNoLong)
 
-	tries := 0
-	for ms.in.Scan() && tries < 2 {
-		if ms.in.Text() == yesLong {
-			removal, err := ms.fm.StageAllModsRemoval()
-			if err != nil {
-				return fmt.Errorf("%w: %w", ErrUnableToRemoveMod, err)
-			}
-			return ms.finishModRemoval(removal, ms.r.DeleteAllMods)
-		} else if ms.in.Text() == noLong {
-			fmt.Println("... aborting ...")
-			return nil
-		} else {
-			tries++
-		}
+	accepted, err := confirm(ms.in, yesLong, noLong)
+	if err != nil {
+		return err
 	}
-	if tries >= 2 {
-		return ErrMaxAttempts
+	if !accepted {
+		fmt.Println("... aborting ...")
+		return ErrCancelled
 	}
-	return nil
+	removal, err := ms.fm.StageAllModsRemoval()
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrUnableToRemoveMod, err)
+	}
+	return ms.finishModRemoval(removal, ms.r.DeleteAllMods)
 }
 
 func (ms *modService) finishModRemoval(removal file.ModRemoval, deleteRecords func() error) error {
@@ -252,62 +439,81 @@ func (ms *modService) finishModRemoval(removal file.ModRemoval, deleteRecords fu
 		return fmt.Errorf("%w: record deletion failed; verify database state: %w", ErrUnableToRemoveMod, errors.Join(err, removal.Rollback()))
 	}
 	if err := removal.Commit(); err != nil {
+		if _, completed := err.(*file.ModRemovalCleanupError); completed {
+			return &ModRemovalCleanupError{Err: err}
+		}
 		return fmt.Errorf("%w: %w", ErrUnableToRemoveMod, err)
 	}
 	return nil
 }
 
-func (ms *modService) addDependencies(dependencies []string) error {
-	for _, dep := range dependencies {
-		details := strings.Split(dep, "-")
-		namespace, name := details[0], details[1]
+func (ms *modService) addDependencies(dependencies []dependency) (cleanupErr, failure error) {
+	return ms.addDependenciesWithInstaller(dependencies, ms.installMod, nil)
+}
 
+func (ms *modService) addDependenciesWithInstaller(dependencies []dependency, install func(thunderstore.Release) (error, error), validateIdentity func(string, string) error) (cleanupErr, failure error) {
+	for _, dep := range dependencies {
 		// If dep is BepInEx, skip
-		if name == framework.BepInEx {
+		if dep.name == framework.BepInEx {
 			continue
 		}
-
-		pkg, err := ms.ts.GetPackage(namespace, name)
-		if err != nil {
-			return err
+		if validateIdentity != nil {
+			if err := validateIdentity(dep.namespace, dep.name); err != nil {
+				return cleanupErr, err
+			}
 		}
-		err = ms.installMod(pkg.Latest)
+
+		pkg, err := ms.ts.GetPackage(dep.namespace, dep.name)
 		if err != nil {
-			return err
+			return cleanupErr, fmt.Errorf("%s/%s: %w", dep.namespace, dep.name, err)
+		}
+		installCleanup, err := install(pkg.Latest)
+		cleanupErr = errors.Join(cleanupErr, installCleanup)
+		if err != nil {
+			return cleanupErr, err
 		}
 	}
-	return nil
+	return cleanupErr, nil
 }
 
-func (ms *modService) updateMod(fullname string, latest thunderstore.Release) error {
+func (ms *modService) updateMod(current mod.Mod, latest thunderstore.Release) (cleanupErr, failure error) {
 	if err := ms.fm.ValidateModInstall(); err != nil {
-		return err
+		return nil, err
 	}
 
-	// Delete the previous mod files
-	err := ms.fm.RemoveMod(fullname)
+	replacement, err := ms.fm.ReplaceMod(latest.DownloadURL, current.FullName(), latest.FullName)
 	if err != nil {
-		var cleanupErr *file.ModRemovalCleanupError
-		if !errors.As(err, &cleanupErr) {
-			return err
+		if _, completed := err.(*file.ModInstallCleanupError); !completed {
+			return nil, fmt.Errorf("%s: %w", latest.FullName, err)
 		}
-		fmt.Printf("... %v ...\n", cleanupErr)
+		cleanupErr = fmt.Errorf("%s: %w", latest.FullName, err)
 	}
-	// This path removed the prior release and owns cleanup of its obsolete record.
-	path, err := ms.fm.InstallMod(latest.DownloadURL, latest.FullName)
-	if err != nil {
-		return errors.Join(err, ms.r.DeleteMod(latest.Name, latest.Namespace))
+	if err := ms.recordMod(latest, replacement.Path()); err != nil {
+		recovery := "original files were absent"
+		if path := replacement.RecoveryPath(); path != "" {
+			recovery = fmt.Sprintf("original files retained at %q", path)
+		}
+		return cleanupErr, fmt.Errorf("%w; %s; original record before replacement: %+v", err, recovery, current)
 	}
-	return ms.recordMod(latest, path)
+	if err := replacement.Commit(); err != nil {
+		if _, completed := err.(*file.ModInstallCleanupError); !completed {
+			return cleanupErr, fmt.Errorf("%s: finalize replacement: %w", latest.FullName, err)
+		}
+		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("%s: %w", latest.FullName, err))
+	}
+	return cleanupErr, nil
 }
 
-func (ms *modService) installMod(release thunderstore.Release) error {
+func (ms *modService) installMod(release thunderstore.Release) (cleanupErr, failure error) {
 	// Download and install the mod files
 	path, err := ms.fm.InstallMod(release.DownloadURL, release.FullName)
 	if err != nil {
-		return err
+		if _, completed := err.(*file.ModInstallCleanupError); !completed {
+			return nil, fmt.Errorf("%s: %w", release.FullName, err)
+		}
+		cleanupErr = fmt.Errorf("%s: %w", release.FullName, err)
 	}
-	return ms.recordMod(release, path)
+	return cleanupErr, ms.recordMod(release, path)
 }
 
 func (ms *modService) recordMod(release thunderstore.Release, path string) error {
@@ -320,5 +526,18 @@ func (ms *modService) recordMod(release thunderstore.Release, path string) error
 		Description:  release.Description,
 		Dependencies: release.Dependencies,
 	}
-	return ms.r.UpsertMod(m)
+	if err := ms.r.UpsertMod(m); err != nil {
+		return fmt.Errorf("mod files installed at %q, but metadata write failed; verify database state before retrying: %w", path, err)
+	}
+	return nil
+}
+
+func modMutationResult(cleanupErr, failure error) error {
+	if failure != nil {
+		return errors.Join(failure, cleanupErr)
+	}
+	if cleanupErr != nil {
+		return &ModMutationCleanupError{Err: cleanupErr}
+	}
+	return nil
 }

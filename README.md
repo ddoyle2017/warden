@@ -13,7 +13,7 @@
 
 Warden features a simple command-line interface for managing mods on a Valheim dedicated server. Linux is the primary target. macOS and Windows paths exist in the code, but complete support is not yet established.
 
-Mods are currently sourced from [Thunderstore.io](https://thunderstore.io/). [Nexus Mods](https://www.nexusmods.com/) is not implemented. Warden installs the latest releases of direct mod dependencies and prompts to install [BepInEx](https://github.com/BepInEx/BepInEx) when its installation record is missing. Dependency versions are not pinned and dependency resolution is not recursive; see the [installation lifecycle](docs/install-lifecycle.md) for ordering and limitations.
+Mods are currently sourced from [Thunderstore.io](https://thunderstore.io/). [Nexus Mods](https://www.nexusmods.com/) is not implemented. Warden fetches the latest release when installing a direct mod dependency and prompts to install [BepInEx](https://github.com/BepInEx/BepInEx) when its installation record is missing. Dependency versions are not pinned and dependency resolution is not recursive; see the [installation lifecycle](docs/install-lifecycle.md) for ordering and limitations.
 
 Warden stores data in 2 different files:
 - A YAML configuration file at `$HOME/.warden.yaml`.
@@ -43,8 +43,9 @@ Warden supports the following commands:
     - Prints a list of all installed mods
 - `add`
     - Downloads and installs the specified mod
+    - Repeating the same add can [finish missing direct dependencies](docs/install-lifecycle.md#retrying-an-add) without reinstalling the root or updating recorded dependencies
 - `update`
-    - Updates the mod to latest version
+    - Updates the mod when a newer release is available; see the [version policy](docs/install-lifecycle.md#release-version-ordering)
     - `all`
         - A sub-command for updating *all* installed mods
     - `bepinex`
@@ -54,7 +55,7 @@ Warden supports the following commands:
     - `all`
         - A sub-command for removing *every* installed mod. A clean slate :)
     - `bepinex`
-        - Removes BepInEx and plugin files; currently leaves mod records in the database
+        - Removes BepInEx, its plugin files, and matching installation records
 - `config`
     - Lists the current configuration values for Warden + where the config file is located
     - `get`
@@ -69,14 +70,49 @@ Example syntax, after setting the intended server directory:
 ```sh
 warden config set valheim-directory /absolute/path/to/valheim
 warden add --namespace Azumatt --mod Where_You_At
-warden update --mod Where_You_At
+warden update --namespace Azumatt --mod Where_You_At
 warden remove --namespace Azumatt --mod Where_You_At
 warden update all
 warden update bepinex
 warden start modded
 ```
 
+`add` and `remove` require both `--namespace` and `--mod`. For `update`,
+`warden update --mod Where_You_At` still works when exactly one installed
+record has that name. If multiple installed mods share a name, Warden stops
+before downloading or changing files and lists the matching `namespace/name`
+choices; specify `--namespace` to select the intended author's package.
+Duplicate records for one exact identity are reported separately and cannot
+be resolved by namespace qualification; see the
+[identity and recovery guidance](docs/install-lifecycle.md#package-release-and-framework-identity).
+
 These are real installation commands, not a smoke test. Back up an existing server before changing its mods. Even `--help` initializes Warden's configuration and database; use the [isolated CLI procedure](CONTRIBUTING.md#isolated-cli-smoke-check) for development.
+
+Confirmation prompts allow two answers. A deliberate negative answer cancels the
+operation without a success message. Declining BepInEx installation also stops
+the requested mod add before it fetches or installs the mod. An unchanged version
+is reported as unchanged, not as a completed update. End-of-input and input
+failures remain errors; see [confirmation behavior and limitations](docs/install-lifecycle.md#confirmations-and-backups).
+
+Installation, update, and removal requests can complete with cleanup warnings.
+A completed BepInEx bootstrap warning does not stop the requested mod add, but
+does not establish that the mod itself was installed. An incomplete request
+instead reports failure details, including recovery paths or database-verification
+guidance; see [recovery and cleanup outcomes](docs/install-lifecycle.md#confirmations-and-backups)
+before retrying or using leftover backup files.
+
+Commands exit with status `0` on success, deliberate cancellation, known
+no-change or already-installed outcomes, and completed requests with cleanup
+warnings. Warnings still need attention even when the exit status is `0`.
+Runtime failures and rejected input exit with status `1` and report the failure
+once on standard error. Runtime failures do not print command usage. Cobra flag
+and argument validation errors, such as missing required flags or an invalid
+game type, include usage. An unknown configuration key is reported without usage.
+
+A nonzero status does not mean that no files or records changed. In particular,
+a successful BepInEx bootstrap does not turn a later mod failure into success.
+Keep the reported recovery paths and database-verification guidance when
+investigating an incomplete request.
 
 ## Installation
 ![installation-banner](./images/mistlands-exploration.png)

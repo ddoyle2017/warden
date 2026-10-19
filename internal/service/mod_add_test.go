@@ -14,7 +14,7 @@ import (
 
 func TestAddMod_Happy(t *testing.T) {
 	r := mock.ModsRepo{
-		GetModFunc: func(name string) (mod.Mod, error) {
+		GetModByIdentityFunc: func(namespace, name string) (mod.Mod, error) {
 			return mod.Mod{}, repo.ErrModFetchNoResults
 		},
 		UpsertModFunc: func(m mod.Mod) error {
@@ -76,11 +76,23 @@ func TestAddMod_Sad(t *testing.T) {
 	}{
 		"return an error if mod is already installed": {
 			r: &mock.ModsRepo{
-				GetModFunc: func(name string) (mod.Mod, error) {
+				GetModByIdentityFunc: func(namespace, name string) (mod.Mod, error) {
 					return mod.Mod{
 						ID:        1,
 						Namespace: "Azumatt",
 						Name:      "Sleepover",
+						Version:   "1.0.0",
+					}, nil
+				},
+			},
+			ts: &mock.Thunderstore{
+				GetReleaseFunc: func(namespace, name, version string) (thunderstore.Release, error) {
+					if namespace != "Azumatt" || name != "Sleepover" || version != "1.0.0" {
+						t.Fatalf("unexpected installed release %s/%s/%s", namespace, name, version)
+					}
+					return thunderstore.Release{
+						Namespace: namespace, Name: name, VersionNumber: version, FullName: "Azumatt-Sleepover-1.0.0",
+						Dependencies: []string{},
 					}, nil
 				},
 			},
@@ -88,7 +100,7 @@ func TestAddMod_Sad(t *testing.T) {
 		},
 		"return an error if mod fetch fails": {
 			r: &mock.ModsRepo{
-				GetModFunc: func(name string) (mod.Mod, error) {
+				GetModByIdentityFunc: func(namespace, name string) (mod.Mod, error) {
 					return mod.Mod{}, repo.ErrModFetchFailed
 				},
 			},
@@ -96,7 +108,7 @@ func TestAddMod_Sad(t *testing.T) {
 		},
 		"return an error if Thunderstore API returns an error": {
 			r: &mock.ModsRepo{
-				GetModFunc: func(name string) (mod.Mod, error) {
+				GetModByIdentityFunc: func(namespace, name string) (mod.Mod, error) {
 					return mod.Mod{}, repo.ErrModFetchNoResults
 				},
 			},
@@ -109,7 +121,7 @@ func TestAddMod_Sad(t *testing.T) {
 		},
 		"return an error if unable to download and install mod files": {
 			r: &mock.ModsRepo{
-				GetModFunc: func(name string) (mod.Mod, error) {
+				GetModByIdentityFunc: func(namespace, name string) (mod.Mod, error) {
 					return mod.Mod{}, repo.ErrModFetchNoResults
 				},
 				DeleteModFunc: func(modName, namespace string) error {
@@ -139,7 +151,7 @@ func TestAddMod_Sad(t *testing.T) {
 		},
 		"return an error if unable to record mod installation": {
 			r: &mock.ModsRepo{
-				GetModFunc: func(name string) (mod.Mod, error) {
+				GetModByIdentityFunc: func(namespace, name string) (mod.Mod, error) {
 					return mod.Mod{}, repo.ErrModFetchNoResults
 				},
 				UpsertModFunc: func(m mod.Mod) error {
@@ -169,7 +181,7 @@ func TestAddMod_Sad(t *testing.T) {
 		},
 		"return an error if unable to install mod dependencies": {
 			r: &mock.ModsRepo{
-				GetModFunc: func(name string) (mod.Mod, error) {
+				GetModByIdentityFunc: func(namespace, name string) (mod.Mod, error) {
 					return mod.Mod{}, repo.ErrModFetchNoResults
 				},
 				UpsertModFunc: func(m mod.Mod) error {
