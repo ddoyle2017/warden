@@ -19,6 +19,8 @@ Warden stores data in 2 different files:
 - A YAML configuration file at `$HOME/.warden.yaml`.
 - A lightweight, database storage file at `$HOME/.warden.db`
 
+When no configuration file exists, Warden saves the defaults before initializing the database or running a command. If saving fails, startup stops and reports the underlying write error. Existing valid configuration files are loaded without rewriting them.
+
 The YAML file stores the following configuration values for the app:
 - `valheim-directory` - Where the Valheim dedicated server is installed. Warden selects a platform-specific Steam installation path by default; set this to the actual server directory before managing mods.
 - `platform` - The operating system recorded when configuration is created (`linux`, `darwin`, or `windows`). This selects the vanilla server script.
