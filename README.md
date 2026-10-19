@@ -63,7 +63,9 @@ Warden supports the following commands:
     - `set`
         - Update `valheim-directory`
 - `start`
-    - Runs the server startup script for `vanilla` or `modded`
+    - Runs the server startup script for `vanilla` or `modded` from `valheim-directory`, so relative executables and resources resolve inside the server directory
+
+Use an absolute `valheim-directory` to start the same server from any working directory. A relative setting is resolved against the directory where you invoke Warden. `start` waits for the script to exit before returning its combined output; it does not detach the server.
 
 Example syntax, after setting the intended server directory:
 
