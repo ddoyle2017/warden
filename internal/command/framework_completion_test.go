@@ -3,12 +3,12 @@ package command_test
 import (
 	"errors"
 	"fmt"
+	"github.com/ddoyle2017/warden/internal/command"
+	"github.com/ddoyle2017/warden/internal/data/file"
+	"github.com/ddoyle2017/warden/internal/service"
 	"path/filepath"
 	"strings"
 	"testing"
-	"warden/command"
-	"warden/internal/data/file"
-	"warden/internal/service"
 )
 
 func TestStandaloneFrameworkDiagnostics(t *testing.T) {

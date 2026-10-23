@@ -1,16 +1,16 @@
 package main
 
 import (
+	"github.com/ddoyle2017/warden/internal/api/thunderstore"
+	"github.com/ddoyle2017/warden/internal/command"
+	"github.com/ddoyle2017/warden/internal/config"
+	"github.com/ddoyle2017/warden/internal/data/file"
+	"github.com/ddoyle2017/warden/internal/data/repo"
+	"github.com/ddoyle2017/warden/internal/service"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
-	"warden/command"
-	"warden/internal/api/thunderstore"
-	"warden/internal/config"
-	"warden/internal/data/file"
-	"warden/internal/data/repo"
-	"warden/internal/service"
 
 	"github.com/mitchellh/go-homedir"
 )

@@ -2,7 +2,7 @@ package command
 
 import (
 	"fmt"
-	"warden/internal/config"
+	"github.com/ddoyle2017/warden/internal/config"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"

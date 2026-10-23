@@ -4,10 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/ddoyle2017/warden/internal/api"
 	"io"
 	"net/http"
 	"net/url"
-	"warden/internal/api"
 )
 
 const (

@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"github.com/ddoyle2017/warden/internal/command"
+	"github.com/ddoyle2017/warden/internal/service"
 	"io"
 	"strings"
 	"testing"
-	"warden/command"
-	"warden/internal/service"
 )
 
 func TestUpdateCommand_IdentitySelection(t *testing.T) {

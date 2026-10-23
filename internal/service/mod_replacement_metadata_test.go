@@ -4,6 +4,10 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"github.com/ddoyle2017/warden/internal/data/file"
+	"github.com/ddoyle2017/warden/internal/domain/mod"
+	"github.com/ddoyle2017/warden/internal/service"
+	"github.com/ddoyle2017/warden/internal/test/mock"
 	"io"
 	"net/http"
 	"os"
@@ -11,10 +15,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"warden/internal/data/file"
-	"warden/internal/domain/mod"
-	"warden/internal/service"
-	"warden/internal/test/mock"
 
 	"github.com/mattn/go-sqlite3"
 )

@@ -2,15 +2,15 @@ package file_test
 
 import (
 	"errors"
+	"github.com/ddoyle2017/warden/internal/data/file"
+	"github.com/ddoyle2017/warden/internal/test/helper"
+	"github.com/ddoyle2017/warden/internal/test/mock"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"warden/internal/data/file"
-	"warden/internal/test/helper"
-	"warden/internal/test/mock"
 )
 
 func TestManager_BackupFailure(t *testing.T) {

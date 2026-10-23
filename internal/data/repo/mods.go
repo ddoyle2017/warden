@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"warden/internal/domain/mod"
+	"github.com/ddoyle2017/warden/internal/domain/mod"
 )
 
 var (

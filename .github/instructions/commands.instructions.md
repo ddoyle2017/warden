@@ -1,5 +1,5 @@
 ---
-applyTo: "command/**/*.go"
+applyTo: "internal/command/**/*.go"
 ---
 
 # Command conventions
