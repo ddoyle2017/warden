@@ -1,11 +1,16 @@
 package mock
 
-import "github.com/ddoyle2017/warden/internal/domain/mod"
+import (
+	"context"
+
+	"github.com/ddoyle2017/warden/internal/domain/mod"
+)
 
 // ModsRepo implements the repo.ModsRepo interface and exposes anonymous member functions for mocking
 // repo.Mods behavior
 type ModsRepo struct {
 	ListModsFunc         func() ([]mod.Mod, error)
+	ListModsContextFunc  func(ctx context.Context) ([]mod.Mod, error)
 	GetModFunc           func(name string) (mod.Mod, error)
 	GetModByIdentityFunc func(namespace, name string) (mod.Mod, error)
 	InsertModFunc        func(m mod.Mod) error
@@ -17,6 +22,10 @@ type ModsRepo struct {
 
 func (r *ModsRepo) ListMods() ([]mod.Mod, error) {
 	return r.ListModsFunc()
+}
+
+func (r *ModsRepo) ListModsContext(ctx context.Context) ([]mod.Mod, error) {
+	return r.ListModsContextFunc(ctx)
 }
 
 func (r *ModsRepo) GetMod(name string) (mod.Mod, error) {

@@ -17,7 +17,8 @@ import (
 func transactionOnlyDatabase(t *testing.T, db repo.Database) *mock.Database {
 	t.Helper()
 	return &mock.Database{
-		QueryFunc: db.Query,
+		QueryFunc:        db.Query,
+		QueryContextFunc: db.QueryContext,
 		PrepareFunc: func(string) (*sql.Stmt, error) {
 			return nil, errors.New("statement prepared outside its transaction")
 		},

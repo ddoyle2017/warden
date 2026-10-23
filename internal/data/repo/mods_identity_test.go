@@ -145,7 +145,7 @@ func TestUpsertMod_RejectsFailedLookup(t *testing.T) {
 			wantErr: repo.ErrModFetchFailed, wantCause: sql.ErrConnDone,
 		},
 		"given invalid stored metadata, when upserting, then do not interpret it as absence": {
-			query:   `SELECT id, name, namespace, filePath, version, NULL, description, frameworkId FROM mods`,
+			query:   `SELECT id, NULL, namespace, filePath, version, websiteUrl, description, frameworkId FROM mods`,
 			wantErr: repo.ErrModMappingFailed,
 		},
 		"given a row iteration failure after one match, when upserting, then do not select the partial result": {

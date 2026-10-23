@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"context"
 	"database/sql"
 	"log"
 
@@ -12,6 +13,7 @@ import (
 type Database interface {
 	// Executes the given SQL query, using any passed in args
 	Query(query string, args ...any) (*sql.Rows, error)
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 
 	// Prepares and executes a SQL statement (UPDATE, INSERT, etc.)
 	Prepare(query string) (*sql.Stmt, error)
