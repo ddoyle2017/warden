@@ -1,8 +1,8 @@
 package framework_test
 
 import (
+	"github.com/ddoyle2017/warden/internal/domain/framework"
 	"testing"
-	"warden/internal/domain/framework"
 )
 
 func TestEquals_Happy(t *testing.T) {

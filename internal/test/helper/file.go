@@ -4,10 +4,10 @@ import (
 	"crypto/md5"
 	"errors"
 	"fmt"
+	"github.com/ddoyle2017/warden/internal/data/file"
 	"io"
 	"os"
 	"path/filepath"
-	"warden/internal/data/file"
 )
 
 type fileHelper interface {

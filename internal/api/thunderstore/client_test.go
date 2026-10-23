@@ -3,12 +3,12 @@ package thunderstore_test
 import (
 	"bytes"
 	"errors"
+	"github.com/ddoyle2017/warden/internal/api"
+	"github.com/ddoyle2017/warden/internal/api/thunderstore"
+	"github.com/ddoyle2017/warden/internal/test/mock"
 	"io"
 	"net/http"
 	"testing"
-	"warden/internal/api"
-	"warden/internal/api/thunderstore"
-	"warden/internal/test/mock"
 )
 
 func TestGetPackage_Happy(t *testing.T) {

@@ -4,6 +4,13 @@ import (
 	"bytes"
 	"cmp"
 	"errors"
+	"github.com/ddoyle2017/warden/internal/api/thunderstore"
+	"github.com/ddoyle2017/warden/internal/data/file"
+	"github.com/ddoyle2017/warden/internal/data/repo"
+	"github.com/ddoyle2017/warden/internal/domain/mod"
+	"github.com/ddoyle2017/warden/internal/service"
+	"github.com/ddoyle2017/warden/internal/test/helper"
+	"github.com/ddoyle2017/warden/internal/test/mock"
 	"io"
 	"net/http"
 	"os"
@@ -12,13 +19,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"warden/internal/api/thunderstore"
-	"warden/internal/data/file"
-	"warden/internal/data/repo"
-	"warden/internal/domain/mod"
-	"warden/internal/service"
-	"warden/internal/test/helper"
-	"warden/internal/test/mock"
 )
 
 func TestBulkUpdate_DuplicateDependencyStopsBeforeFetch(t *testing.T) {

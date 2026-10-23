@@ -2,13 +2,13 @@ package file_test
 
 import (
 	"errors"
+	"github.com/ddoyle2017/warden/internal/data/file"
+	"github.com/ddoyle2017/warden/internal/test/helper"
+	"github.com/ddoyle2017/warden/internal/test/mock"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"warden/internal/data/file"
-	"warden/internal/test/helper"
-	"warden/internal/test/mock"
 )
 
 func TestModRemoval_CommitAndRollback(t *testing.T) {

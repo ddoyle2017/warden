@@ -2,16 +2,16 @@ package command_test
 
 import (
 	"errors"
+	"github.com/ddoyle2017/warden/internal/api/thunderstore"
+	"github.com/ddoyle2017/warden/internal/command"
+	"github.com/ddoyle2017/warden/internal/data/repo"
+	"github.com/ddoyle2017/warden/internal/domain/framework"
+	"github.com/ddoyle2017/warden/internal/domain/mod"
+	"github.com/ddoyle2017/warden/internal/service"
+	"github.com/ddoyle2017/warden/internal/test/mock"
 	"io"
 	"strings"
 	"testing"
-	"warden/command"
-	"warden/internal/api/thunderstore"
-	"warden/internal/data/repo"
-	"warden/internal/domain/framework"
-	"warden/internal/domain/mod"
-	"warden/internal/service"
-	"warden/internal/test/mock"
 
 	"github.com/spf13/cobra"
 )

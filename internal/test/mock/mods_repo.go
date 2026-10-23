@@ -1,6 +1,6 @@
 package mock
 
-import "warden/internal/domain/mod"
+import "github.com/ddoyle2017/warden/internal/domain/mod"
 
 // ModsRepo implements the repo.ModsRepo interface and exposes anonymous member functions for mocking
 // repo.Mods behavior

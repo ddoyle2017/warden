@@ -5,6 +5,13 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/ddoyle2017/warden/internal/api/thunderstore"
+	"github.com/ddoyle2017/warden/internal/command"
+	"github.com/ddoyle2017/warden/internal/data/file"
+	"github.com/ddoyle2017/warden/internal/data/repo"
+	"github.com/ddoyle2017/warden/internal/domain/mod"
+	"github.com/ddoyle2017/warden/internal/service"
+	"github.com/ddoyle2017/warden/internal/test/mock"
 	"io"
 	"net/http"
 	"os"
@@ -12,13 +19,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"warden/command"
-	"warden/internal/api/thunderstore"
-	"warden/internal/data/file"
-	"warden/internal/data/repo"
-	"warden/internal/domain/mod"
-	"warden/internal/service"
-	"warden/internal/test/mock"
 )
 
 func TestAddMod_RetryCleanupOutcomes(t *testing.T) {

@@ -2,11 +2,11 @@ package config_test
 
 import (
 	"errors"
+	"github.com/ddoyle2017/warden/internal/config"
 	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
-	"warden/internal/config"
 
 	"github.com/spf13/viper"
 )

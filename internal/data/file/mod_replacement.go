@@ -3,10 +3,10 @@ package file
 import (
 	"errors"
 	"fmt"
+	"github.com/ddoyle2017/warden/internal/api"
 	"os"
 	"path/filepath"
 	"strings"
-	"warden/internal/api"
 )
 
 // ModReplacement owns the original files outside plugins after publication.

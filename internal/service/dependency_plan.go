@@ -3,8 +3,8 @@ package service
 import (
 	"errors"
 	"fmt"
+	"github.com/ddoyle2017/warden/internal/api/thunderstore"
 	"strings"
-	"warden/internal/api/thunderstore"
 )
 
 var ErrInvalidDependency = errors.New("invalid dependency")

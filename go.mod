@@ -1,4 +1,4 @@
-module warden
+module github.com/ddoyle2017/warden
 
 go 1.22.2
 
