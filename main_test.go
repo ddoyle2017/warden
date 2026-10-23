@@ -137,7 +137,7 @@ func TestCLIExitStatus(t *testing.T) {
 					t.Fatal(err)
 				}
 			},
-			stderr:    []string{"unable to retrieve list of mods", repo.ErrModMappingFailed.Error()},
+			stderr:    []string{"unable to retrieve list of mods", repo.ErrModListFailed.Error()},
 			forbidden: []string{"no mods are installed"},
 		},
 		"given rejected removal metadata, when removing, then exit one and preserve recovery guidance and state": {
