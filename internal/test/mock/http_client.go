@@ -9,10 +9,15 @@ import (
 
 type HTTPClient struct {
 	GetFunc func(url string) (resp *http.Response, err error)
+	DoFunc  func(*http.Request) (*http.Response, error)
 }
 
 func (hc *HTTPClient) Get(url string) (*http.Response, error) {
 	return hc.GetFunc(url)
+}
+
+func (hc *HTTPClient) Do(request *http.Request) (*http.Response, error) {
+	return hc.DoFunc(request)
 }
 
 // ResponseBodyToReader() is a helper function for serializing a struct into JSON, then into
