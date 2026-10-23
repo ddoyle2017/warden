@@ -120,6 +120,30 @@ Proper install process coming soon <sup>TM</sup>.
 
 For a local source build, follow [Contributing](CONTRIBUTING.md#prerequisites), then run `go build -o warden .`. The SQLite driver requires CGO and a C compiler. Run the local binary as `./warden`, or place it on your `PATH` to use the example commands as written.
 
+## Read-only Go library
+
+Import `github.com/ddoyle2017/warden/pkg/warden` to read recorded mod inventory
+without starting the CLI. Call `warden.Open(ctx, warden.Options{DatabasePath: path})`
+with an explicit existing database path, then `reader.ListInstalledMods(ctx)`.
+The library does not discover configuration, initialize storage, inspect server
+files, download packages, prompt, or print output. It requires
+[CGO and a C compiler](CONTRIBUTING.md#prerequisites).
+
+Share one `*warden.Reader` per database per process. Duplicate opens, including
+symlink and hard-link aliases, return `warden.ErrDatabaseBusy`; concurrent calls
+use the same reader. Drain requests before `reader.Close()` and handle its error.
+Strict no-write behavior excludes WAL and recovery-required databases. Ordinary
+rollback-journal writes by a **separate CLI process** are supported, but arbitrary
+in-process writable handles are not. Close and reopen around journal-mode, schema,
+database-file, or alias changes.
+
+Inventory preserves duplicate identities and recorded values, sorts by namespace,
+name, version, and path, and excludes frameworks. It reports records, not file
+integrity or release compatibility. See the [package documentation](pkg/warden/doc.go)
+for API ownership and `errors.Is` classifications, and the
+[storage contract](docs/install-lifecycle.md#read-only-inventory-storage) for
+compatibility and recovery limits.
+
 ## Contributing
 
 See [Contributing](CONTRIBUTING.md) for setup, checks, and safe local execution.
