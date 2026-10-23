@@ -131,10 +131,12 @@ For a local source build, follow [Contributing](CONTRIBUTING.md#prerequisites), 
 ## Read-only Go library
 
 Import `github.com/ddoyle2017/warden/pkg/warden` to read recorded mod inventory
-without starting the CLI. Call `warden.Open(ctx, warden.Options{DatabasePath: path})`
+and Thunderstore package metadata without starting the CLI.
+Call `warden.Open(ctx, warden.Options{DatabasePath: path})`
 with an explicit existing database path, then `reader.ListInstalledMods(ctx)`.
-The library does not discover configuration, initialize storage, inspect server
-files, download packages, prompt, or print output. It requires
+Opening a reader makes no network requests. The library does not discover
+configuration, initialize storage, inspect server files, download archives,
+prompt, or print output. It requires
 [CGO and a C compiler](CONTRIBUTING.md#prerequisites).
 
 Share one `*warden.Reader` per database per process. Duplicate opens, including
@@ -151,6 +153,30 @@ integrity or release compatibility. See the [package documentation](pkg/warden/d
 for API ownership and `errors.Is` classifications, and the
 [storage contract](docs/install-lifecycle.md#read-only-inventory-storage) for
 compatibility and recovery limits.
+
+To inspect a package's current catalog release using an open reader:
+
+```go
+pkg, err := reader.GetPackage(ctx, warden.PackageID{
+    Namespace: "Azumatt",
+    Name:      "Where_You_At",
+})
+if err != nil {
+    return err
+}
+```
+
+`pkg.Latest` is catalog metadata, not the installed release. Its dependencies
+retain complete declared versions and framework tokens; they are not resolved,
+fetched, or treated as compatibility guarantees. Missing dependency metadata
+fails the lookup rather than appearing as an empty list.
+
+Set `Options.HTTPClient` to reuse your own `*http.Client` unchanged; nil uses a
+reusable client with a 30-second timeout. Closing the reader does not close the
+client's shared transport. Catalog errors support `errors.Is` with
+`ErrInvalidPackageID`, `ErrPackageNotFound`, `ErrInvalidMetadata`, and
+`ErrRemoteFailure`, while preserving underlying HTTP, JSON, body, and context
+causes. There are no library retries, cache, or background requests.
 
 ## Contributing
 
