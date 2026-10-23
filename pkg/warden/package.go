@@ -38,9 +38,14 @@ type Dependency struct {
 // and name must be nonempty ASCII letters, digits, or underscores. Results and
 // dependency slices are caller-owned; an explicit empty dependency list is
 // non-nil. Any failure returns a zero Package and an error identifying id.
-func (r *Reader) GetPackage(ctx context.Context, id PackageID) (result Package, err error) {
+func (r *Reader) GetPackage(ctx context.Context, id PackageID) (Package, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+	return r.getPackage(ctx, id)
+}
+
+// getPackage requires r.mu to be held for the reader's lifecycle.
+func (r *Reader) getPackage(ctx context.Context, id PackageID) (result Package, err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("get package %s/%s: %w", id.Namespace, id.Name, err)

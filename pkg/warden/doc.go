@@ -1,5 +1,5 @@
-// Package warden provides read-only access to Warden's recorded mod inventory
-// and Thunderstore package metadata.
+// Package warden provides read-only access to Warden's recorded mod inventory,
+// Thunderstore package metadata, and update assessments.
 //
 // # Startup and ownership
 //
@@ -73,6 +73,39 @@
 // default transport. The caller's context reaches both the request and response
 // body read. Open still performs no network access.
 //
+// # Update assessments
+//
+// CheckUpdates materializes and closes one complete inventory read before making
+// HTTP requests. It validates the entire inventory for queryable namespace/name
+// components, duplicate exact identities, and strict installed SemVer before any
+// catalog lookup. Same-name packages in different namespaces remain independent;
+// identities are case-sensitive. Invalid records are reported, not repaired or
+// hidden. ListInstalledMods continues to expose raw values and duplicates.
+//
+// Packages are fetched sequentially in inventory order using the caller's context
+// and the same metadata validation as GetPackage. Results retain the original
+// installed and latest version strings. UpdateAvailable ("available") means the
+// latest release has higher SemVer precedence; UpdateCurrent ("current") means
+// equal precedence, including different build metadata. UpdateInstalledNewer
+// ("installed_newer") reports a newer installed version, not a downgrade
+// recommendation. These statuses do not establish runtime compatibility,
+// dependency satisfiability, or the condition of server files. Frameworks are not
+// assessed, and dependencies are not fetched or resolved.
+//
+// A successful assessment returns caller-owned results in inventory order. An
+// empty compatible inventory returns a non-nil empty slice without HTTP. Any
+// failure returns nil, even after earlier catalog lookups succeeded; the failing
+// package is identified when known and is never reported as current. There are
+// no writes, downloads, configuration reads, prompts, output, retries, cache, or
+// background requests. Calls after a successful Close return ErrClosed.
+//
+// The inventory snapshot ends before HTTP starts: a separate-process writer may
+// commit while catalog requests are in flight. Results keep the captured installed
+// versions, and a subsequent call reads fresh committed inventory and catalog
+// metadata. Remote responses can themselves reflect different moments. This is
+// not an atomic transaction or consistent snapshot across SQL, server files, and
+// the catalog, nor a plan or authorization to mutate an installation.
+//
 // # Errors
 //
 // Use errors.Is with ErrInvalidOptions, ErrDatabaseUnavailable,
@@ -81,7 +114,11 @@
 // ErrInvalidPackageID for invalid caller input, ErrPackageNotFound for HTTP 404,
 // ErrInvalidMetadata for invalid JSON or incomplete/mismatched catalog values,
 // and ErrRemoteFailure for transport, unexpected status, or body read/close
-// failures. Catalog errors include the requested package identity.
+// failures. Catalog errors include the requested package identity. CheckUpdates
+// also uses ErrInvalidMetadata for invalid installed identities, duplicate exact
+// identities, and invalid installed versions; unlike a storage mapping failure,
+// these records can still be returned by ListInstalledMods. Assessment failures
+// preserve the storage or catalog error classification and underlying causes.
 //
 // Classifications can overlap when failures are joined, such as invalid JSON
 // followed by a body-close failure. Filesystem, SQLite, HTTP, JSON, body, and

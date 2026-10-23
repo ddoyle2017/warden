@@ -152,6 +152,13 @@ func TestReaderProcess(t *testing.T) {
 		}
 	}
 	switch mode {
+	case "commit-update":
+		execute("BEGIN IMMEDIATE")
+		execute("UPDATE mods SET version = '2.0.0' WHERE namespace = 'Owner_42' AND name = 'Root_7'")
+		execute("COMMIT")
+		if err := db.Close(); err != nil {
+			t.Fatal(err)
+		}
 	case "exclusive":
 		defer func() {
 			if err := db.Close(); err != nil {
