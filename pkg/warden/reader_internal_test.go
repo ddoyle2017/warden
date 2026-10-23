@@ -3,6 +3,7 @@ package warden
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/ddoyle2017/warden/internal/data/repo"
@@ -22,6 +23,11 @@ func TestCloseFailureRetainsOwnership(t *testing.T) {
 		got, err := reader.ListInstalledMods(context.Background())
 		if got != nil || !errors.Is(err, cause) || errors.Is(err, ErrClosed) {
 			t.Errorf("failed-close inventory = %#v, %v", got, err)
+		}
+		pkg, err := reader.GetPackage(context.Background(), PackageID{Namespace: "Owner", Name: "Root"})
+		if !reflect.DeepEqual(pkg, Package{}) ||
+			!errors.Is(err, cause) || !errors.Is(err, ErrDatabaseUnavailable) || errors.Is(err, ErrClosed) {
+			t.Errorf("failed-close catalog = %#v, %v", pkg, err)
 		}
 		if reader.database == nil || calls != 1 {
 			t.Fatalf("failed close forgot its owner or retried: database=%v, calls=%d", reader.database, calls)

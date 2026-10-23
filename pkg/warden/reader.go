@@ -4,22 +4,29 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/ddoyle2017/warden/internal/api/thunderstore"
 	"github.com/ddoyle2017/warden/internal/data/repo"
 )
 
-// Options identifies the existing Warden database to read.
+// Options configures read-only inventory and catalog access.
 type Options struct {
 	// DatabasePath is a literal filesystem path, absolute or relative to the
 	// working directory. It is not a SQLite DSN and is never expanded or discovered.
 	DatabasePath string
+	// HTTPClient is reused unchanged for metadata requests. The caller owns its
+	// settings and transport; Close does not close its idle connections. Nil
+	// selects a reusable client with a 30-second timeout.
+	HTTPClient *http.Client
 }
 
-// PackageID identifies a package by its recorded namespace and name.
+// PackageID identifies a package by namespace and name.
 type PackageID struct {
 	Namespace string
 	Name      string
@@ -33,12 +40,14 @@ type InstalledMod struct {
 	InstallPath string
 }
 
-// Reader reads recorded mod inventory. Obtain one with Open and share it among
-// concurrent callers; do not copy it. Its zero value is closed.
+// Reader reads recorded mod inventory and Thunderstore catalog metadata. Obtain
+// one with Open and share it among concurrent callers; do not copy it. Its zero
+// value is closed.
 type Reader struct {
 	mu       sync.RWMutex
 	database io.Closer
 	mods     repo.Mods
+	catalog  *thunderstore.Client
 	closeErr error
 }
 
@@ -55,7 +64,11 @@ func Open(ctx context.Context, opts Options) (*Reader, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open reader: %w", publicDatabaseError(err))
 	}
-	return &Reader{database: database, mods: repo.NewModsRepo(database)}, nil
+	client := opts.HTTPClient
+	if client == nil {
+		client = &http.Client{Timeout: 30 * time.Second}
+	}
+	return &Reader{database: database, mods: repo.NewModsRepo(database), catalog: thunderstore.New(client)}, nil
 }
 
 // Close releases the reader's SQL resources and database reservation. The
@@ -77,6 +90,7 @@ func (r *Reader) Close() error {
 	}
 	r.database = nil
 	r.mods = nil
+	r.catalog = nil
 	return nil
 }
 
