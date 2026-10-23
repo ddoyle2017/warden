@@ -1,9 +1,11 @@
 package repo
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
+
 	"github.com/ddoyle2017/warden/internal/domain/mod"
 )
 
@@ -26,6 +28,7 @@ var (
 
 type Mods interface {
 	ListMods() ([]mod.Mod, error)
+	ListModsContext(ctx context.Context) ([]mod.Mod, error)
 	GetMod(name string) (mod.Mod, error)
 	GetModByIdentity(namespace, name string) (mod.Mod, error)
 	InsertMod(m mod.Mod) error
@@ -46,15 +49,18 @@ func NewModsRepo(db Database) Mods {
 }
 
 func (r *mods) ListMods() ([]mod.Mod, error) {
-	rows, err := r.db.Query(`SELECT * FROM mods`)
+	return r.ListModsContext(context.Background())
+}
+
+func (r *mods) ListModsContext(ctx context.Context) ([]mod.Mod, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT id, name, namespace, filePath, version, websiteUrl, description, frameworkId FROM mods`)
 	if err != nil {
-		return []mod.Mod{}, ErrModListFailed
+		return nil, fmt.Errorf("%w: %w", ErrModListFailed, classifyDatabaseError(err))
 	}
-	defer rows.Close()
 
 	mods, err := mapRowsToMod(rows)
 	if err != nil {
-		return []mod.Mod{}, ErrModMappingFailed
+		return nil, fmt.Errorf("%w: %w", ErrModMappingFailed, classifyDatabaseError(err))
 	}
 	return mods, nil
 }
@@ -74,8 +80,6 @@ func (r *mods) getMod(query string, args ...any) (mod.Mod, error) {
 	if err != nil {
 		return mod.Mod{}, fmt.Errorf("%w: %w", ErrModFetchFailed, err)
 	}
-	defer rows.Close()
-
 	mods, err := mapRowsToMod(rows)
 	if err != nil {
 		return mod.Mod{}, fmt.Errorf("%w: %w", ErrModMappingFailed, err)
@@ -130,21 +134,27 @@ func (r *mods) DeleteAllMods() error {
 	return executeWrite(r.db, sql, ErrModDeleteAllFailed)
 }
 
-func mapRowsToMod(rows *sql.Rows) ([]mod.Mod, error) {
-	mods := []mod.Mod{}
+func mapRowsToMod(rows *sql.Rows) (mods []mod.Mod, err error) {
+	defer func() {
+		err = errors.Join(err, rows.Close())
+		if err != nil {
+			mods = nil
+		}
+	}()
+	mods = []mod.Mod{}
 	for rows.Next() {
 		var id int
 		var name string
 		var namespace string
 		var path string
 		var version string
-		var url string
-		var description string
+		var url sql.NullString
+		var description sql.NullString
 		var frameworkId int
 
 		err := rows.Scan(&id, &name, &namespace, &path, &version, &url, &description, &frameworkId)
 		if err != nil {
-			return []mod.Mod{}, err
+			return nil, fmt.Errorf("%w: %w", ErrDatabaseUnsupported, err)
 		}
 
 		m := mod.Mod{
@@ -154,8 +164,8 @@ func mapRowsToMod(rows *sql.Rows) ([]mod.Mod, error) {
 			Namespace:   namespace,
 			FilePath:    path,
 			Version:     version,
-			WebsiteURL:  url,
-			Description: description,
+			WebsiteURL:  url.String,
+			Description: description.String,
 		}
 		mods = append(mods, m)
 	}
