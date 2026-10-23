@@ -279,10 +279,10 @@ func requirePackageError(t *testing.T, got warden.Package, err error, id warden.
 	}
 }
 
-func openCatalogReader(t *testing.T, client *http.Client) *warden.Reader {
+func openCatalogReader(t *testing.T, client *http.Client, records ...warden.InstalledMod) *warden.Reader {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "warden.db")
-	createDatabase(t, path, nil)
+	createDatabase(t, path, records)
 	reader, err := warden.Open(context.Background(), warden.Options{DatabasePath: path, HTTPClient: client})
 	if err != nil {
 		t.Fatal(err)

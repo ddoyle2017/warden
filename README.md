@@ -123,7 +123,8 @@ For a local source build, follow [Contributing](CONTRIBUTING.md#prerequisites), 
 ## Read-only Go library
 
 Import `github.com/ddoyle2017/warden/pkg/warden` to read recorded mod inventory
-and Thunderstore package metadata without starting the CLI.
+and Thunderstore package metadata, or assess available updates, without starting
+the CLI.
 Call `warden.Open(ctx, warden.Options{DatabasePath: path})`
 with an explicit existing database path, then `reader.ListInstalledMods(ctx)`.
 Opening a reader makes no network requests. The library does not discover
@@ -169,6 +170,27 @@ client's shared transport. Catalog errors support `errors.Is` with
 `ErrInvalidPackageID`, `ErrPackageNotFound`, `ErrInvalidMetadata`, and
 `ErrRemoteFailure`, while preserving underlying HTTP, JSON, body, and context
 causes. There are no library retries, cache, or background requests.
+
+Use `reader.CheckUpdates(ctx)` to compare all recorded mods with the catalog.
+It validates the entire inventory before HTTP and returns caller-owned
+`[]warden.UpdateCheck` values in inventory order: `UpdateCurrent` (`current`),
+`UpdateAvailable` (`available`), or `UpdateInstalledNewer` (`installed_newer`).
+Comparison follows the [strict SemVer policy](docs/install-lifecycle.md#release-version-ordering);
+build metadata does not affect precedence, and an older catalog release is not
+a downgrade recommendation.
+
+An empty inventory produces a non-nil empty slice without HTTP. Invalid installed
+identities, duplicate exact identities, or invalid installed versions return
+`ErrInvalidMetadata`; raw inventory listing remains unchanged. Any assessment
+failure returns nil, not partial results, and identifies the failing package
+when known while retaining storage, catalog, and context causes.
+
+The SQL read finishes before sequential catalog requests begin. Results retain
+that captured inventory even if another process commits during HTTP; later calls
+read fresh state. This is not an atomic snapshot across the database, server
+files, and catalog. Assessments neither check runtime compatibility nor plan or
+perform installations. See the [complete Go examples](pkg/warden/example_test.go)
+and [package contract](pkg/warden/doc.go) for usage and limitations.
 
 ## Contributing
 
