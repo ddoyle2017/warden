@@ -4,14 +4,14 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"github.com/ddoyle2017/warden/internal/api/thunderstore"
+	"github.com/ddoyle2017/warden/internal/data/file"
+	"github.com/ddoyle2017/warden/internal/data/repo"
+	"github.com/ddoyle2017/warden/internal/domain/framework"
+	"github.com/ddoyle2017/warden/internal/domain/mod"
 	"io"
 	"slices"
 	"strings"
-	"warden/internal/api/thunderstore"
-	"warden/internal/data/file"
-	"warden/internal/data/repo"
-	"warden/internal/domain/framework"
-	"warden/internal/domain/mod"
 )
 
 var (

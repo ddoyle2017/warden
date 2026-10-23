@@ -3,10 +3,10 @@ package service
 import (
 	"errors"
 	"fmt"
+	"github.com/ddoyle2017/warden/internal/config"
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"warden/internal/config"
 )
 
 const (

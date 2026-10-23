@@ -3,14 +3,14 @@ package file_test
 import (
 	"errors"
 	"fmt"
+	"github.com/ddoyle2017/warden/internal/data/file"
+	"github.com/ddoyle2017/warden/internal/test/helper"
+	"github.com/ddoyle2017/warden/internal/test/mock"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
-	"warden/internal/data/file"
-	"warden/internal/test/helper"
-	"warden/internal/test/mock"
 )
 
 func TestLiveRootPermissions(t *testing.T) {

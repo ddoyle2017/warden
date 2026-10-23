@@ -2,12 +2,12 @@ package file_test
 
 import (
 	"errors"
+	"github.com/ddoyle2017/warden/internal/data/file"
+	"github.com/ddoyle2017/warden/internal/test/helper"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"warden/internal/data/file"
-	"warden/internal/test/helper"
 )
 
 func TestCreate_RetainsSnapshotWhenCopyAndCleanupFail(t *testing.T) {

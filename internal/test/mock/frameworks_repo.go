@@ -1,6 +1,6 @@
 package mock
 
-import "warden/internal/domain/framework"
+import "github.com/ddoyle2017/warden/internal/domain/framework"
 
 type FrameworksRepo struct {
 	GetFrameworkFunc    func(name string) (framework.Framework, error)

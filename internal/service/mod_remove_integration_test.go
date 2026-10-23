@@ -2,16 +2,16 @@ package service_test
 
 import (
 	"errors"
+	"github.com/ddoyle2017/warden/internal/data/file"
+	"github.com/ddoyle2017/warden/internal/data/repo"
+	"github.com/ddoyle2017/warden/internal/domain/mod"
+	"github.com/ddoyle2017/warden/internal/service"
+	"github.com/ddoyle2017/warden/internal/test/helper"
+	"github.com/ddoyle2017/warden/internal/test/mock"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"warden/internal/data/file"
-	"warden/internal/data/repo"
-	"warden/internal/domain/mod"
-	"warden/internal/service"
-	"warden/internal/test/helper"
-	"warden/internal/test/mock"
 )
 
 func TestModRemoval_PreservesStateOnFailure(t *testing.T) {

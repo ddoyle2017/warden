@@ -4,6 +4,8 @@ import (
 	"archive/zip"
 	"bytes"
 	"errors"
+	"github.com/ddoyle2017/warden/internal/data/file"
+	"github.com/ddoyle2017/warden/internal/test/helper"
 	"hash/crc32"
 	"io"
 	"os"
@@ -11,8 +13,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"warden/internal/data/file"
-	"warden/internal/test/helper"
 )
 
 func TestUnzip(t *testing.T) {

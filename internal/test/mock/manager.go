@@ -1,6 +1,6 @@
 package mock
 
-import "warden/internal/data/file"
+import "github.com/ddoyle2017/warden/internal/data/file"
 
 // Manager implements the file.Manager interface and exposes anonymous member functions for mocking
 // file.Manager behavior

@@ -3,7 +3,7 @@ package command
 import (
 	"errors"
 	"fmt"
-	"warden/internal/service"
+	"github.com/ddoyle2017/warden/internal/service"
 )
 
 func parseFrameworkError(err error, operation string) error {

@@ -1,6 +1,6 @@
 package mock
 
-import "warden/internal/api/thunderstore"
+import "github.com/ddoyle2017/warden/internal/api/thunderstore"
 
 // Thunderstore implements the thunderstore.Thunderstore interface and exposes anonymous member functions for mocking
 // thunderstore.Thunderstore behavior

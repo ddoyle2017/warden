@@ -1,8 +1,8 @@
 package mod_test
 
 import (
+	"github.com/ddoyle2017/warden/internal/domain/mod"
 	"testing"
-	"warden/internal/domain/mod"
 )
 
 func TestEquals_Happy(t *testing.T) {

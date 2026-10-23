@@ -2,13 +2,13 @@ package service_test
 
 import (
 	"errors"
+	"github.com/ddoyle2017/warden/internal/config"
+	"github.com/ddoyle2017/warden/internal/service"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
-	"warden/internal/config"
-	"warden/internal/service"
 )
 
 func TestStart_Happy(t *testing.T) {

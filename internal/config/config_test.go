@@ -3,12 +3,12 @@ package config_test
 import (
 	"errors"
 	"fmt"
+	"github.com/ddoyle2017/warden/internal/config"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
-	"warden/internal/config"
 
 	"github.com/mitchellh/go-homedir"
 	"github.com/spf13/viper"
