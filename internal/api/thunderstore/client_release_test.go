@@ -89,10 +89,11 @@ func TestGetRelease(t *testing.T) {
 				status = http.StatusOK
 			}
 			calls, closes := 0, 0
-			client := &mock.HTTPClient{GetFunc: func(endpoint string) (*http.Response, error) {
+			endpoint := "https://thunderstore.io/api/experimental/package/Owner/Root/" + version + "/"
+			client := &mock.HTTPClient{DoFunc: func(request *http.Request) (*http.Response, error) {
 				calls++
-				if endpoint != "https://thunderstore.io/api/experimental/package/Owner/Root/"+version+"/" {
-					t.Fatalf("wrong version endpoint %q", endpoint)
+				if request.Method != http.MethodGet || request.URL.String() != endpoint {
+					t.Fatalf("wrong version request %s %s", request.Method, request.URL)
 				}
 				if tt.transport != nil {
 					return nil, tt.transport
@@ -101,13 +102,16 @@ func TestGetRelease(t *testing.T) {
 				if tt.read != nil {
 					reader = iotest.ErrReader(tt.read)
 				}
-				return &http.Response{StatusCode: status, Body: &releaseResponseBody{
+				return &http.Response{StatusCode: status, Body: &metadataResponseBody{
 					Reader: reader, close: func() error { closes++; return tt.close },
 				}}, nil
 			}}
 			release, err := thunderstore.New(client).GetRelease("Owner", "Root", version)
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("error = %v, want %v", err, tt.wantErr)
+			}
+			if err != nil && !strings.Contains(err.Error(), "GET "+endpoint) {
+				t.Errorf("error lost its request identity: %v", err)
 			}
 			for _, cause := range []error{tt.transport, tt.read, tt.close} {
 				if cause != nil && !errors.Is(err, cause) {
@@ -140,10 +144,3 @@ func TestGetRelease(t *testing.T) {
 		})
 	}
 }
-
-type releaseResponseBody struct {
-	io.Reader
-	close func() error
-}
-
-func (b *releaseResponseBody) Close() error { return b.close() }
