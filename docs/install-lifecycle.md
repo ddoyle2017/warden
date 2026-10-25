@@ -317,11 +317,12 @@ their diagnostic causes. Direct no-work outcomes and completed-request cleanup
 warnings remain nonfatal; see the [command exit policy](../README.md#usage).
 
 The file manager makes a backup available for restoration only after the
-complete copy succeeds. After a failed copy, it attempts to remove the temporary
-directory and returns any cleanup error alongside the creation error. A failed
-attempt leaves any previous valid snapshot active. Mod and framework operations
-stop if a required backup cannot be created rather than continuing with an
-incomplete snapshot.
+complete copy succeeds, retaining the source root's permission mode with that
+snapshot. After a failed copy, it attempts to remove the temporary directory and
+returns any cleanup error alongside the creation error. A failed attempt leaves
+both the previous valid snapshot and its root permission mode active. Mod and
+framework operations stop if a required backup cannot be created rather than
+continuing with an incomplete snapshot.
 
 An empty source directory is valid for a backup; a missing source is an error.
 Mod installation and removal of all mods create a missing plugins directory
@@ -357,10 +358,17 @@ files and records are not rolled back when later work fails.
 
 Mod removal retains original files in staging beside the plugin directory until
 record deletion succeeds. Backup or staging failure stops before record deletion.
+Clearing all mods captures the existing plugin directory's permission mode and
+prepares an empty replacement with that mode before moving the live directory.
+Metadata or replacement-preparation failure leaves the live directory untouched.
+The replacement retains the captured mode regardless of the process umask;
+staging and backup containers remain private.
+
 Staging uses a rename; a cross-filesystem rename fails rather than falling back
 to destructive copying. If record deletion returns an error, the service attempts
 to rename the staged files back. A conflicting destination is not overwritten;
-the error identifies the retained staging path for recovery. A repository error
+this includes new files or directories inside the recreated plugins directory.
+The error identifies the retained staging path for recovery. A repository error
 does not prove that its write was unapplied, so inspect recorded state as well.
 
 After successful record deletion, removal is committed and cleanup is
@@ -381,19 +389,35 @@ removal.
 
 Restoration copies the snapshot into staging beside the destination before
 renaming any live files. The snapshot itself is never renamed across
-filesystems. A preparation failure leaves live files and the active backup
-unchanged. Publishing first moves the prior tree aside; if publishing fails,
-restoration moves that tree back. If recovery also fails, the error identifies
-the retained prior tree, prepared replacement, and original backup. Keep these
-paths until the intended tree has been recovered and inspected.
+filesystems. For an existing destination, restoration captures its permission
+mode before preparation; for a missing destination, it uses the source root's
+mode retained with the backup. The existing destination's mode takes precedence
+even when it is more restrictive than the source's. The prepared replacement
+retains owner access needed for publication and failed-attempt cleanup; group
+and other permissions follow the selected mode. Backup and staging containers
+remain private. Preparation failures leave live files and the active backup
+unchanged.
 
-Successful publication consumes the active backup before cleanup, even if
-cleanup fails. Explicit backup removal also consumes its handle before deleting
-files. Cleanup errors identify leftover paths; a partially deleted snapshot is
-not offered for another restore. The restored destination remains available.
+Publishing first moves the prior tree aside; if publishing fails, restoration
+moves that tree back. A restrictive final root mode is applied after publication,
+before consuming the backup. If that permission change fails, restoration attempts
+to withdraw the new tree into staging and recover the prior destination, or leave
+the destination absent if it was absent before. The backup remains active. If a
+recovery rename also fails, the error identifies the published or staged
+replacement, any retained prior tree, and the original backup. Keep those paths
+and recover the intended destination before retrying.
+
+Successful publication and root-permission finalization consume the active
+backup before cleanup, even if cleanup fails. Explicit backup removal also
+consumes its handle before deleting files. Cleanup errors identify leftover
+paths; a partially deleted snapshot is not offered for another restore. The
+restored destination remains available.
 Missing destinations and parents are supported, but restoration rejects
 non-directory or symlink targets, filesystem roots, working-directory
 ancestors, and paths overlapping the backup, including resolved aliases.
+Missing parent directories use the usual directory-creation permissions subject
+to the umask. Preserving directory permission modes does not preserve ownership
+or extended metadata.
 Restoration needs space and write access in the destination's parent and a
 destination that can be renamed. A mount point that cannot be renamed fails
 without deleting its live contents. The rename/recovery sequence is not
@@ -414,7 +438,7 @@ installation, configuration-preservation, or incomplete plugin-transfer failure
 triggers restoration of the original framework, plugins, configuration, and
 unrelated server files. Configuration file/directory conflicts and read or copy
 errors fail the update rather than discarding settings. If restoration fails
-before publication, the file-layer error identifies the retained server
+before completion, the file-layer error identifies the retained server
 snapshot for recovery. Standalone framework installation and removal keep their
 own guarded backups and report restoration and cleanup failures.
 

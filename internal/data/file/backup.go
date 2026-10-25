@@ -16,16 +16,18 @@ var (
 
 // Backup provides an interface for all file backup related operations
 type Backup interface {
-	// Creates a complete snapshot of the source directory. A failed call retains
-	// any previous backup.
+	// Creates a complete snapshot and records the source root's permission mode.
+	// A failed call retains the previous snapshot and its recorded root mode.
 	Create(source string) error
 
 	// Consumes the active backup before deleting its files. Cleanup failures
 	// report leftovers, not a retryable snapshot.
 	Remove() error
 
-	// Restores a complete copy before consuming the backup. Failures before
-	// publication retain the snapshot; cleanup failures report leftover paths.
+	// Restores a complete copy and its root permissions before consuming the
+	// backup. Earlier failures retain the snapshot; cleanup failures report leftovers.
+	// Preserves existing destination permissions, or the saved source root's
+	// permissions when the destination is missing.
 	Restore(destination string) error
 
 	// Returns the location of the current backup
@@ -34,6 +36,7 @@ type Backup interface {
 
 type backup struct {
 	location         *string
+	rootMode         os.FileMode
 	removeIncomplete func(string) error
 }
 
@@ -46,6 +49,10 @@ func (b *backup) Create(source string) error {
 }
 
 func (b *backup) create(source string, copySnapshot func(string, string) error) error {
+	info, err := os.Lstat(source)
+	if err != nil {
+		return fmt.Errorf("%w: inspect source %q: %w", ErrBackupCreateFailed, source, err)
+	}
 	tmp, err := os.MkdirTemp("", "warden-backup")
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrBackupCreateFailed, err)
@@ -59,13 +66,14 @@ func (b *backup) create(source string, copySnapshot func(string, string) error) 
 		return err
 	}
 
-	b.location = &tmp
+	b.location, b.rootMode = &tmp, info.Mode()
 	return nil
 }
 
 func (b *backup) Restore(destination string) error {
 	return b.restore(destination, restoreOperations{
 		copy:      copyDirectory,
+		chmod:     os.Chmod,
 		rename:    os.Rename,
 		removeAll: os.RemoveAll,
 	})
@@ -73,6 +81,7 @@ func (b *backup) Restore(destination string) error {
 
 type restoreOperations struct {
 	copy      func(string, string) error
+	chmod     func(string, os.FileMode) error // nil uses os.Chmod.
 	rename    func(string, string) error
 	removeAll func(string) error
 }
@@ -81,11 +90,22 @@ func (b *backup) restore(destination string, ops restoreOperations) (err error) 
 	if b.location == nil {
 		return ErrBackupMissing
 	}
-	snapshot := *b.location
+	if ops.chmod == nil {
+		ops.chmod = os.Chmod
+	}
+	snapshot, rootMode := *b.location, b.rootMode
 
 	destination, err = restoreDestination(snapshot, destination)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrBackupRestoreFailed, err)
+	}
+	info, statErr := os.Lstat(destination)
+	hadDestination := statErr == nil
+	if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
+		return fmt.Errorf("%w: inspect %q: %w", ErrBackupRestoreFailed, destination, statErr)
+	}
+	if hadDestination {
+		rootMode = info.Mode()
 	}
 	if err := os.MkdirAll(filepath.Dir(destination), os.ModePerm); err != nil {
 		return fmt.Errorf("%w: prepare parent of %q: %w", ErrBackupRestoreFailed, destination, err)
@@ -115,12 +135,22 @@ func (b *backup) restore(destination string, ops restoreOperations) (err error) 
 	if err := ops.copy(snapshot, replacement); err != nil {
 		return fmt.Errorf("%w: copy backup %q: %w", ErrBackupRestoreFailed, snapshot, err)
 	}
+	// Cross-parent renames and failed-attempt cleanup still need owner access.
+	preparedMode := rootMode | 0o700
+	if err := ops.chmod(replacement, preparedMode); err != nil {
+		return fmt.Errorf("%w: set replacement permissions for %q: %w", ErrBackupRestoreFailed, destination, err)
+	}
 
 	previous := filepath.Join(staging, "previous")
-	_, statErr := os.Lstat(destination)
-	hadDestination := statErr == nil
-	if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
-		return fmt.Errorf("%w: inspect %q: %w", ErrBackupRestoreFailed, destination, statErr)
+	recoverPrevious := func(cause error) error {
+		if hadDestination {
+			if recoveryErr := ops.rename(previous, destination); recoveryErr != nil {
+				preserveStaging = true
+				return errors.Join(cause, fmt.Errorf("recover %q from %q: %w; replacement retained at %q, backup at %q",
+					destination, previous, recoveryErr, replacement, snapshot))
+			}
+		}
+		return cause
 	}
 	if hadDestination {
 		if err := ops.rename(destination, previous); err != nil {
@@ -128,20 +158,27 @@ func (b *backup) restore(destination string, ops restoreOperations) (err error) 
 		}
 	}
 	if err := ops.rename(replacement, destination); err != nil {
-		publishErr := fmt.Errorf("%w: publish to %q: %w", ErrBackupRestoreFailed, destination, err)
-		if hadDestination {
-			if recoveryErr := ops.rename(previous, destination); recoveryErr != nil {
+		return recoverPrevious(fmt.Errorf("%w: publish to %q: %w", ErrBackupRestoreFailed, destination, err))
+	}
+	if preparedMode != rootMode {
+		if modeErr := ops.chmod(destination, rootMode); modeErr != nil {
+			restoreErr := fmt.Errorf("%w: finalize root permissions at %q: %w", ErrBackupRestoreFailed, destination, modeErr)
+			if recoveryErr := ops.rename(destination, replacement); recoveryErr != nil {
 				preserveStaging = true
-				return errors.Join(publishErr, fmt.Errorf("recover %q from %q: %w; replacement retained at %q, backup at %q",
-					destination, previous, recoveryErr, replacement, snapshot))
+				recoveryErr = fmt.Errorf("withdraw restored tree %q to %q: %w; backup retained at %q, restore staging retained at %q",
+					destination, replacement, recoveryErr, snapshot, staging)
+				if hadDestination {
+					recoveryErr = fmt.Errorf("%w; prior tree retained at %q", recoveryErr, previous)
+				}
+				return errors.Join(restoreErr, recoveryErr)
 			}
+			return recoverPrevious(restoreErr)
 		}
-		return publishErr
 	}
 
 	published = true
 	// Cleanup can partially delete the snapshot, so it is no longer retryable.
-	b.location = nil
+	b.location, b.rootMode = nil, 0
 	if err := ops.removeAll(snapshot); err != nil {
 		return fmt.Errorf("%w: restored %q; remove consumed backup %q: %w", ErrBackupDeleteFailed, destination, snapshot, err)
 	}
@@ -269,7 +306,7 @@ func (b *backup) remove(removeAll func(string) error) error {
 		return ErrBackupMissing
 	}
 	snapshot := *b.location
-	b.location = nil
+	b.location, b.rootMode = nil, 0
 	if err := removeAll(snapshot); err != nil {
 		return fmt.Errorf("%w: remove consumed backup %q: %w", ErrBackupDeleteFailed, snapshot, err)
 	}
