@@ -19,11 +19,17 @@ Warden stores data in 2 different files:
 - A YAML configuration file at `$HOME/.warden.yaml`.
 - A lightweight, database storage file at `$HOME/.warden.db`
 
+When no configuration file exists, Warden saves the defaults before initializing the database or running a command. If saving fails, startup stops and reports the underlying write error. Existing valid configuration files are loaded without rewriting them.
+
 The YAML file stores the following configuration values for the app:
-- `valheim-directory` - Where the Valheim dedicated server is installed. Warden selects a platform-specific Steam installation path by default; set this to the actual server directory before managing mods.
-- `platform` - The operating system recorded when configuration is created (`linux`, `darwin`, or `windows`). This selects the vanilla server script.
+- `valheim-directory` - Where the Valheim dedicated server is installed. Warden selects a platform-specific Steam installation path by default; on Linux, it resolves `$HOME/.steam/SteamApps/common/Valheim dedicated server` to an absolute path before saving a new configuration. Set this to the actual server directory before managing mods.
+- `platform` - The operating system recorded when configuration is created (`linux`, `darwin`, or `windows`). This selects the default server directory when `valheim-directory` is missing, and the vanilla server script.
 
 Plugins are installed under `BepInEx/plugins` inside `valheim-directory`; there is no separate configurable `mod-directory`. `config set` currently accepts only `valheim-directory`.
+
+Explicitly configured paths are used as written, without `~` or environment-variable expansion. If an older configuration contains a literal `~`, use `warden config set valheim-directory "/absolute/path/to/Valheim dedicated server"` to replace it.
+
+If an existing configuration supplies an unknown or empty `platform` and omits `valheim-directory`, startup stops because no default directory can be selected. Edit `$HOME/.warden.yaml` directly to correct `platform` or set `valheim-directory` to the server's path; `config set` cannot run until configuration loading succeeds.
 
 The DB file stores metadata about managed mods and frameworks, including author, version, and installation details. Metadata and files can diverge after a partial failure; `list` does not inspect the installed files.
 
