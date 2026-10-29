@@ -40,9 +40,9 @@ type InstalledMod struct {
 	InstallPath string
 }
 
-// Reader reads recorded mod inventory and Thunderstore catalog metadata. Obtain
-// one with Open and share it among concurrent callers; do not copy it. Its zero
-// value is closed.
+// Reader reads recorded mod inventory and Thunderstore catalog metadata and
+// assesses available updates. Obtain one with Open and share it among concurrent
+// callers; do not copy it. Its zero value is closed.
 type Reader struct {
 	mu       sync.RWMutex
 	database io.Closer
@@ -102,6 +102,11 @@ func (r *Reader) Close() error {
 func (r *Reader) ListInstalledMods(ctx context.Context) ([]InstalledMod, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+	return r.listInstalledMods(ctx)
+}
+
+// listInstalledMods requires r.mu to be held for the reader's lifecycle.
+func (r *Reader) listInstalledMods(ctx context.Context) ([]InstalledMod, error) {
 	if r.database == nil {
 		return nil, ErrClosed
 	}

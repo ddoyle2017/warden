@@ -30,7 +30,8 @@ var (
 	ErrInvalidPackageID = errors.New("invalid package identity")
 	// ErrPackageNotFound identifies a catalog HTTP 404 response.
 	ErrPackageNotFound = errors.New("package not found")
-	// ErrInvalidMetadata identifies malformed, incomplete, or mismatched catalog data.
+	// ErrInvalidMetadata identifies malformed, incomplete, or mismatched catalog
+	// data, or installed identities, duplicates, or versions that prevent assessment.
 	ErrInvalidMetadata = errors.New("invalid package metadata")
 	// ErrRemoteFailure identifies request, unexpected HTTP status, or response
 	// body failures. Underlying transport and context causes remain available.

@@ -29,6 +29,10 @@ func TestCloseFailureRetainsOwnership(t *testing.T) {
 			!errors.Is(err, cause) || !errors.Is(err, ErrDatabaseUnavailable) || errors.Is(err, ErrClosed) {
 			t.Errorf("failed-close catalog = %#v, %v", pkg, err)
 		}
+		checks, err := reader.CheckUpdates(context.Background())
+		if checks != nil || !errors.Is(err, cause) || !errors.Is(err, ErrDatabaseUnavailable) || errors.Is(err, ErrClosed) {
+			t.Errorf("failed-close assessment = %#v, %v", checks, err)
+		}
 		if reader.database == nil || calls != 1 {
 			t.Fatalf("failed close forgot its owner or retried: database=%v, calls=%d", reader.database, calls)
 		}
