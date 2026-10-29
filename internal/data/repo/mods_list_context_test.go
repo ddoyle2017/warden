@@ -95,6 +95,9 @@ func TestListModsContextPreservesFailures(t *testing.T) {
 			if mods != nil || !errors.Is(err, want) || !errors.Is(err, tc.class) {
 				t.Fatalf("failed listing = %+v, %v, want %v and %v", mods, err, want, tc.class)
 			}
+			if tc.cancel && errors.Is(err, repo.ErrDatabaseUnsupported) {
+				t.Errorf("cancellation was also classified as unsupported storage: %v", err)
+			}
 			for cause, required := range map[error]bool{
 				queryErr: tc.queryFailure, iterationErr: tc.iteration, closeErr: tc.closeFailure, context.Canceled: tc.cancel,
 			} {

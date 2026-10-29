@@ -303,6 +303,9 @@ func TestReadOnlyCancellationAndConcurrentCalls(t *testing.T) {
 		if got != nil || !errors.Is(err, ctx.Err()) || !errors.Is(err, repo.ErrDatabaseCancelled) {
 			t.Errorf("cancelled list = %+v, %v", got, err)
 		}
+		if errors.Is(err, repo.ErrDatabaseUnsupported) {
+			t.Errorf("cancellation was also classified as unsupported storage: %v", err)
+		}
 	}
 	var workers sync.WaitGroup
 	start := make(chan struct{})

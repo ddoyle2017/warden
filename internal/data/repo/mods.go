@@ -134,7 +134,14 @@ func (r *mods) DeleteAllMods() error {
 	return executeWrite(r.db, sql, ErrModDeleteAllFailed)
 }
 
-func mapRowsToMod(rows *sql.Rows) (mods []mod.Mod, err error) {
+type modRows interface {
+	Next() bool
+	Scan(dest ...any) error
+	Err() error
+	Close() error
+}
+
+func mapRowsToMod(rows modRows) (mods []mod.Mod, err error) {
 	defer func() {
 		err = errors.Join(err, rows.Close())
 		if err != nil {
@@ -154,6 +161,9 @@ func mapRowsToMod(rows *sql.Rows) (mods []mod.Mod, err error) {
 
 		err := rows.Scan(&id, &name, &namespace, &path, &version, &url, &description, &frameworkId)
 		if err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return nil, err
+			}
 			return nil, fmt.Errorf("%w: %w", ErrDatabaseUnsupported, err)
 		}
 
