@@ -209,6 +209,64 @@ func TestMetadataResponses(t *testing.T) {
 	}
 }
 
+func TestMetadataRedirectError(t *testing.T) {
+	redirectCause := errors.New("redirect policy rejected request")
+	for operation, request := range metadataRequests() {
+		for method, fetch := range map[string]func(*thunderstore.Client) (any, error){
+			"context-aware": func(client *thunderstore.Client) (any, error) {
+				return request.fetch(context.Background(), client)
+			},
+			"legacy": request.legacy,
+		} {
+			t.Run(operation+"/given a redirect error with a response, when using the "+method+" method, then preserve status without touching the closed body", func(t *testing.T) {
+				original := &url.Error{Op: "Get", URL: request.endpoint, Err: redirectCause}
+				calls, reads, closes := 0, 0, 0
+				client := thunderstore.New(&mock.HTTPClient{DoFunc: func(req *http.Request) (*http.Response, error) {
+					calls++
+					if req.Method != http.MethodGet || req.URL.String() != request.endpoint {
+						t.Fatalf("unexpected metadata request: %s %s", req.Method, req.URL)
+					}
+					body := &metadataResponseBody{
+						Reader: metadataReadFunc(func([]byte) (int, error) {
+							reads++
+							return 0, io.ErrClosedPipe
+						}),
+						close: func() error { closes++; return nil },
+					}
+					if err := body.Close(); err != nil {
+						t.Fatal(err)
+					}
+					return &http.Response{StatusCode: http.StatusFound, Body: body}, original
+				}})
+				result, err := fetch(client)
+				for _, cause := range []error{api.ErrHTTPClient, original, redirectCause} {
+					if !errors.Is(err, cause) {
+						t.Errorf("error = %v, want cause %v", err, cause)
+					}
+				}
+				var transportError *url.Error
+				if !errors.As(err, &transportError) || transportError != original {
+					t.Errorf("redirect error was not preserved for errors.As: %v", err)
+				}
+				for _, detail := range []string{"GET " + request.endpoint, "HTTP 302"} {
+					if err == nil || !strings.Contains(err.Error(), detail) {
+						t.Errorf("error lost %q: %v", detail, err)
+					}
+				}
+				if errors.Is(err, thunderstore.ErrThunderstoreAPI) || errors.Is(err, api.ErrByteIO) {
+					t.Errorf("redirect-policy failure was reclassified: %v", err)
+				}
+				if !reflect.DeepEqual(result, request.zero) {
+					t.Errorf("failed redirect returned metadata: %+v", result)
+				}
+				if calls != 1 || reads != 0 || closes != 1 {
+					t.Errorf("requests/reads/closes = %d/%d/%d, want 1/0/1", calls, reads, closes)
+				}
+			})
+		}
+	}
+}
+
 func TestGetPackageSparseMetadata(t *testing.T) {
 	for scenario, tt := range map[string]struct {
 		body string

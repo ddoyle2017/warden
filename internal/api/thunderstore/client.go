@@ -123,6 +123,9 @@ func (ts *Client) getJSON(ctx context.Context, endpoint string, target any) (err
 	}
 	result, err := ts.client.Do(request)
 	if err != nil {
+		if result != nil {
+			err = fmt.Errorf("HTTP %d: %w", result.StatusCode, err)
+		}
 		return fmt.Errorf("%w: %w", api.ErrHTTPClient, err)
 	}
 	response = result
