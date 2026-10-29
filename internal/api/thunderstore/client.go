@@ -1,6 +1,7 @@
 package thunderstore
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,91 +22,136 @@ var (
 	ErrThunderstoreAPI = errors.New("Thunderstore API returned an unexpected error")
 )
 
-// Interface for Thunderstore's API for Valheim mods. See docs: https://thunderstore.io/c/valheim/create/docs/
+// Thunderstore is the metadata interface used by mutation services.
 type Thunderstore interface {
 	GetPackage(namespace, name string) (Package, error)
 	GetRelease(namespace, name, version string) (Release, error)
 }
 
-type thunderstore struct {
-	client api.HTTPClient
+// HTTPClient performs metadata requests with net/http.Client.Do semantics.
+// On error, any returned response body is already closed by the transport.
+type HTTPClient interface {
+	Do(*http.Request) (*http.Response, error)
 }
 
-func New(c api.HTTPClient) Thunderstore {
-	return &thunderstore{
+// Client retrieves Thunderstore metadata without downloading archives or printing
+// output. Errors retain API classifications, request identity, and original causes.
+type Client struct {
+	client HTTPClient
+}
+
+func New(c HTTPClient) *Client {
+	return &Client{
 		client: c,
 	}
 }
 
-func (ts *thunderstore) GetPackage(namespace, name string) (Package, error) {
-	url := fmt.Sprintf(thunderstoreAPI+experimental+packageAPI+"/%s/%s", namespace, name)
-
-	response, err := ts.client.Get(url)
-	if err != nil {
-		return Package{}, api.ErrHTTPClient
-	}
-	defer response.Body.Close()
-
-	data, err := io.ReadAll(response.Body)
-	if err != nil {
-		return Package{}, api.ErrByteIO
-	}
-
-	switch response.StatusCode {
-	case http.StatusOK:
-		pkg, err := deserializeJSON(data, Package{})
-		if err != nil {
-			return Package{}, api.ErrJSONParse
-		}
-		return pkg, nil
-	case http.StatusNotFound:
-		// API currently doesn't return any useful data, so we'll ignore the error response body for now
-		return Package{}, ErrPackageNotFound
-	default:
-		// API currently doesn't return any useful data, so we'll ignore the error response body for now
-		return Package{}, ErrThunderstoreAPI
-	}
+func (ts *Client) GetPackage(namespace, name string) (Package, error) {
+	return ts.GetPackageContext(context.Background(), namespace, name)
 }
 
-func (ts *thunderstore) GetRelease(namespace, name, version string) (Release, error) {
+// GetPackageContext fetches package metadata using ctx for the request and body read.
+// It decodes the response without validating complete package values.
+func (ts *Client) GetPackageContext(ctx context.Context, namespace, name string) (Package, error) {
+	endpoint := fmt.Sprintf(thunderstoreAPI+experimental+packageAPI+"/%s/%s",
+		url.PathEscape(namespace), url.PathEscape(name))
+
+	var pkg Package
+	if err := ts.getJSON(ctx, endpoint, &pkg); err != nil {
+		return Package{}, err
+	}
+	return pkg, nil
+}
+
+func (ts *Client) GetRelease(namespace, name, version string) (Release, error) {
+	return ts.GetReleaseContext(context.Background(), namespace, name, version)
+}
+
+// GetReleaseContext requires matching release identity and an explicit dependency list.
+func (ts *Client) GetReleaseContext(ctx context.Context, namespace, name, version string) (Release, error) {
 	endpoint := fmt.Sprintf(thunderstoreAPI+experimental+packageAPI+"/%s/%s/%s/",
 		url.PathEscape(namespace), url.PathEscape(name), url.PathEscape(version))
-	response, err := ts.client.Get(endpoint)
-	if err != nil {
-		return Release{}, fmt.Errorf("%w: %w", api.ErrHTTPClient, err)
+
+	var release Release
+	if err := ts.getJSON(ctx, endpoint, &release); err != nil {
+		return Release{}, err
 	}
-	data, readErr := io.ReadAll(response.Body)
-	if err := errors.Join(readErr, response.Body.Close()); err != nil {
-		return Release{}, fmt.Errorf("%w: %w", api.ErrByteIO, err)
+	if release.Namespace != namespace || release.Name != name || release.VersionNumber != version ||
+		release.FullName != namespace+"-"+name+"-"+version {
+		return Release{}, fmt.Errorf("GET %s: %w: expected release %s/%s@%s, got %s/%s@%s (%q)",
+			endpoint, ErrThunderstoreAPI, namespace, name, version, release.Namespace, release.Name, release.VersionNumber, release.FullName)
+	}
+	if release.Dependencies == nil {
+		return Release{}, fmt.Errorf("GET %s: %w: release %s/%s@%s is missing its dependency list",
+			endpoint, ErrThunderstoreAPI, namespace, name, version)
+	}
+	return release, nil
+}
+
+func (ts *Client) getJSON(ctx context.Context, endpoint string, target any) (err error) {
+	var response *http.Response
+	defer func() {
+		if response != nil && response.Body != nil {
+			if closeErr := response.Body.Close(); closeErr != nil {
+				err = errors.Join(err, fmt.Errorf("%w: close response body: %w", api.ErrByteIO, closeErr))
+			}
+		}
+		if ctx != nil && ctx.Err() != nil {
+			for _, cause := range []error{ctx.Err(), context.Cause(ctx)} {
+				if cause != nil && !errors.Is(err, cause) {
+					if err == nil {
+						err = api.ErrHTTPClient
+					}
+					err = errors.Join(err, cause)
+				}
+			}
+		}
+		if err != nil {
+			if response != nil {
+				err = fmt.Errorf("HTTP %d: %w", response.StatusCode, err)
+			}
+			err = fmt.Errorf("%s %s: %w", http.MethodGet, endpoint, err)
+		}
+	}()
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return fmt.Errorf("%w: %w", api.ErrHTTPClient, err)
+	}
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("%w: %w", api.ErrHTTPClient, err)
+	}
+	result, err := ts.client.Do(request)
+	if err != nil {
+		if result != nil {
+			err = fmt.Errorf("HTTP %d: %w", result.StatusCode, err)
+		}
+		return fmt.Errorf("%w: %w", api.ErrHTTPClient, err)
+	}
+	response = result
+	if response == nil {
+		return fmt.Errorf("%w: missing response", api.ErrHTTPClient)
 	}
 	switch response.StatusCode {
 	case http.StatusOK:
-		var release Release
-		if err := json.Unmarshal(data, &release); err != nil {
-			return Release{}, fmt.Errorf("%w: %w", api.ErrJSONParse, err)
-		}
-		if release.Namespace != namespace || release.Name != name || release.VersionNumber != version ||
-			release.FullName != namespace+"-"+name+"-"+version {
-			return Release{}, fmt.Errorf("%w: expected release %s/%s@%s, got %s/%s@%s (%q)",
-				ErrThunderstoreAPI, namespace, name, version, release.Namespace, release.Name, release.VersionNumber, release.FullName)
-		}
-		if release.Dependencies == nil {
-			return Release{}, fmt.Errorf("%w: release %s/%s@%s is missing its dependency list",
-				ErrThunderstoreAPI, namespace, name, version)
-		}
-		return release, nil
 	case http.StatusNotFound:
-		return Release{}, ErrPackageNotFound
+		err = ErrPackageNotFound
 	default:
-		return Release{}, fmt.Errorf("%w: HTTP %d", ErrThunderstoreAPI, response.StatusCode)
+		err = ErrThunderstoreAPI
 	}
-}
+	if response.Body == nil {
+		return errors.Join(err, fmt.Errorf("%w: missing response body", api.ErrHTTPClient))
+	}
 
-func deserializeJSON[T any](data []byte, obj T) (T, error) {
-	err := json.Unmarshal(data, &obj)
-	if err != nil {
-		fmt.Println("... ERROR: unable to deserialize Thunderstore API response from JSON...")
-		return obj, err
+	data, readErr := io.ReadAll(response.Body)
+	if readErr != nil {
+		return errors.Join(err, fmt.Errorf("%w: read response body: %w", api.ErrByteIO, readErr))
 	}
-	return obj, nil
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal(data, target); err != nil {
+		return fmt.Errorf("%w: %w", api.ErrJSONParse, err)
+	}
+	return nil
 }

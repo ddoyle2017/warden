@@ -26,23 +26,34 @@ func TestAddMod_RetryUsesInstalledRelease(t *testing.T) {
 	t.Run("given changed latest root metadata, when retrying add, then use the installed version's direct list", func(t *testing.T) {
 		f := newModReplacementFixture(t)
 		var requests []string
-		client := &mock.HTTPClient{GetFunc: func(endpoint string) (*http.Response, error) {
-			requests = append(requests, endpoint)
-			body := ""
-			switch endpoint {
-			case "https://thunderstore.io/api/experimental/package/Owned/Installed/1.0.0/":
-				body = `{"namespace":"Owned","name":"Installed","version_number":"1.0.0","full_name":"Owned-Installed-1.0.0","dependencies":["Required-Dependency-1.0.0"]}`
-			case "https://thunderstore.io/api/experimental/package/Owned/Installed":
-				body = `{"latest":{"namespace":"Owned","name":"Installed","version_number":"2.0.0","full_name":"Owned-Installed-2.0.0","dependencies":["Wrong-NewDependency-2.0.0"]}}`
-			case "https://thunderstore.io/api/experimental/package/Required/Dependency":
-				body = `{"latest":{"namespace":"Required","name":"Dependency","version_number":"2.4.0","full_name":"Required-Dependency-2.4.0","download_url":"dependency-download","dependencies":["Nested-NotTraversed-1.0.0"]}}`
-			case "dependency-download":
+		client := &mock.HTTPClient{
+			DoFunc: func(request *http.Request) (*http.Response, error) {
+				if request.Method != http.MethodGet {
+					t.Fatalf("unexpected metadata method %q", request.Method)
+				}
+				endpoint := request.URL.String()
+				requests = append(requests, endpoint)
+				body := ""
+				switch endpoint {
+				case "https://thunderstore.io/api/experimental/package/Owned/Installed/1.0.0/":
+					body = `{"namespace":"Owned","name":"Installed","version_number":"1.0.0","full_name":"Owned-Installed-1.0.0","dependencies":["Required-Dependency-1.0.0"]}`
+				case "https://thunderstore.io/api/experimental/package/Owned/Installed":
+					body = `{"latest":{"namespace":"Owned","name":"Installed","version_number":"2.0.0","full_name":"Owned-Installed-2.0.0","dependencies":["Wrong-NewDependency-2.0.0"]}}`
+				case "https://thunderstore.io/api/experimental/package/Required/Dependency":
+					body = `{"latest":{"namespace":"Required","name":"Dependency","version_number":"2.4.0","full_name":"Required-Dependency-2.4.0","download_url":"dependency-download","dependencies":["Nested-NotTraversed-1.0.0"]}}`
+				default:
+					t.Fatalf("unexpected metadata request %q", endpoint)
+				}
+				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body))}, nil
+			},
+			GetFunc: func(endpoint string) (*http.Response, error) {
+				requests = append(requests, endpoint)
+				if endpoint != "dependency-download" {
+					t.Fatalf("unexpected download request %q", endpoint)
+				}
 				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(modIdentityArchive(t, "dependency bytes")))}, nil
-			default:
-				t.Fatalf("unexpected metadata or download request %q", endpoint)
-			}
-			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body))}, nil
-		}}
+			},
+		}
 		ms := service.NewModService(f.records, file.NewManager(client, f.server), thunderstore.New(client), strings.NewReader(""))
 		if err := ms.AddMod("Owned", "Installed"); err != nil {
 			t.Fatal(err)
@@ -219,10 +230,10 @@ func TestAddMod_RetryRejectsUnknownMetadata(t *testing.T) {
 				}
 			}
 			requests, lookups := 0, 0
-			client := &mock.HTTPClient{GetFunc: func(endpoint string) (*http.Response, error) {
+			client := &mock.HTTPClient{DoFunc: func(request *http.Request) (*http.Response, error) {
 				requests++
-				if endpoint != "https://thunderstore.io/api/experimental/package/Owned/Installed/1.0.0/" {
-					t.Fatalf("unexpected request after unsafe metadata: %s", endpoint)
+				if request.Method != http.MethodGet || request.URL.String() != "https://thunderstore.io/api/experimental/package/Owned/Installed/1.0.0/" {
+					t.Fatalf("unexpected request after unsafe metadata: %s %s", request.Method, request.URL)
 				}
 				status := tt.status
 				if status == 0 {

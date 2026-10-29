@@ -92,6 +92,12 @@ database without the required table exercises the failure without incomplete
 transaction mocks. Full testing conventions live in
 [tests.instructions.md](.github/instructions/tests.instructions.md).
 
+Thunderstore metadata fixtures configure `mock.HTTPClient.DoFunc` so they can
+inspect the request context, method, and escaped endpoint. Archive-download
+fixtures still use `GetFunc`. Configure each callback the scenario reaches
+explicitly, and create a fresh response body inside it for every invocation;
+reusing a consumed or closed body can make later calls exercise the wrong path.
+
 ## Isolated CLI smoke check
 
 Even `warden --help` loads or creates `$HOME/.warden.yaml` and initializes
