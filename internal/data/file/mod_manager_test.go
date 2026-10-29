@@ -4,16 +4,16 @@ import (
 	"archive/zip"
 	"bytes"
 	"errors"
+	"github.com/ddoyle2017/warden/internal/api"
+	"github.com/ddoyle2017/warden/internal/data/file"
+	"github.com/ddoyle2017/warden/internal/test/helper"
+	"github.com/ddoyle2017/warden/internal/test/mock"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"warden/internal/api"
-	"warden/internal/data/file"
-	"warden/internal/test/helper"
-	"warden/internal/test/mock"
 )
 
 func TestInstallMod_Happy(t *testing.T) {

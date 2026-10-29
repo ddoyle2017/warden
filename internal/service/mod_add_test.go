@@ -2,14 +2,14 @@ package service_test
 
 import (
 	"errors"
+	"github.com/ddoyle2017/warden/internal/api/thunderstore"
+	"github.com/ddoyle2017/warden/internal/data/file"
+	"github.com/ddoyle2017/warden/internal/data/repo"
+	"github.com/ddoyle2017/warden/internal/domain/mod"
+	"github.com/ddoyle2017/warden/internal/service"
+	"github.com/ddoyle2017/warden/internal/test/mock"
 	"io"
 	"testing"
-	"warden/internal/api/thunderstore"
-	"warden/internal/data/file"
-	"warden/internal/data/repo"
-	"warden/internal/domain/mod"
-	"warden/internal/service"
-	"warden/internal/test/mock"
 )
 
 func TestAddMod_Happy(t *testing.T) {

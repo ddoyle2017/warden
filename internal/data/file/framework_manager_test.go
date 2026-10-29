@@ -4,6 +4,10 @@ import (
 	"archive/zip"
 	"bytes"
 	"errors"
+	"github.com/ddoyle2017/warden/internal/api"
+	"github.com/ddoyle2017/warden/internal/data/file"
+	"github.com/ddoyle2017/warden/internal/test/helper"
+	"github.com/ddoyle2017/warden/internal/test/mock"
 	"io"
 	"io/fs"
 	"net/http"
@@ -15,10 +19,6 @@ import (
 	"sort"
 	"strings"
 	"testing"
-	"warden/internal/api"
-	"warden/internal/data/file"
-	"warden/internal/test/helper"
-	"warden/internal/test/mock"
 )
 
 func TestUpdateBepInExPluginStaging(t *testing.T) {

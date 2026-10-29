@@ -4,15 +4,15 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"github.com/ddoyle2017/warden/internal/command"
+	"github.com/ddoyle2017/warden/internal/data/file"
+	"github.com/ddoyle2017/warden/internal/data/repo"
+	"github.com/ddoyle2017/warden/internal/domain/framework"
+	"github.com/ddoyle2017/warden/internal/domain/mod"
+	"github.com/ddoyle2017/warden/internal/service"
+	"github.com/ddoyle2017/warden/internal/test/mock"
 	"strings"
 	"testing"
-	"warden/command"
-	"warden/internal/data/file"
-	"warden/internal/data/repo"
-	"warden/internal/domain/framework"
-	"warden/internal/domain/mod"
-	"warden/internal/service"
-	"warden/internal/test/mock"
 )
 
 func TestRemoveCommand_Diagnostics(t *testing.T) {

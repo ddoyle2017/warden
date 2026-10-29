@@ -3,9 +3,9 @@ package file
 import (
 	"errors"
 	"fmt"
+	"github.com/ddoyle2017/warden/internal/api"
 	"os"
 	"path/filepath"
-	"warden/internal/api"
 )
 
 // An interface for all mod file operations

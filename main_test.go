@@ -5,6 +5,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/ddoyle2017/warden/internal/data/repo"
+	"github.com/ddoyle2017/warden/internal/domain/mod"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,8 +16,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-	"warden/internal/data/repo"
-	"warden/internal/domain/mod"
 )
 
 func TestCLIExitStatus(t *testing.T) {

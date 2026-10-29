@@ -2,14 +2,14 @@ package service_test
 
 import (
 	"errors"
+	"github.com/ddoyle2017/warden/internal/data/file"
+	"github.com/ddoyle2017/warden/internal/domain/mod"
+	"github.com/ddoyle2017/warden/internal/service"
+	"github.com/ddoyle2017/warden/internal/test/mock"
 	"io"
 	"slices"
 	"strings"
 	"testing"
-	"warden/internal/data/file"
-	"warden/internal/domain/mod"
-	"warden/internal/service"
-	"warden/internal/test/mock"
 )
 
 func TestModRemoval_ReportsFinalizationErrors(t *testing.T) {

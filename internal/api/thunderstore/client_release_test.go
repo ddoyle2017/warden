@@ -2,14 +2,14 @@ package thunderstore_test
 
 import (
 	"errors"
+	"github.com/ddoyle2017/warden/internal/api"
+	"github.com/ddoyle2017/warden/internal/api/thunderstore"
+	"github.com/ddoyle2017/warden/internal/test/mock"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
 	"testing/iotest"
-	"warden/internal/api"
-	"warden/internal/api/thunderstore"
-	"warden/internal/test/mock"
 )
 
 func TestGetRelease(t *testing.T) {

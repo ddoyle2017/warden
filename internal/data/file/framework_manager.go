@@ -3,10 +3,10 @@ package file
 import (
 	"errors"
 	"fmt"
+	"github.com/ddoyle2017/warden/internal/api"
 	"io"
 	"os"
 	"path/filepath"
-	"warden/internal/api"
 )
 
 // An interface for all framework/BepInEx related file operations
