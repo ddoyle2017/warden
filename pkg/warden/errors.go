@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/ddoyle2017/warden/internal/api"
+	"github.com/ddoyle2017/warden/internal/api/thunderstore"
 	"github.com/ddoyle2017/warden/internal/data/repo"
 )
 
@@ -24,6 +26,15 @@ var (
 	ErrDatabaseRecoveryRequired = errors.New("database recovery required")
 	// ErrClosed identifies an operation on a successfully closed or zero Reader.
 	ErrClosed = errors.New("reader closed")
+	// ErrInvalidPackageID identifies invalid caller-supplied namespace/name components.
+	ErrInvalidPackageID = errors.New("invalid package identity")
+	// ErrPackageNotFound identifies a catalog HTTP 404 response.
+	ErrPackageNotFound = errors.New("package not found")
+	// ErrInvalidMetadata identifies malformed, incomplete, or mismatched catalog data.
+	ErrInvalidMetadata = errors.New("invalid package metadata")
+	// ErrRemoteFailure identifies request, unexpected HTTP status, or response
+	// body failures. Underlying transport and context causes remain available.
+	ErrRemoteFailure = errors.New("remote package lookup failed")
 )
 
 func publicDatabaseError(err error) error {
@@ -36,6 +47,21 @@ func publicDatabaseError(err error) error {
 		if errors.Is(err, class.internal) {
 			err = fmt.Errorf("%w: %w", class.public, err)
 		}
+	}
+	return err
+}
+
+func publicCatalogError(err error) error {
+	for _, class := range [...]struct{ internal, public error }{
+		{thunderstore.ErrPackageNotFound, ErrPackageNotFound},
+		{api.ErrJSONParse, ErrInvalidMetadata},
+	} {
+		if errors.Is(err, class.internal) {
+			err = fmt.Errorf("%w: %w", class.public, err)
+		}
+	}
+	if errors.Is(err, api.ErrHTTPClient) || errors.Is(err, api.ErrByteIO) || errors.Is(err, thunderstore.ErrThunderstoreAPI) {
+		err = fmt.Errorf("%w: %w", ErrRemoteFailure, err)
 	}
 	return err
 }
