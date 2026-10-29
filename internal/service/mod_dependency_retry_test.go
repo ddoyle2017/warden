@@ -290,7 +290,7 @@ func TestAddMod_RetryLookupFailuresAreNotAbsence(t *testing.T) {
 						case "query":
 							query = strings.Replace(query, "FROM mods", "FROM missing_mods", 1)
 						case "mapping":
-							query = strings.Replace(query, "websiteUrl", "NULL", 1)
+							query = strings.Replace(query, "SELECT id,", "SELECT NULL,", 1)
 						case "iteration before":
 							query = strings.Replace(query, "SELECT id,", "SELECT abs(-9223372036854775808),", 1)
 						case "iteration after":

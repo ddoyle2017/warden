@@ -504,6 +504,59 @@ for success, cancellation, and each failure being handled. Verify those states,
 including existing plugin contents and unrelated server files, rather than
 checking only the returned error.
 
+## Read-only inventory storage
+
+Internal inventory consumers can open an existing SQLite database without the
+CLI's configuration loading, database initialization, or table creation. This
+storage path accepts a regular filesystem file, not a SQLite connection string.
+It does not inspect server files, fetch packages, prompt, or produce output.
+The public library facade is separate from this internal storage adapter.
+
+The reader inspects SQLite's header before opening each physical connection,
+including reconnections. It rejects WAL format, empty or malformed files, and
+unsupported header values before SQLite can create sidecars. Accepted connections
+use read-only mode, a private cache, query-only protection, and a zero busy
+timeout. They retain SQLite's locking and change detection; they are not
+immutable snapshots.
+
+Opening also checks the consumed `mods` columns and their types and nullability,
+even when the table has no rows. Compatible additive columns are allowed.
+Nullable website and description values become empty strings; invalid required
+values fail the read. Inventory retains every record, including duplicate
+namespace/name identities, without repairing or deduplicating stored data.
+
+One reader owns each database in a process. Concurrent calls reuse that reader
+and its single-connection pool; another open, including through a symlink or hard
+link, returns a busy error. This prevents raw header-file access from releasing
+another reader's POSIX locks. Failed initialization releases the reservation
+after closing its connection. Closing waits for outstanding SQL resources
+before releasing it; a close failure retains the reservation rather than
+assuming the connection is gone. Internal callers must close returned rows,
+statements, and transactions. Uncoordinated
+writable SQLite handles in the same process are unsupported.
+
+Ordinary writes by a separate CLI process are supported for rollback-journal
+databases. A completed inventory read releases its rows and locks before the
+caller does HTTP or other unrelated work. Later reads see later committed
+changes. An active writer can cause an explicit busy error; the reader does not
+retry secretly or interpret it as an empty inventory. Context cancellation and
+deadlines remain distinguishable from storage failures.
+
+A rollback journal's existence alone does not establish a recovery requirement.
+SQLite distinguishes an active writer from a hot journal. If recovery is needed,
+the reader returns that classification without replaying, deleting, or modifying
+the journal or database. Recovery belongs to a writable owner after independent
+backup and inspection, not to an inventory request.
+
+Failures distinguish unavailable storage, unsupported format or schema, busy
+state, required recovery, and cancellation while preserving underlying
+filesystem, SQLite, and context errors. Query, mapping, iteration, and row-close
+failures do not return partial or successful empty inventories. Use a consistent
+database pathname for readers and writers so SQLite finds the matching journal.
+Stop and close the reader before changing journal mode or schema, replacing the
+database, or changing filesystem aliases. This contract is not a filesystem
+sandbox or a guarantee for concurrent external changes to those structures.
+
 ## Before changing a live installation
 
 Stop the game server and avoid concurrent Warden operations. Preserve an

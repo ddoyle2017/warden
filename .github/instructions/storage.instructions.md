@@ -4,9 +4,9 @@ applyTo: "internal/data/repo/**/*.go"
 
 # Storage changes
 
-- Repositories own SQL; keep file operations and Thunderstore calls outside
-  this layer. Continue using injected database dependencies and parameterized
-  values.
+- Repositories own SQL and database-file opening; keep server-file operations
+  and Thunderstore calls outside this layer. Continue using injected database
+  dependencies and parameterized values.
 - Treat the existing `.warden.db` as persistent user data. `CREATE TABLE IF NOT
   EXISTS` initializes a missing table; it does not migrate an existing one.
   Schema changes require an explicit compatibility and migration decision,
